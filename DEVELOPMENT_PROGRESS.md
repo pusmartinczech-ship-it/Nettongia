@@ -2,7 +2,29 @@
 
 Updated: 2026-09-13
 
-## In-progress stage: portable OCR acceptance
+## Completed stage: portable OCR acceptance
+
+- GitHub-hosted Windows Server 2022 run 34759413759 completed successfully at
+  commit `3ac5fa777f66b621ecbf79ae6c1502a0587d0093`.
+- The real frozen portable ZIP was extracted below
+  `Čistý OCR balíček žluťoučký kůň` with no system Tesseract available and no
+  inherited `TESSDATA_PREFIX`. All seven packaged checks passed: bundle
+  integrity, isolated OCR, controlled missing-language failure, tamper
+  detection, process cancellation, cleanup and Unicode paths.
+- Windows source regression: **133 passed, 21 conditional tests skipped**.
+  Packaged PDF open/render/save verification, OCR execution and anonymized
+  diagnostic export also passed.
+- Measured package sizes: 220,891,741 bytes unpacked, 100,693,707 bytes for the
+  portable ZIP and 29,202,291 bytes of OCR assets. The enforced budgets are
+  850 MiB, 400 MiB and 32 MiB respectively.
+- Unsigned GitHub artifact SHA-256:
+  `e4f1745031b37269bd363d06f4421e152e3598662995d575e1d726a7edac9639`.
+  Portable ZIP SHA-256:
+  `0591e73126b9b95423fff6ad9d6c017a10545a49304783a2c63e6b8b149b16a3`.
+  Installer SHA-256:
+  `b6380621a3df2c0c4eee71d8f0102d5984d2886ff9ee8c2e96fd4ff104222168`.
+- Version remains 0.18.0. This completes stage 7 only; SignPath signing and the
+  clean Windows 10/11 integration matrix remain stage-8 release gates.
 
 - Windows Server 2022 validation on 2026-09-13 now builds the portable ZIP and
   Inno Setup installer successfully; the packaged self-test and the complete
@@ -242,10 +264,11 @@ worker-process lifecycle state.
 
 ## Next stage
 
-Complete the Windows release gate: build the pinned PyInstaller/Inno Setup
-artifacts on GitHub-hosted Windows, obtain the free SignPath Foundation
-signature, and run the signed portable package and installer acceptance matrix
-on clean Windows 10 and Windows 11 systems.
+Complete stage 8: configure the approved free SignPath Foundation project,
+sign the Windows candidate, then run the signed portable package and installer
+acceptance matrix on clean Windows 10 and Windows 11 systems together with the
+long-duration memory and final golden-PDF gates. Do not create a new release
+version unless every material gate passes.
 
 ## Completed release candidate: 0.18.0 page and source-image editing
 
