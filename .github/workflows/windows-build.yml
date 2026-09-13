@@ -2,9 +2,8 @@ name: Windows build
 
 on:
   workflow_dispatch:
+  pull_request:
   push:
-    branches:
-      - main
     tags:
       - "v*"
 
@@ -115,3 +114,4 @@ jobs:
           name: OpenPDF-Editor-Windows-signed
           path: dist/signed
           if-no-files-found: error
+
