@@ -1,0 +1,2337 @@
+{
+  "application_version": "0.12.0",
+  "format": "openpdf-editor-corpus-audit",
+  "password_entries_used": 2,
+  "requested_files": 100,
+  "results": [
+    {
+      "composed_size_bytes": 14475,
+      "duration_seconds": 0.0083,
+      "max_rss_kib": 46412,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/annotation-squiggly-without-appearance.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 2,
+      "size_bytes": 15589,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/annotation-squiggly-without-appearance.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 14425,
+      "duration_seconds": 0.0087,
+      "max_rss_kib": 46284,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/attachment.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 15299,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/attachment.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1287,
+      "duration_seconds": 0.009,
+      "max_rss_kib": 43860,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bitmap-composite-and-xnor-text.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 159600,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1243,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bitmap-composite-and-xnor-text.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1354,
+      "duration_seconds": 0.0114,
+      "max_rss_kib": 43980,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bitmap-halftone-10bpp.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 159600,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1311,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bitmap-halftone-10bpp.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1330,
+      "duration_seconds": 0.0086,
+      "max_rss_kib": 43856,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bitmap-halftone-skip-dummy.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 159600,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1287,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bitmap-halftone-skip-dummy.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1930,
+      "duration_seconds": 0.0117,
+      "max_rss_kib": 43852,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bitmap-trailing-7fff-stripped-harder-refine.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 159600,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1887,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bitmap-trailing-7fff-stripped-harder-refine.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 8307,
+      "duration_seconds": 0.0133,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bug1027533.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 8900,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bug1027533.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 257564,
+      "duration_seconds": 0.2441,
+      "max_rss_kib": 45532,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bug1743245.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 264330,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 271984,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bug1743245.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5825,
+      "duration_seconds": 0.0118,
+      "max_rss_kib": 45956,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bug1825002.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 1,
+      "sampled_text_runs": 1,
+      "size_bytes": 6942,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bug1825002.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1716,
+      "duration_seconds": 0.0281,
+      "max_rss_kib": 45008,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bug852992_reduced.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 102600,
+      "sampled_image_runs": 2,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 2191,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bug852992_reduced.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 701,
+      "duration_seconds": 0.0102,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/bug878026.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 676,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/bug878026.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 629,
+      "duration_seconds": 0.0071,
+      "max_rss_kib": 42952,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/clippath.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 20000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 459,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/clippath.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 711,
+      "duration_seconds": 0.0113,
+      "max_rss_kib": 45644,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/close-path-bug.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1451,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/close-path-bug.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 10260,
+      "duration_seconds": 0.0174,
+      "max_rss_kib": 48844,
+      "pages": 3,
+      "path": "pdfjs/test/pdfs/doc_1_3_pages.pdf",
+      "rendered_pages": [
+        0,
+        1,
+        2
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 3,
+      "size_bytes": 12091,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/doc_1_3_pages.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 581,
+      "duration_seconds": 0.0056,
+      "max_rss_kib": 45396,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/extractPages_null_in_array.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 360,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/extractPages_null_in_array.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 89906,
+      "duration_seconds": 0.0434,
+      "max_rss_kib": 46668,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/inks.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 1,
+      "sampled_text_runs": 3,
+      "size_bytes": 108628,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/inks.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 731,
+      "duration_seconds": 0.0053,
+      "max_rss_kib": 43336,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue10542_reduced.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 35000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 3,
+      "size_bytes": 930,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue10542_reduced.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 886,
+      "duration_seconds": 0.0106,
+      "max_rss_kib": 46156,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue11555.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 12,
+      "size_bytes": 1132,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue11555.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 11969,
+      "duration_seconds": 0.0099,
+      "max_rss_kib": 43464,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue13107_reduced.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 32436,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 12609,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue13107_reduced.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 845,
+      "duration_seconds": 0.0118,
+      "max_rss_kib": 43472,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue13226.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 20000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 972,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue13226.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 85249,
+      "duration_seconds": 0.056,
+      "max_rss_kib": 47304,
+      "pages": 3,
+      "path": "pdfjs/test/pdfs/issue1350.pdf",
+      "rendered_pages": [
+        0,
+        1,
+        2
+      ],
+      "rendered_pixels": 448969,
+      "sampled_image_runs": 3,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 71,
+      "size_bytes": 118396,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue1350.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 45742,
+      "duration_seconds": 0.0494,
+      "max_rss_kib": 50512,
+      "pages": 6,
+      "path": "pdfjs/test/pdfs/issue14847.pdf",
+      "rendered_pages": [
+        0,
+        3,
+        5
+      ],
+      "rendered_pixels": 1505496,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 13,
+      "size_bytes": 87012,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue14847.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 12429,
+      "duration_seconds": 0.0209,
+      "max_rss_kib": 46412,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue14862.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 1,
+      "sampled_text_runs": 3,
+      "size_bytes": 13634,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue14862.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5511,
+      "duration_seconds": 0.0093,
+      "max_rss_kib": 43592,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue16473.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 7040,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 1,
+      "sampled_text_runs": 1,
+      "size_bytes": 6641,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue16473.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 580,
+      "duration_seconds": 0.0108,
+      "max_rss_kib": 45388,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue17554.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 651,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue17554.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 850289,
+      "duration_seconds": 0.298,
+      "max_rss_kib": 55628,
+      "pages": 14,
+      "path": "pdfjs/test/pdfs/issue19239.pdf",
+      "rendered_pages": [
+        0,
+        7,
+        13
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 462,
+      "size_bytes": 1060670,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue19239.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 7264,
+      "duration_seconds": 0.0087,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue19424.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 1,
+      "sampled_text_runs": 0,
+      "size_bytes": 9092,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue19424.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 6819,
+      "duration_seconds": 0.0133,
+      "max_rss_kib": 43596,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue3025.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 7467,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue3025.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 78219,
+      "duration_seconds": 0.0195,
+      "max_rss_kib": 44108,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue3205r.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 13,
+      "size_bytes": 126273,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue3205r.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 8864,
+      "duration_seconds": 0.0086,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue3566.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 9805,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue3566.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 9631,
+      "duration_seconds": 0.0195,
+      "max_rss_kib": 46292,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue4706.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 10527,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue4706.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1098,
+      "duration_seconds": 0.0097,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue5238.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 1152,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue5238.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 705,
+      "duration_seconds": 0.0632,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue6010_2.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 1116,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue6010_2.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5673,
+      "duration_seconds": 0.0096,
+      "max_rss_kib": 43468,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue7101.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 15000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 6832,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue7101.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 49995,
+      "duration_seconds": 0.0164,
+      "max_rss_kib": 43848,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/issue8097_reduced.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 10000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 2,
+      "size_bytes": 51582,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/issue8097_reduced.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1150,
+      "duration_seconds": 0.0039,
+      "max_rss_kib": 43084,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/knockout_smask.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 32000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 1153,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/knockout_smask.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 537175,
+      "duration_seconds": 0.3342,
+      "max_rss_kib": 53328,
+      "pages": 55,
+      "path": "pdfjs/test/pdfs/pdkids.pdf",
+      "rendered_pages": [
+        0,
+        27,
+        54
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 101,
+      "size_bytes": 546144,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/pdkids.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "duration_seconds": 0.0008,
+      "error": "A PDF must contain at least one page.",
+      "error_type": "ValueError",
+      "max_rss_kib": 41552,
+      "path": "pdfjs/test/pdfs/poppler-91414-0-54.pdf",
+      "size_bytes": 843,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/poppler-91414-0-54.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "open",
+      "status": "rejected"
+    },
+    {
+      "composed_size_bytes": 6099,
+      "duration_seconds": 0.0117,
+      "max_rss_kib": 45772,
+      "pages": 1,
+      "path": "pdfjs/test/pdfs/scorecard_reduced.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 6975,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/scorecard_reduced.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 841750,
+      "duration_seconds": 0.2997,
+      "max_rss_kib": 55504,
+      "pages": 14,
+      "path": "pdfjs/test/pdfs/tracemonkey_annotation_on_page_8.pdf",
+      "rendered_pages": [
+        0,
+        7,
+        13
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 1,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 462,
+      "size_bytes": 1052147,
+      "source": {
+        "commit": "70890788983063e4618480ae89db1b9e5f380375",
+        "relative_path": "test/pdfs/tracemonkey_annotation_on_page_8.pdf",
+        "remote": "https://github.com/mozilla/pdf.js.git",
+        "repository": "pdfjs"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 690,
+      "duration_seconds": 0.0146,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/compare-for-test/qtest/compare/diff-data-unc.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 2,
+      "size_bytes": 844,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "compare-for-test/qtest/compare/diff-data-unc.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 690,
+      "duration_seconds": 0.0116,
+      "max_rss_kib": 46032,
+      "pages": 1,
+      "path": "qpdf/compare-for-test/qtest/compare/zlib-new-id1.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 2,
+      "size_bytes": 844,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "compare-for-test/qtest/compare/zlib-new-id1.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 4367,
+      "duration_seconds": 0.017,
+      "max_rss_kib": 46288,
+      "pages": 1,
+      "path": "qpdf/examples/qtest/overlay-page/annotations.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 13,
+      "size_bytes": 9648,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "examples/qtest/overlay-page/annotations.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 803,
+      "duration_seconds": 0.011,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/bad28.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 778,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/bad28.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 683,
+      "duration_seconds": 0.0112,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/bad9.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 763,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/bad9.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5185,
+      "duration_seconds": 0.0627,
+      "max_rss_kib": 47696,
+      "pages": 30,
+      "path": "qpdf/qpdf/qtest/qpdf/c-r6-in.pdf",
+      "rendered_pages": [
+        0,
+        15,
+        29
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 9,
+      "sampled_text_runs": 3,
+      "size_bytes": 11206,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/c-r6-in.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 683,
+      "duration_seconds": 0.0183,
+      "max_rss_kib": 46032,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/compress-objstm-xref-qdf.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 1249,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/compress-objstm-xref-qdf.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 8516,
+      "duration_seconds": 0.0238,
+      "max_rss_kib": 47564,
+      "pages": 30,
+      "path": "qpdf/qpdf/qtest/qpdf/enc-XI-base.pdf",
+      "rendered_pages": [
+        0,
+        15,
+        29
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 7,
+      "sampled_text_runs": 3,
+      "size_bytes": 14041,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/enc-XI-base.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 794,
+      "duration_seconds": 0.014,
+      "max_rss_kib": 46036,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/extensions-adbe-other-force-1.8.5.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 923,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/extensions-adbe-other-force-1.8.5.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 684,
+      "duration_seconds": 0.0701,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/extra-header-lin-no-newline.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 1312,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/extra-header-lin-no-newline.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2141,
+      "duration_seconds": 0.0192,
+      "max_rss_kib": 46416,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/form-xobjects-some-resources1-out.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 6,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 3,
+      "size_bytes": 2775,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/form-xobjects-some-resources1-out.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 746,
+      "duration_seconds": 0.0145,
+      "max_rss_kib": 46024,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/gen1.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 1758,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/gen1.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 243796,
+      "duration_seconds": 1.0228,
+      "max_rss_kib": 85456,
+      "pages": 2,
+      "path": "qpdf/qpdf/qtest/qpdf/inline-images-ii-some.pdf",
+      "rendered_pages": [
+        0,
+        1
+      ],
+      "rendered_pixels": 969408,
+      "sampled_image_runs": 3141,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 7966862,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/inline-images-ii-some.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2429,
+      "duration_seconds": 0.0074,
+      "max_rss_kib": 46280,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/issue-117.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 2817,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/issue-117.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 674,
+      "duration_seconds": 0.0127,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/long-id.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 869,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/long-id.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 691,
+      "duration_seconds": 0.0106,
+      "max_rss_kib": 46028,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/minimal-rotated.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 811,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/minimal-rotated.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 24574,
+      "duration_seconds": 0.0384,
+      "max_rss_kib": 48848,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/need-appearances-more-out.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 22,
+      "size_bytes": 68648,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/need-appearances-more-out.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2352,
+      "duration_seconds": 0.0195,
+      "max_rss_kib": 46412,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/nested-form-xobjects.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 6,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 3,
+      "size_bytes": 5487,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/nested-form-xobjects.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2547,
+      "duration_seconds": 0.016,
+      "max_rss_kib": 47436,
+      "pages": 10,
+      "path": "qpdf/qpdf/qtest/qpdf/outlines-split-11-20.pdf",
+      "rendered_pages": [
+        0,
+        5,
+        9
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 8,
+      "sampled_text_runs": 3,
+      "size_bytes": 8803,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/outlines-split-11-20.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 663,
+      "duration_seconds": 0.0113,
+      "max_rss_kib": 46016,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/short-id.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 825,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/short-id.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1356,
+      "duration_seconds": 0.0295,
+      "max_rss_kib": 67660,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/small-images.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 4343056,
+      "sampled_image_runs": 3,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 41882,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/small-images.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 689,
+      "duration_seconds": 0.0126,
+      "max_rss_kib": 46024,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/split-exp-01.Pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 1,
+      "size_bytes": 755,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/split-exp-01.Pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 580,
+      "duration_seconds": 0.0055,
+      "max_rss_kib": 45388,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/split-exp-1.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 0,
+      "size_bytes": 899,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/split-exp-1.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2120,
+      "duration_seconds": 0.0142,
+      "max_rss_kib": 46160,
+      "pages": 1,
+      "path": "qpdf/qpdf/qtest/qpdf/uo-6.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 5,
+      "size_bytes": 3523,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/uo-6.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 6596,
+      "duration_seconds": 0.028,
+      "max_rss_kib": 49096,
+      "pages": 4,
+      "path": "qpdf/qpdf/qtest/qpdf/uo-8.pdf",
+      "rendered_pages": [
+        0,
+        2,
+        3
+      ],
+      "rendered_pixels": 1454112,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 0,
+      "sampled_text_runs": 15,
+      "size_bytes": 12273,
+      "source": {
+        "commit": "54d6053af283bbeb8b325f4886c0f65cc51f2b80",
+        "relative_path": "qpdf/qtest/qpdf/uo-8.pdf",
+        "remote": "https://github.com/qpdf/qpdf.git",
+        "repository": "qpdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 4903,
+      "duration_seconds": 0.0182,
+      "max_rss_kib": 45652,
+      "pages": 1,
+      "path": "verapdf/Isartor test files/PDFA-1b/6.4 Transparency/isartor-6-4-t05-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 5680,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "Isartor test files/PDFA-1b/6.4 Transparency/isartor-6-4-t05-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2494,
+      "duration_seconds": 0.0068,
+      "max_rss_kib": 45524,
+      "pages": 1,
+      "path": "verapdf/Isartor test files/PDFA-1b/6.6 Actions/6.6.1 General/isartor-6-6-1-t01-fail-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3643,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "Isartor test files/PDFA-1b/6.6 Actions/6.6.1 General/isartor-6-6-1-t01-fail-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5894,
+      "duration_seconds": 0.0243,
+      "max_rss_kib": 44244,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.2 Graphics/6.2.9 Rendering intents/veraPDF test suite 6-2-9-t01-pass-b.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 4,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 13867,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.2 Graphics/6.2.9 Rendering intents/veraPDF test suite 6-2-9-t01-pass-b.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2373,
+      "duration_seconds": 0.0096,
+      "max_rss_kib": 44244,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.11 Version and conformance level identification/veraPDF test suite 6-7-11-t05-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 3154,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.11 Version and conformance level identification/veraPDF test suite 6-7-11-t05-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2717,
+      "duration_seconds": 0.0107,
+      "max_rss_kib": 44376,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t06-fail-o.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 3517,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t06-fail-o.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2935,
+      "duration_seconds": 0.0171,
+      "max_rss_kib": 44364,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t09-fail-l.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3743,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t09-fail-l.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2900,
+      "duration_seconds": 0.0134,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t15-pass-i.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3691,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t15-pass-i.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2739,
+      "duration_seconds": 0.011,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t16-fail-b.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 3546,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.2 Properties/veraPDF test suite 6-7-2-t16-fail-b.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2629,
+      "duration_seconds": 0.0112,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.9 Validation/veraPDF test suite 6-7-9-t04-pass-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3396,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.9 Validation/veraPDF test suite 6-7-9-t04-pass-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2658,
+      "duration_seconds": 0.0102,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-1b/6.7 Metadata/6.7.9 Validation/veraPDF test suite 6-7-9-t04-pass-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3440,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-1b/6.7 Metadata/6.7.9 Validation/veraPDF test suite 6-7-9-t04-pass-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 16861,
+      "duration_seconds": 0.0146,
+      "max_rss_kib": 46156,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2a/6.7 Logical structure/6.7.4 Natural language specification/veraPDF test suite 6-7-4-t01-fail-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 501832,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 1,
+      "size_bytes": 17952,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2a/6.7 Logical structure/6.7.4 Natural language specification/veraPDF test suite 6-7-4-t01-fail-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1880,
+      "duration_seconds": 0.003,
+      "max_rss_kib": 42700,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.1 File structure/6.1.13 Implementation limits/veraPDF test suite 6-1-13-t09-fail-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 4,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 2332,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.1 File structure/6.1.13 Implementation limits/veraPDF test suite 6-1-13-t09-fail-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 4796,
+      "duration_seconds": 0.0237,
+      "max_rss_kib": 44116,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.2 Graphics/6.2.6 Rendering intents/veraPDF test suite 6-2-6-t01-pass-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 9702,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.2 Graphics/6.2.6 Rendering intents/veraPDF test suite 6-2-6-t01-pass-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 3078,
+      "duration_seconds": 0.0106,
+      "max_rss_kib": 44364,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t01-pass-h.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 3873,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t01-pass-h.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2818,
+      "duration_seconds": 0.0278,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t02-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 3626,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t02-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2827,
+      "duration_seconds": 0.0219,
+      "max_rss_kib": 44376,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t02-fail-n.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3635,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t02-fail-n.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2772,
+      "duration_seconds": 0.0097,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t04-fail-z.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3575,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t04-fail-z.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2800,
+      "duration_seconds": 0.0288,
+      "max_rss_kib": 44364,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t06-pass-o.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3583,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t06-pass-o.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 3429,
+      "duration_seconds": 0.0181,
+      "max_rss_kib": 44364,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t09-pass-o.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 4223,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t09-pass-o.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2851,
+      "duration_seconds": 0.0098,
+      "max_rss_kib": 44372,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t13-fail-m.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3658,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t13-fail-m.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2725,
+      "duration_seconds": 0.0165,
+      "max_rss_kib": 44368,
+      "pages": 1,
+      "path": "verapdf/PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t16-pass-l.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 3521,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-2b/6.6 Metadata/6.6.2 Metadata streams/6.6.2.3 Schemas/6.6.2.3.1 General/veraPDF test suite 6-6-2-3-1-t16-pass-l.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 8260,
+      "duration_seconds": 0.0124,
+      "max_rss_kib": 44624,
+      "pages": 1,
+      "path": "verapdf/PDF_A-4/6.1 File structure/6.1.7 Name objects/veraPDF test suite 6-1-7-t01-fail-c.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 1,
+      "size_bytes": 9365,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-4/6.1 File structure/6.1.7 Name objects/veraPDF test suite 6-1-7-t01-fail-c.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 15689,
+      "duration_seconds": 0.0214,
+      "max_rss_kib": 46160,
+      "pages": 1,
+      "path": "verapdf/PDF_A-4/6.2 Graphics/6.2.10 Fonts/6.2.10.9 Use of .notdef glyph/veraPDF test suite 6-2-10-9-t01-fail-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 500990,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 1,
+      "size_bytes": 16813,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-4/6.2 Graphics/6.2.10 Fonts/6.2.10.9 Use of .notdef glyph/veraPDF test suite 6-2-10-9-t01-fail-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2023,
+      "duration_seconds": 0.0108,
+      "max_rss_kib": 45516,
+      "pages": 1,
+      "path": "verapdf/PDF_A-4/6.2 Graphics/6.2.4 Colour spaces/6.2.4.3 Uncalibrated -Device colour spaces/veraPDF test suite 6-2-4-3-t03-fail-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 0,
+      "size_bytes": 2941,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-4/6.2 Graphics/6.2.4 Colour spaces/6.2.4.3 Uncalibrated -Device colour spaces/veraPDF test suite 6-2-4-3-t03-fail-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 2916,
+      "duration_seconds": 0.0433,
+      "max_rss_kib": 49848,
+      "pages": 1,
+      "path": "verapdf/PDF_A-4/6.2 Graphics/6.2.9 Transparency/veraPDF test suite 6-2-9-t04-fail-g.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 1,
+      "size_bytes": 3877,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-4/6.2 Graphics/6.2.9 Transparency/veraPDF test suite 6-2-9-t04-fail-g.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 5438405,
+      "duration_seconds": 0.054,
+      "max_rss_kib": 72024,
+      "pages": 1,
+      "path": "verapdf/PDF_A-4/6.3 Annotations/6.3.1 Annotation types/veraPDF test suite 6-3-1-t01-fail-e.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 0,
+      "size_bytes": 10873228,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_A-4/6.3 Annotations/6.3.1 Annotation types/veraPDF test suite 6-3-1-t01-fail-e.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 47176,
+      "duration_seconds": 0.0154,
+      "max_rss_kib": 46420,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-1/5 Version identification/5-t03-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 9,
+      "size_bytes": 48655,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-1/5 Version identification/5-t03-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 21670,
+      "duration_seconds": 0.0126,
+      "max_rss_kib": 46296,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-1/7.18 Annotations/7.18.5 Links/7.18.5-t02-pass-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 4,
+      "size_bytes": 22904,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-1/7.18 Annotations/7.18.5 Links/7.18.5-t02-pass-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 22439,
+      "duration_seconds": 0.0092,
+      "max_rss_kib": 46292,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-1/7.2 Text/7.2-t21-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 3,
+      "size_bytes": 29668,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-1/7.2 Text/7.2-t21-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 1941561,
+      "duration_seconds": 0.0524,
+      "max_rss_kib": 53588,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-1/7.2 Text/7.2-t25-pass-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 3,
+      "size_bytes": 2640176,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-1/7.2 Text/7.2-t25-pass-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 14131,
+      "duration_seconds": 0.0086,
+      "max_rss_kib": 46288,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-1/7.2 Text/7.2-t29-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 1,
+      "size_bytes": 20636,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-1/7.2 Text/7.2-t29-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 80425,
+      "duration_seconds": 0.0107,
+      "max_rss_kib": 46416,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-2/8.14 Use of embedded files/8.14.1 Descriptions for embedded files/8.14.1-t01-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 2,
+      "size_bytes": 83293,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-2/8.14 Use of embedded files/8.14.1 Descriptions for embedded files/8.14.1-t01-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 36427,
+      "duration_seconds": 0.0131,
+      "max_rss_kib": 46544,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-2/8.2 Logical structure/8.2.5 Additional requirements for specific structure types/8.2.5.26 Table (Table, TR, TH, TD, THead, TBody, TFoot)/8.2.5.26-t05-pass-d.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 11,
+      "size_bytes": 42487,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-2/8.2 Logical structure/8.2.5 Additional requirements for specific structure types/8.2.5.26 Table (Table, TR, TH, TD, THead, TBody, TFoot)/8.2.5.26-t05-pass-d.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 16424,
+      "duration_seconds": 0.0087,
+      "max_rss_kib": 46284,
+      "pages": 1,
+      "path": "verapdf/PDF_UA-2/8.4 Text representation for content/8.4.4 Declaring natural language/8.4.4-t02-pass-h.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 484704,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 3,
+      "sampled_text_runs": 1,
+      "size_bytes": 17414,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "PDF_UA-2/8.4 Text representation for content/8.4.4 Declaring natural language/8.4.4-t02-pass-h.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    },
+    {
+      "composed_size_bytes": 8632,
+      "duration_seconds": 0.0131,
+      "max_rss_kib": 44880,
+      "pages": 1,
+      "path": "verapdf/TWG test files/TWG test suite A005-pdfa1-fail-a.pdf",
+      "rendered_pages": [
+        0
+      ],
+      "rendered_pixels": 250000,
+      "sampled_image_runs": 0,
+      "sampled_outline_entries": 4,
+      "sampled_text_runs": 1,
+      "size_bytes": 75605,
+      "source": {
+        "commit": "01e40281d48e2f3755006fdf596ca25caaea8634",
+        "relative_path": "TWG test files/TWG test suite A005-pdfa1-fail-a.pdf",
+        "remote": "https://github.com/veraPDF/veraPDF-corpus.git",
+        "repository": "verapdf"
+      },
+      "stage": "complete",
+      "status": "passed"
+    }
+  ],
+  "seed": 20260908,
+  "summary": {
+    "accepted_files": 99,
+    "functional_passed": true,
+    "largest_max_rss_kib": 85456,
+    "robustness_passed": true,
+    "safely_rejected_files": 1,
+    "slowest_seconds": 1.023,
+    "statuses": {
+      "passed": 99,
+      "rejected": 1
+    },
+    "total_duration_seconds": 3.87
+  },
+  "timeout_seconds": 20.0
+}

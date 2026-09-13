@@ -1,0 +1,87 @@
+{
+  "format": "openpdf-editor-golden-audit",
+  "version": "0.17.0",
+  "scale": 1.5,
+  "status": "passed",
+  "fixture": {
+    "pages": 3,
+    "features": [
+      "text",
+      "vector_graphics",
+      "raster_image",
+      "annotation",
+      "rotated_page",
+      "transparency"
+    ]
+  },
+  "noop_save": {
+    "exact": true,
+    "pages": [
+      {
+        "page_index": 0,
+        "total_pixels": 388800,
+        "changed_pixels": 0,
+        "changed_ratio": 0.0,
+        "mean_absolute_delta": 0.0,
+        "max_channel_delta": 0,
+        "changed_bbox": null
+      },
+      {
+        "page_index": 1,
+        "total_pixels": 388800,
+        "changed_pixels": 0,
+        "changed_ratio": 0.0,
+        "mean_absolute_delta": 0.0,
+        "max_channel_delta": 0,
+        "changed_bbox": null
+      },
+      {
+        "page_index": 2,
+        "total_pixels": 388800,
+        "changed_pixels": 0,
+        "changed_ratio": 0.0,
+        "mean_absolute_delta": 0.0,
+        "max_channel_delta": 0,
+        "changed_bbox": null
+      }
+    ]
+  },
+  "representative_edit": {
+    "local_only": true,
+    "outside_changed_pixels": 0,
+    "allowed_regions": [
+      [
+        68,
+        77,
+        383,
+        131
+      ],
+      [
+        68,
+        303,
+        432,
+        379
+      ],
+      [
+        446,
+        423,
+        649,
+        514
+      ]
+    ],
+    "page": {
+      "page_index": 0,
+      "total_pixels": 388800,
+      "changed_pixels": 10222,
+      "changed_ratio": 0.026291152263374487,
+      "mean_absolute_delta": 3.2189780521262,
+      "max_channel_delta": 255,
+      "changed_bbox": [
+        71,
+        80,
+        599,
+        506
+      ]
+    }
+  }
+}

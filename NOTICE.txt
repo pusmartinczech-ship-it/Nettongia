@@ -1,0 +1,16 @@
+OpenPDF Editor 0.18.0
+
+This program uses PyMuPDF, PySide6, Pillow and the offline OCR engine exposed by
+the pinned PyMuPDF/MuPDF build. The required OCR language models are bundled;
+no Tesseract installation or network download is needed at runtime.
+Exact package license files are included in the installed `licenses` directory;
+see THIRD_PARTY_NOTICES.md and DEPENDENCY_POLICY.md in the corresponding source.
+
+PyMuPDF: GNU Affero General Public License v3 or commercial license.
+PySide6: GNU LGPLv3/GPLv3 or commercial license, depending on distribution.
+Pillow: HPND license.
+Tesseract OCR and Leptonica (embedded in the PyMuPDF build): Apache License 2.0
+and BSD-style license. Bundled language-model notice: `vendor/ocr/LICENSE-tessdata.txt`.
+
+Project source is provided under AGPL-3.0-or-later terms.
+License text: https://www.gnu.org/licenses/agpl-3.0.txt

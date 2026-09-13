@@ -1,0 +1,97 @@
+name: Windows build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "main"
+    tags:
+      - "v*"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12.11"
+          cache: pip
+          cache-dependency-path: requirements-windows.lock
+
+      - name: Restore hash-pinned offline OCR bundle
+        shell: powershell
+        run: python ./tools/fetch_ocr_assets.py
+
+      - name: Install native build tools
+        shell: powershell
+        run: |
+          choco install innosetup --version=6.2.2 --yes --no-progress
+
+      - name: Build and self-test installer
+        shell: powershell
+        run: ./tools/build_windows.ps1
+
+      - name: Run source regression suite
+        shell: powershell
+        run: ./.venv-build/Scripts/python.exe -m pytest -q
+
+      - name: Test OCR from a clean portable extraction
+        shell: powershell
+        run: |
+          $archive = Get-ChildItem dist\OpenPDF_Editor_*-portable.zip | Select-Object -First 1
+          $cleanRoot = Join-Path $env:RUNNER_TEMP "Čistý OCR balíček žluťoučký kůň"
+          Remove-Item $cleanRoot -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive $archive.FullName -DestinationPath $cleanRoot
+          Remove-Item Env:TESSDATA_PREFIX -ErrorAction SilentlyContinue
+          if (Get-Command tesseract.exe -ErrorAction SilentlyContinue) {
+            throw "Acceptance runner unexpectedly has a system Tesseract installation."
+          }
+          $executable = Get-ChildItem $cleanRoot -Filter OpenPDFEditor.exe -Recurse | Select-Object -First 1
+          & $executable.FullName --ocr-acceptance (Join-Path $cleanRoot "výsledek OCR.json")
+          if ($LASTEXITCODE -ne 0) { throw "Clean portable OCR acceptance failed." }
+          $result = Get-Content (Join-Path $cleanRoot "výsledek OCR.json") -Raw | ConvertFrom-Json
+          if (($result.status -ne "passed") -or
+              ($result.checks.isolated_ocr_execution -ne "passed") -or
+              ($result.checks.process_cancellation -ne "passed")) {
+            throw "Clean portable package did not pass the complete OCR matrix."
+          }
+
+      - name: Upload unsigned release candidate
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenPDF-Editor-Windows-unsigned
+          path: |
+            dist/installer/*.exe
+            dist/*-portable.zip
+            dist/self-test.json
+            dist/distribution-size.json
+            BUILD_ENVIRONMENT.txt
+          if-no-files-found: error
+
+      - name: Submit free SignPath signing request
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: dist/signed
+
+      - name: Upload signed release candidate
+        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenPDF-Editor-Windows-signed
+          path: dist/signed
+          if-no-files-found: error

@@ -1,0 +1,37 @@
+{
+  "application_version": "0.15.0",
+  "file": "33-E00-01EKFA2A22_2018-03-16_CZ.pdf",
+  "pages": 798,
+  "cycles": 12,
+  "duration_seconds": {
+    "minimum": 1.4165,
+    "average": 2.252,
+    "maximum": 3.4155
+  },
+  "parent_rss_start_bytes": 161521664,
+  "parent_rss_after_first_cycle_bytes": 181784576,
+  "parent_rss_final_bytes": 181809152,
+  "activation_and_first_cycle_growth_bytes": 20262912,
+  "steady_state_growth_bytes": 24576,
+  "parent_rss_samples_bytes": [
+    181784576,
+    181788672,
+    181792768,
+    181792768,
+    181792768,
+    181796864,
+    181800960,
+    181800960,
+    181805056,
+    181805056,
+    181809152,
+    181809152
+  ],
+  "parent_rss_peak_bytes": 181809152,
+  "child_rss_peak_bytes": null,
+  "child_rss_measurement_available": false,
+  "combined_parent_child_peak_bytes": null,
+  "leaked_inspection_workspaces": [],
+  "steady_state_growth_limit_bytes": 67108864,
+  "status": "passed"
+}

@@ -1,0 +1,121 @@
+{
+  "application_version": "0.14.1",
+  "platform": "posix",
+  "profiles": [
+    {
+      "file": "33-E00-01EKFA2A22_2018-03-16_CZ.pdf",
+      "size_bytes": 27854429,
+      "pages": 798,
+      "open_seconds": 0.1882,
+      "activation_seconds": 0.0859,
+      "page_samples": [
+        {
+          "page": 1,
+          "preview_seconds": 0.0455,
+          "detail_seconds": 0.2201,
+          "cache_mib": 9.0
+        },
+        {
+          "page": 400,
+          "preview_seconds": 0.0733,
+          "detail_seconds": 0.1812,
+          "cache_mib": 18.0
+        },
+        {
+          "page": 798,
+          "preview_seconds": 0.1087,
+          "detail_seconds": 0.2057,
+          "cache_mib": 27.0
+        }
+      ],
+      "revisit": {
+        "preview_seconds": 0.029,
+        "detail_seconds": 0.0031,
+        "cache_hits": 4
+      },
+      "scroll_stress_seconds": 0.8991,
+      "cache": {
+        "bytes": 38952960,
+        "hits": 38,
+        "misses": 18,
+        "evictions": 0
+      },
+      "rss_start_bytes": 87969792,
+      "rss_observed_peak_bytes": 333852672,
+      "rss_final_bytes": 333852672
+    },
+    {
+      "file": "KS_Teil_2_2_01_KS26_ROB-KUKA_Projektspezifische_Vorgaben.pdf",
+      "size_bytes": 1600938,
+      "pages": 38,
+      "open_seconds": 0.0012,
+      "activation_seconds": 0.028,
+      "page_samples": [
+        {
+          "page": 1,
+          "preview_seconds": 0.0224,
+          "detail_seconds": 0.0134,
+          "cache_mib": 9.0
+        },
+        {
+          "page": 20,
+          "preview_seconds": 0.0385,
+          "detail_seconds": 0.0183,
+          "cache_mib": 18.0
+        },
+        {
+          "page": 38,
+          "preview_seconds": 0.069,
+          "detail_seconds": 0.017,
+          "cache_mib": 27.0
+        }
+      ],
+      "revisit": {
+        "preview_seconds": 0.0597,
+        "detail_seconds": 0.0037,
+        "cache_hits": 4
+      },
+      "scroll_stress_seconds": 0.5966,
+      "cache": {
+        "bytes": 39567360,
+        "hits": 38,
+        "misses": 18,
+        "evictions": 0
+      },
+      "rss_start_bytes": 298254336,
+      "rss_observed_peak_bytes": 388984832,
+      "rss_final_bytes": 388984832
+    },
+    {
+      "file": "LV-15D_150026_________00_____ZSB_AFO_210_BLATT_001.pdf",
+      "size_bytes": 1688647,
+      "pages": 1,
+      "open_seconds": 0.0007,
+      "activation_seconds": 0.5202,
+      "page_samples": [
+        {
+          "page": 1,
+          "preview_seconds": 0.5833,
+          "detail_seconds": 0.5441,
+          "cache_mib": 9.0
+        }
+      ],
+      "revisit": {
+        "preview_seconds": 0.3084,
+        "detail_seconds": 0.0031,
+        "cache_hits": 4
+      },
+      "scroll_stress_seconds": 1.6984,
+      "cache": {
+        "bytes": 29233152,
+        "hits": 33,
+        "misses": 19,
+        "evictions": 0
+      },
+      "rss_start_bytes": 388968448,
+      "rss_observed_peak_bytes": 410062848,
+      "rss_final_bytes": 410062848
+    }
+  ],
+  "process_peak_rss_bytes": 409542656
+}
