@@ -153,7 +153,11 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     app.processEvents()
     font_editor = window.text_font_box.lineEdit()
     assert font_editor.cursorPosition() == 0
-    assert font_editor.toolTip() == window.text_font_box.currentText()
+    expected_font_name = (
+        window.text_font_box.currentText().strip()
+        or window.text_font_box.currentFont().family()
+    )
+    assert font_editor.toolTip() == expected_font_name
 
     editor = InlineTextEditor("Text", "Arial", 12, False, False, False, QColor("#000000"), True)
     assert "background:rgba(255,255,255,252)" in editor.styleSheet().replace(" ", "")
