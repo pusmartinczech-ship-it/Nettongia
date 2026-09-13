@@ -76,6 +76,22 @@ def _builtin_pdf_font_name(font_family: str, bold: bool, italic: bool) -> str:
     }[(bold, italic)]
 
 
+def _can_use_simple_font_encoding(text: str) -> bool:
+    """Use a simple TrueType font when WinAnsi can represent the text.
+
+    PyMuPDF's composite Identity-H mapping can expose ordinary spaces from
+    some Windows system fonts (notably Arial) as U+00A0. A simple font keeps
+    ASCII and Western-European text searchable with ordinary spaces. Other
+    scripts retain the composite Unicode mapping.
+    """
+
+    try:
+        text.encode("cp1252")
+    except UnicodeEncodeError:
+        return False
+    return True
+
+
 @dataclass(frozen=True)
 class TextRun:
     key: str
@@ -960,7 +976,12 @@ class PdfEngine:
         font_family = edit.font_family or run.font_name
         font_file = resolve_font(font_family, bold, italic)
         fallback_font_name = _builtin_pdf_font_name(font_family, bold, italic)
-        font_name = self._font_resource_name(font_file) if font_file else fallback_font_name
+        simple_font = bool(font_file and _can_use_simple_font_encoding(edit.new_text))
+        font_name = (
+            self._font_resource_name(font_file, simple=simple_font)
+            if font_file
+            else fallback_font_name
+        )
         font_size = max(3.0, float(edit.font_size))
         target_bbox = edit.bbox or run.bbox
         direction = _normalized_text_direction(run.direction)
@@ -1027,6 +1048,7 @@ class PdfEngine:
             lineheight=1.15,
             fontname=font_name,
             fontfile=font_file,
+            set_simple=int(simple_font),
             color=color,
             morph=morph,
             overlay=True,
@@ -1139,7 +1161,12 @@ class PdfEngine:
             placement.bold,
             placement.italic,
         )
-        font_name = self._font_resource_name(font_file) if font_file else fallback_font_name
+        simple_font = bool(font_file and _can_use_simple_font_encoding(placement.text))
+        font_name = (
+            self._font_resource_name(font_file, simple=simple_font)
+            if font_file
+            else fallback_font_name
+        )
         if font_file:
             try:
                 font = pymupdf.Font(fontfile=font_file)
@@ -1165,6 +1192,7 @@ class PdfEngine:
                 fontsize=attempted_size,
                 fontname=font_name,
                 fontfile=font_file,
+                set_simple=int(simple_font),
                 color=color,
                 lineheight=1.15,
                 align=pymupdf.TEXT_ALIGN_LEFT,
@@ -1184,6 +1212,7 @@ class PdfEngine:
                 fontsize=font_size,
                 fontname=font_name,
                 fontfile=font_file,
+                set_simple=int(simple_font),
                 color=color,
                 overlay=True,
             )
@@ -1216,9 +1245,9 @@ class PdfEngine:
         )
 
     @staticmethod
-    def _font_resource_name(font_file: str) -> str:
+    def _font_resource_name(font_file: str, *, simple: bool = False) -> str:
         checksum = zlib.crc32(font_file.encode("utf-8")) & 0xFFFFFFFF
-        return f"OPDF{checksum:08x}"
+        return f"OPDF{checksum:08x}{'S' if simple else 'U'}"
 
     @staticmethod
     def _recompress_images(document: pymupdf.Document, target_dpi: int, jpeg_quality: int) -> int:

@@ -145,7 +145,10 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     assert size_popup_palette.color(QPalette.Active, QPalette.Base) == QColor("#ffffff")
     assert size_popup_palette.color(QPalette.Active, QPalette.Text) == QColor("#111820")
 
-    longest_family = max(QFontDatabase.families(), key=len)
+    # Headless Windows runners can expose no system font families even though
+    # the same Qt build enumerates them in an interactive desktop session.
+    families = QFontDatabase.families()
+    longest_family = max(families, key=len) if families else "Unavailable Test Font Family"
     window.text_font_box.setCurrentFont(QFont(longest_family))
     app.processEvents()
     font_editor = window.text_font_box.lineEdit()
