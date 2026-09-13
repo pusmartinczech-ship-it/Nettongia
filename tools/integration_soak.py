@@ -140,8 +140,10 @@ def run_soak(
             for path in workspaces_after - workspaces_before
             if path != root_path
         )
+        rss_measurement_available = all(value > 0 for value in samples)
         passed = (
             not leaked
+            and rss_measurement_available
             and steady_growth <= STEADY_STATE_GROWTH_LIMIT
             and post_warmup_peak_growth <= POST_WARMUP_PEAK_GROWTH_LIMIT
         )
@@ -161,6 +163,7 @@ def run_soak(
             "rss_final_bytes": rss_final,
             "rss_peak_bytes": peak,
             "rss_samples_bytes": samples,
+            "rss_measurement_available": rss_measurement_available,
             "steady_state_early_median_bytes": early_median,
             "steady_state_late_median_bytes": late_median,
             "steady_state_growth_bytes": steady_growth,
