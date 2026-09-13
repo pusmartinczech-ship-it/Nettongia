@@ -104,7 +104,20 @@ def run_portable_ocr_acceptance(result_path: str | Path) -> int:
         )
         completed = _run_worker(success_job)
         if completed.returncode != 0:
-            raise RuntimeError("The isolated packaged OCR worker failed.")
+            worker_detail = "no worker result was created"
+            if success_result.exists():
+                try:
+                    _failed_result, worker_error = read_ocr_result(
+                        success_result, success_output
+                    )
+                    if worker_error:
+                        worker_detail = worker_error
+                except (OSError, TypeError, ValueError) as exc:
+                    worker_detail = f"unreadable worker result ({type(exc).__name__})"
+            raise RuntimeError(
+                "The isolated packaged OCR worker failed "
+                f"with exit code {completed.returncode}: {worker_detail}"
+            )
         worker_result, worker_error = read_ocr_result(success_result, success_output)
         if worker_error or worker_result is None or worker_result["processed_pages"] != 1:
             raise RuntimeError("The isolated packaged OCR result is invalid.")
