@@ -4,6 +4,16 @@ Updated: 2026-09-13
 
 ## In-progress stage: portable OCR acceptance
 
+- Windows Server 2022 validation on 2026-09-13 now builds the portable ZIP and
+  Inno Setup installer successfully; the packaged self-test and the complete
+  source suite passed (**132 passed, 21 conditional tests skipped**).
+- The first clean portable OCR invocation returned a non-zero exit code before
+  the acceptance matrix could be confirmed. Stage 7 therefore remains open.
+  Workflow run 34748344611 is the latest completed evidence.
+- Commit `2065b2608d43fe9cd3b69e8e5fe5a4950e57203d` adds deterministic capture of
+  the packaged OCR acceptance JSON. Its Windows run 34748573829 is queued for
+  a hosted runner; no failure has been reported for that diagnostic run yet.
+
 - Added `--ocr-acceptance`, a non-GUI packaged acceptance mode that executes an
   isolated OCR worker and validates success, a missing-language failure,
   tamper detection, Unicode paths and hard process cancellation from the exact
