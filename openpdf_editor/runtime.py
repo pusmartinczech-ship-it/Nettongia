@@ -4,12 +4,50 @@ import os
 import sys
 import hashlib
 import json
+import shutil
+import tempfile
 from pathlib import Path
 
 
 _DLL_HANDLES: list[object] = []
 REQUIRED_OCR_LANGUAGES = frozenset({"ces", "slk", "pol", "deu", "eng", "osd"})
 REQUIRED_OCR_USER_LANGUAGES = REQUIRED_OCR_LANGUAGES - {"osd"}
+
+
+def _windows_compatible_ocr_root(root: Path) -> Path:
+    """Return an ASCII cache when Windows Tesseract cannot open a Unicode path."""
+
+    if sys.platform != "win32" or str(root).isascii():
+        return root
+    if not verify_bundled_ocr(root):
+        return root
+    manifest_bytes = (root / "SHA256SUMS.json").read_bytes()
+    cache_parent = Path(tempfile.gettempdir()) / "OpenPDFEditorOCR"
+    if not str(cache_parent).isascii():
+        return root
+    cache_root = cache_parent / hashlib.sha256(manifest_bytes).hexdigest()[:16]
+    if verify_bundled_ocr(cache_root):
+        return cache_root
+
+    cache_parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(tempfile.mkdtemp(prefix="stage-", dir=cache_parent))
+    try:
+        shutil.copytree(root, staging_root, dirs_exist_ok=True)
+        if not verify_bundled_ocr(staging_root):
+            return root
+        try:
+            os.replace(staging_root, cache_root)
+        except OSError:
+            if verify_bundled_ocr(cache_root):
+                shutil.rmtree(staging_root, ignore_errors=True)
+                return cache_root
+            return staging_root
+        return cache_root
+    finally:
+        if staging_root.exists() and staging_root != cache_root:
+            # A returned staging directory must survive for the current process.
+            if not verify_bundled_ocr(staging_root):
+                shutil.rmtree(staging_root, ignore_errors=True)
 
 
 def resource_root() -> Path:
@@ -47,7 +85,8 @@ def bundled_tessdata_path(*, verify: bool = False) -> Path | None:
         return None
     if verify and not verify_bundled_ocr(root):
         return None
-    return tessdata
+    root = _windows_compatible_ocr_root(root)
+    return root / "tessdata"
 
 
 def verify_bundled_ocr(root: Path | None = None) -> bool:
