@@ -96,7 +96,7 @@ $SizeReport | ConvertTo-Json -Depth 3 |
 
 if (-not $SkipInstaller) {
     $IsccCandidates = @(
-        "$env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
+        "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
     )
     $Iscc = $IsccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
