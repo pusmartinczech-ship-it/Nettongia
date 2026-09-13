@@ -190,8 +190,14 @@ class InspectionCoordinator(QObject):
         self._forced_error = None
         if process is not None:
             try:
+                # Release native pipe/process handles before removing the
+                # workspace.  Windows otherwise intermittently keeps a job or
+                # result file locked until the deferred QObject destruction,
+                # leaving an inspection directory behind after cancellation.
+                process.close()
                 process.deleteLater()
             except RuntimeError:
                 pass
         if workspace is not None:
             shutil.rmtree(workspace, ignore_errors=True)
+
