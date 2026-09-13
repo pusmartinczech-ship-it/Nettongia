@@ -2,6 +2,30 @@
 
 Updated: 2026-09-13
 
+## In-progress stage: integration candidate
+
+- Draft pull request 1, commit `987bf89ae931094b1d506b0b8716cd907b0d125c`,
+  passed GitHub-hosted Windows Server 2022 workflow run 34779226429.
+- The complete source regression passed: **133 tests passed, 21 conditional
+  tests skipped**. The frozen application self-test and clean portable OCR
+  acceptance matrix also passed.
+- The final golden-PDF audit passed. All three no-op pages were pixel exact and
+  the representative edit changed zero pixels outside its declared regions.
+- The repeated GUI memory gate completed 60 open/render/zoom/scroll/close
+  cycles and 180 page renders with real Windows working-set measurements.
+  Steady-state RSS growth was 7,999,488 bytes; post-warmup peak growth was
+  10,147,840 bytes. No temporary inspection or render workspace remained.
+- The gate exposed and fixed two false-success risks: command-line Qt deferred
+  deletions are now drained by the harness, and unavailable Windows RSS
+  measurements fail instead of being accepted as zero. It also exposed and
+  fixed a real Windows cleanup race by closing native QProcess handles before
+  removing an inspection workspace.
+- Unsigned integration artifact SHA-256:
+  `abbf7599fa2109fa08b521988b7c1e89eae87e236aff8cf1d532c0dc95b7432d`.
+- Version remains 0.18.0 and stage 8 remains open. The candidate is unsigned;
+  SignPath approval/configuration and acceptance on clean Windows 10 and
+  Windows 11 installations have not yet been completed.
+
 ## Completed stage: portable OCR acceptance
 
 - GitHub-hosted Windows Server 2022 run 34759413759 completed successfully at
