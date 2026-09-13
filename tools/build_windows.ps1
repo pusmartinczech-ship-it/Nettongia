@@ -30,8 +30,12 @@ $AppDirectory = Join-Path $ProjectRoot "dist\OpenPDFEditor"
 Copy-Item BUILD_ENVIRONMENT.txt $AppDirectory
 
 $SelfTest = Join-Path $ProjectRoot "dist\self-test.json"
-& (Join-Path $AppDirectory "OpenPDFEditor.exe") --self-test $SelfTest
-if ($LASTEXITCODE -ne 0) { throw "The packaged application self-test failed." }
+$PackagedExecutable = Join-Path $AppDirectory "OpenPDFEditor.exe"
+$SelfTestProcess = Start-Process -FilePath $PackagedExecutable `
+    -ArgumentList @("--self-test", ('"' + $SelfTest + '"')) `
+    -Wait -PassThru
+if ($SelfTestProcess.ExitCode -ne 0) { throw "The packaged application self-test failed." }
+if (-not (Test-Path $SelfTest)) { throw "The packaged application did not create its self-test report." }
 $Result = Get-Content $SelfTest -Raw | ConvertFrom-Json
 if ($Result.status -ne "passed") { throw "The packaged application self-test did not pass." }
 if ((-not $Result.checks.ocr_ready) -or (-not $Result.checks.ocr_assets_verified)) {

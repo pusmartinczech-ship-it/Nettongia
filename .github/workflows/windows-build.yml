@@ -55,9 +55,13 @@ jobs:
             throw "Acceptance runner unexpectedly has a system Tesseract installation."
           }
           $executable = Get-ChildItem $cleanRoot -Filter OpenPDFEditor.exe -Recurse | Select-Object -First 1
-          & $executable.FullName --ocr-acceptance (Join-Path $cleanRoot "výsledek OCR.json")
-          if ($LASTEXITCODE -ne 0) { throw "Clean portable OCR acceptance failed." }
-          $result = Get-Content (Join-Path $cleanRoot "výsledek OCR.json") -Raw | ConvertFrom-Json
+          $acceptanceResult = Join-Path $cleanRoot "výsledek OCR.json"
+          $acceptanceProcess = Start-Process -FilePath $executable.FullName `
+            -ArgumentList @("--ocr-acceptance", ('"' + $acceptanceResult + '"')) `
+            -Wait -PassThru
+          if ($acceptanceProcess.ExitCode -ne 0) { throw "Clean portable OCR acceptance failed." }
+          if (-not (Test-Path $acceptanceResult)) { throw "OCR acceptance report was not created." }
+          $result = Get-Content $acceptanceResult -Raw | ConvertFrom-Json
           if (($result.status -ne "passed") -or
               ($result.checks.isolated_ocr_execution -ne "passed") -or
               ($result.checks.process_cancellation -ne "passed")) {
