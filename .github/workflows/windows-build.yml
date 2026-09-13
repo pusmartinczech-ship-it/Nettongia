@@ -33,7 +33,7 @@ jobs:
       - name: Install native build tools
         shell: powershell
         run: |
-          choco install innosetup --version=6.2.2 --yes --no-progress
+          choco install innosetup --version=6.7.1 --allow-downgrade --yes --no-progress
 
       - name: Build and self-test installer
         shell: powershell
