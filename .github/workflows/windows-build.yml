@@ -3,6 +3,8 @@ name: Windows build
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - "v*"
 
@@ -40,6 +42,14 @@ jobs:
       - name: Run source regression suite
         shell: powershell
         run: ./.venv-build/Scripts/python.exe -m pytest -q
+
+      - name: Run final golden PDF audit
+        shell: powershell
+        run: ./.venv-build/Scripts/python.exe ./tools/golden_pdf_audit.py --output-dir dist/integration-golden
+
+      - name: Run repeated GUI memory soak
+        shell: powershell
+        run: ./.venv-build/Scripts/python.exe ./tools/integration_soak.py --cycles 60 --timeout 20 --output dist/integration-memory.json
 
       - name: Test OCR from a clean portable extraction
         shell: powershell
@@ -79,6 +89,9 @@ jobs:
             dist/self-test.json
             dist/distribution-size.json
             dist/portable-ocr-acceptance.json
+            dist/integration-memory.json
+            dist/integration-golden/*.json
+            dist/integration-golden/*.md
             BUILD_ENVIRONMENT.txt
           if-no-files-found: error
 

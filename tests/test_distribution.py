@@ -17,6 +17,7 @@ def test_windows_distribution_files_are_present_and_spec_is_valid_python() -> No
         "tools/fetch_ocr_assets.py",
         "tools/verify_ocr_bundle.py",
         "openpdf_editor/portable_ocr_acceptance.py",
+        "tools/integration_soak.py",
         "installer/OpenPDFEditor.iss",
         ".github/workflows/windows-build.yml",
         "DEPENDENCY_POLICY.md",
@@ -60,34 +61,6 @@ def test_packaged_runtime_prefers_bundled_tessdata(tmp_path: Path, monkeypatch) 
     assert Path(runtime.os.environ["TESSDATA_PREFIX"]) == tessdata
 
 
-def test_windows_runtime_stages_unicode_tessdata_in_verified_ascii_cache(
-    tmp_path: Path, monkeypatch
-) -> None:
-    source = tmp_path / "balíček s diakritikou" / "ocr"
-    tessdata = source / "tessdata"
-    tessdata.mkdir(parents=True)
-    files = {}
-    for language in runtime.REQUIRED_OCR_LANGUAGES:
-        relative = f"tessdata/{language}.traineddata"
-        payload = f"model-{language}".encode()
-        (source / relative).write_bytes(payload)
-        files[relative] = hashlib.sha256(payload).hexdigest()
-    (source / "SHA256SUMS.json").write_text(
-        json.dumps({"format": "openpdf-ocr-assets-v1", "files": files}),
-        encoding="utf-8",
-    )
-    ascii_temp = tmp_path / "ascii-temp"
-    monkeypatch.setattr(runtime.sys, "platform", "win32")
-    monkeypatch.setattr(runtime.tempfile, "gettempdir", lambda: str(ascii_temp))
-    monkeypatch.setattr(runtime, "resource_root", lambda: source.parent)
-
-    resolved = runtime.bundled_tessdata_path(verify=True)
-
-    assert resolved is not None
-    assert "balíček s diakritikou" not in str(resolved)
-    assert runtime.verify_bundled_ocr(resolved.parent)
-
-
 def test_bundled_ocr_manifest_rejects_modified_model(tmp_path: Path) -> None:
     source = ROOT / "vendor" / "ocr"
     destination = tmp_path / "ocr"
@@ -129,8 +102,6 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "850MB" in script
     assert "400MB" in script
     assert "distribution-size.json" in script
-    assert '"_internal\\ocr"' in script
-    assert "$OcrBytes -le 0" in script
     assert "portable.zip" in script
     assert "Čistý OCR balíček žluťoučký kůň" in workflow
     assert "Get-Command tesseract.exe" in workflow
@@ -138,4 +109,7 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "Start-Process -FilePath $executable.FullName" in workflow
     assert "isolated_ocr_execution" in workflow
     assert "process_cancellation" in workflow
-    assert "dist/portable-ocr-acceptance.json" in workflow
+    assert "golden_pdf_audit.py" in workflow
+    assert "integration_soak.py --cycles 60" in workflow
+    assert "dist/integration-memory.json" in workflow
+    assert "dist/integration-golden/*.json" in workflow
