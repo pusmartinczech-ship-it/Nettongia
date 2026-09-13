@@ -129,6 +129,8 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "850MB" in script
     assert "400MB" in script
     assert "distribution-size.json" in script
+    assert '"_internal\\ocr"' in script
+    assert "$OcrBytes -le 0" in script
     assert "portable.zip" in script
     assert "Čistý OCR balíček žluťoučký kůň" in workflow
     assert "Get-Command tesseract.exe" in workflow
@@ -136,3 +138,4 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "Start-Process -FilePath $executable.FullName" in workflow
     assert "isolated_ocr_execution" in workflow
     assert "process_cancellation" in workflow
+    assert "dist/portable-ocr-acceptance.json" in workflow

@@ -80,6 +80,7 @@ jobs:
             dist/*-portable.zip
             dist/self-test.json
             dist/distribution-size.json
+            dist/portable-ocr-acceptance.json
             BUILD_ENVIRONMENT.txt
           if-no-files-found: error
 

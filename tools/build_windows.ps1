@@ -59,12 +59,22 @@ $SourceArchive = Join-Path $AppDirectory "OpenPDF_Editor_$Version-source.zip"
 Compress-Archive -Path (Join-Path $SourceStage "*") -DestinationPath $SourceArchive -Force
 Remove-Item -Recurse -Force $SourceStage
 
-$OcrBytes = (Get-ChildItem (Join-Path $AppDirectory "ocr") -File -Recurse |
+$PackagedOcrRoot = Join-Path $AppDirectory "_internal\ocr"
+if (-not (Test-Path $PackagedOcrRoot)) {
+    $PackagedOcrRoot = Join-Path $AppDirectory "ocr"
+}
+if (-not (Test-Path $PackagedOcrRoot)) {
+    throw "The packaged OCR asset directory is missing."
+}
+$OcrBytes = (Get-ChildItem $PackagedOcrRoot -File -Recurse |
     Measure-Object -Property Length -Sum).Sum
 $DirectoryBytes = (Get-ChildItem $AppDirectory -File -Recurse |
     Measure-Object -Property Length -Sum).Sum
 $MaxOcrBytes = 32MB
 $MaxDirectoryBytes = 850MB
+if ($OcrBytes -le 0) {
+    throw "Bundled OCR data is empty."
+}
 if ($OcrBytes -gt $MaxOcrBytes) {
     throw "Bundled OCR data exceeds the 32 MiB release budget."
 }
