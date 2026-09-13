@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv*/
+build/
+dist/
+*.spec.bak
+
+# The release/checkpoint ZIP contains these pinned assets. A clean Git checkout
+# restores and verifies the identical files with tools/fetch_ocr_assets.py.
+vendor/ocr/tessdata/*.traineddata
+
