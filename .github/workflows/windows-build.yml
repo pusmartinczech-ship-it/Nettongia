@@ -59,9 +59,11 @@ jobs:
           $acceptanceProcess = Start-Process -FilePath $executable.FullName `
             -ArgumentList @("--ocr-acceptance", ('"' + $acceptanceResult + '"')) `
             -Wait -PassThru
-          if ($acceptanceProcess.ExitCode -ne 0) { throw "Clean portable OCR acceptance failed." }
           if (-not (Test-Path $acceptanceResult)) { throw "OCR acceptance report was not created." }
+          Get-Content $acceptanceResult -Raw | Write-Host
+          Copy-Item $acceptanceResult dist\portable-ocr-acceptance.json -Force
           $result = Get-Content $acceptanceResult -Raw | ConvertFrom-Json
+          if ($acceptanceProcess.ExitCode -ne 0) { throw "Clean portable OCR acceptance failed." }
           if (($result.status -ne "passed") -or
               ($result.checks.isolated_ocr_execution -ne "passed") -or
               ($result.checks.process_cancellation -ne "passed")) {
