@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="description" content="Nettongia PDF Editor — a privacy-first offline PDF editor for Windows. Edit text, pages and images without uploading documents.">
-  <meta name="theme-color" content="#176f7a">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fffaf1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b1719" media="(prefers-color-scheme: dark)">
   <title>Nettongia PDF Editor — Your PDFs stay yours</title>
   <link rel="icon" href="assets/mascot.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
@@ -67,6 +69,19 @@
       </div>
     </section>
 
+    <section class="community shell" aria-labelledby="community-title">
+      <div>
+        <p class="eyebrow" data-en="NETTONGIA COMMUNITY" data-cs="KOMUNITA NETTONGIA">NETTONGIA COMMUNITY</p>
+        <h2 id="community-title" data-en="Growing one private PDF at a time." data-cs="Rosteme s každým soukromě upraveným PDF.">Growing one private PDF at a time.</h2>
+        <p data-en="Only aggregate totals are stored. No visitor identifiers, document data or tracking profiles." data-cs="Ukládají se pouze souhrnné počty. Žádné identifikátory návštěvníků, data dokumentů ani sledovací profily.">Only aggregate totals are stored. No visitor identifiers, document data or tracking profiles.</p>
+      </div>
+      <div class="counter-grid" aria-live="polite">
+        <div class="counter-card"><strong id="visit-count">—</strong><span data-en="anonymous visits" data-cs="anonymních návštěv">anonymous visits</span></div>
+        <div class="counter-card"><strong id="download-count">—</strong><span data-en="download starts" data-cs="zahájených stažení">download starts</span></div>
+        <p id="counter-status" class="counter-status" data-en="Live counters are temporarily unavailable." data-cs="Živá počítadla jsou dočasně nedostupná." hidden>Live counters are temporarily unavailable.</p>
+      </div>
+    </section>
+
     <section class="proof">
       <div><strong>135</strong><span data-en="Windows tests passed" data-cs="Windows testů prošlo">Windows tests passed</span></div>
       <div><strong>0</strong><span data-en="unexpected golden pixels" data-cs="neočekávaných golden pixelů">unexpected golden pixels</span></div>
@@ -101,7 +116,7 @@
           <h2>Nettongia PDF Editor <span>0.18.0</span></h2>
           <p data-en="Windows x64 portable ZIP and installer. This preview passed the complete Windows CI gate but is not yet code-signed." data-cs="Přenosný ZIP a instalátor pro Windows x64. Tento náhled prošel kompletní Windows CI bránou, ale zatím není digitálně podepsaný.">Windows x64 portable ZIP and installer. This preview passed the complete Windows CI gate but is not yet code-signed.</p>
           <div class="actions">
-            <a class="button primary" href="https://github.com/pusmartinczech-ship-it/Nettongia/actions/runs/34863312113/artifacts/10356292038" data-en="Download verified preview" data-cs="Stáhnout ověřený náhled">Download verified preview</a>
+            <a class="button primary" data-download href="https://github.com/pusmartinczech-ship-it/Nettongia/actions/runs/34863312113/artifacts/10356292038" data-en="Download verified preview" data-cs="Stáhnout ověřený náhled">Download verified preview</a>
             <a class="button secondary" href="code-signing-policy.html" data-en="Signing status" data-cs="Stav podpisu">Signing status</a>
           </div>
           <small data-en="A GitHub account with repository access is required until the public release is published." data-cs="Do vydání veřejné verze je vyžadován GitHub účet s přístupem k repozitáři.">A GitHub account with repository access is required until the public release is published.</small>
