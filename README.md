@@ -254,9 +254,9 @@ After a confirmed document change, Nettongia PDF Editor waits briefly for furthe
 
 At the next start, choose **Restore** to reopen the recovered state or **Discard** to remove it. Recovered work is deliberately marked as unsaved until you save the PDF. A successful save, an explicit discard, or a normal document close removes the recovery data. A damaged recovery file is not executed or silently discarded: it is renamed with a `.damaged-<date>` suffix and its location is shown for diagnostics.
 
-On Windows the current snapshot is stored at `%LOCALAPPDATA%\Nettongia PDF Editor\Recovery\current.openpdf-recovery`. It can contain the source document and inserted images or signatures, remains exclusively on the computer, and is never transmitted automatically.
+For seamless upgrades, Windows recovery data remains at the established `%LOCALAPPDATA%\OpenPDF Editor\Recovery\current.openpdf-recovery`. It can contain the source document and inserted images or signatures, remains exclusively on the computer, and is never transmitted automatically.
 
-If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at `%LOCALAPPDATA%\Nettongia PDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
+If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at the established `%LOCALAPPDATA%\OpenPDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
 
 The most recent non-empty crash log is preserved across the next start as
 `crash.previous.log`. Its raw content may contain technical paths or exception
