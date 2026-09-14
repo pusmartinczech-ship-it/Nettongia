@@ -223,7 +223,7 @@ class EditTextDialog(QDialog):
         form.addRow("", self.fit_width)
 
         hint = QLabel(
-            "The selected PDF font may be a limited embedded subset. OpenPDF Editor uses the closest installed font for new text."
+            "The selected PDF font may be a limited embedded subset. Nettongia PDF Editor uses the closest installed font for new text."
         )
         hint.setWordWrap(True)
 

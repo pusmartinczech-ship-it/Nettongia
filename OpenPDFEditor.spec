@@ -40,7 +40,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="OpenPDFEditor",
+    name="NettongiaPDFEditor",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -51,6 +51,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(project_root / "assets" / "nettongia.ico"),
 )
 coll = COLLECT(
     exe,
@@ -59,5 +60,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="OpenPDFEditor",
+    name="NettongiaPDFEditor",
 )

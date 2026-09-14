@@ -3,7 +3,7 @@ setlocal
 cd /d "%~dp0"
 
 if not exist ".venv\Scripts\python.exe" (
-    echo Preparing OpenPDF Editor for the first run...
+    echo Preparing Nettongia PDF Editor for the first run...
     py -3 -m venv .venv
     if errorlevel 1 goto :error
     ".venv\Scripts\python.exe" -m pip install --upgrade pip
@@ -14,12 +14,12 @@ if not exist ".venv\Scripts\python.exe" (
 
 ".venv\Scripts\python.exe" -c "import pymupdf, PySide6, PIL" >nul 2>&1
 if errorlevel 1 (
-    echo Updating OpenPDF Editor dependencies...
+    echo Updating Nettongia PDF Editor dependencies...
     ".venv\Scripts\python.exe" -m pip install -r requirements.txt
     if errorlevel 1 goto :error
 )
 
-start "OpenPDF Editor" ".venv\Scripts\pythonw.exe" run_editor.py
+start "Nettongia PDF Editor" ".venv\Scripts\pythonw.exe" run_editor.py
 exit /b 0
 
 :error

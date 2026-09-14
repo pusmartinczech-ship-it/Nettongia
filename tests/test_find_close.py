@@ -16,8 +16,8 @@ from openpdf_editor.main_window import MainWindow
 
 def _application() -> QApplication:
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Tests")
-    app.setApplicationName("OpenPDF Editor Tests")
+    app.setOrganizationName("Nettongia PDF Editor Tests")
+    app.setApplicationName("Nettongia PDF Editor Tests")
     return app
 
 
@@ -164,7 +164,7 @@ def test_close_document_can_be_cancelled_and_clears_workspace(monkeypatch) -> No
     assert not window.page_view.scene().items()
     assert not window.close_document_action.isEnabled()
     assert not window.find_action.isEnabled()
-    assert window.windowTitle() == "OpenPDF Editor"
+    assert window.windowTitle() == "Nettongia PDF Editor"
 
     window.close()
     window.deleteLater()

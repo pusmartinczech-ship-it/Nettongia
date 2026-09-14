@@ -45,8 +45,8 @@ def golden_fixture_bytes() -> bytes:
     document.set_metadata(
         {
             "title": "OpenPDF deterministic golden fixture",
-            "author": "OpenPDF Editor",
-            "creator": "OpenPDF Editor visual regression",
+            "author": "Nettongia PDF Editor",
+            "creator": "Nettongia PDF Editor visual regression",
             "producer": "PyMuPDF",
             "creationDate": "D:20260910000000Z",
             "modDate": "D:20260910000000Z",

@@ -91,6 +91,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import __version__
+from .branding import APP_NAME, LEGACY_APP_NAME
 from .dialogs import CompressionDialog, EditTextDialog, NewDocumentDialog, SignatureDialog
 from .document_session import DocumentSession, DocumentWriteContext
 from .document_write_coordinator import (
@@ -1733,7 +1734,11 @@ class MainWindow(QMainWindow):
         operation_log_path: str | Path | None = None,
     ) -> None:
         super().__init__()
-        self.settings = settings if settings is not None else QSettings()
+        self.settings = (
+            settings
+            if settings is not None
+            else QSettings(LEGACY_APP_NAME, LEGACY_APP_NAME)
+        )
         default_language = language_from_locale(QLocale.system().name())
         stored_language = str(self.settings.value("ui/language", default_language))
         self.language_code = stored_language if stored_language in LANGUAGE_CODES else default_language
@@ -1842,7 +1847,8 @@ class MainWindow(QMainWindow):
         self._ocr_coordinator.completed.connect(self._ocr_finished)
         self._ocr_progress: QProgressDialog | None = None
 
-        self.setWindowTitle("OpenPDF Editor")
+        self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(QIcon(str(ASSET_DIR / "app_logo.svg")))
         self.resize(1420, 900)
         self.setAcceptDrops(True)
 
@@ -2022,10 +2028,10 @@ class MainWindow(QMainWindow):
     def _default_recovery_path() -> Path:
         local_app_data = os.environ.get("LOCALAPPDATA")
         if local_app_data:
-            return Path(local_app_data) / "OpenPDF Editor" / "Recovery" / "current.openpdf-recovery"
+            return Path(local_app_data) / LEGACY_APP_NAME / "Recovery" / "current.openpdf-recovery"
         root = QStandardPaths.writableLocation(QStandardPaths.AppLocalDataLocation)
         if not root:
-            root = str(Path(QStandardPaths.writableLocation(QStandardPaths.TempLocation)) / "OpenPDF Editor")
+            root = str(Path(QStandardPaths.writableLocation(QStandardPaths.TempLocation)) / LEGACY_APP_NAME)
         return Path(root) / "Recovery" / "current.openpdf-recovery"
 
     @staticmethod
@@ -3094,13 +3100,12 @@ class MainWindow(QMainWindow):
         }
         for action, name in custom_icons.items():
             action.setIcon(self._asset_icon(name))
-        self.open_action.setIcon(self.style().standardIcon(QStyle.SP_DialogOpenButton))
-        self.close_document_action.setIcon(
-            self.style().standardIcon(QStyle.SP_DialogCloseButton)
-        )
-        self.save_action.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        self.save_as_action.setIcon(self.style().standardIcon(QStyle.SP_DialogSaveButton))
-        self.new_action.setIcon(self.style().standardIcon(QStyle.SP_FileIcon))
+        self.open_action.setIcon(self._asset_icon("file_open.svg"))
+        self.close_document_action.setIcon(self._asset_icon("file_close.svg"))
+        self.save_action.setIcon(self._asset_icon("file_save.svg"))
+        self.save_as_action.setIcon(self._asset_icon("file_save_as.svg"))
+        self.save_copy_action.setIcon(self._asset_icon("file_copy.svg"))
+        self.new_action.setIcon(self._asset_icon("file_new.svg"))
 
     @property
     def has_unsaved_changes(self) -> bool:
@@ -3111,11 +3116,11 @@ class MainWindow(QMainWindow):
 
     def _update_window_title(self) -> None:
         if not self.engine.is_open:
-            self.setWindowTitle("OpenPDF Editor")
+            self.setWindowTitle(APP_NAME)
             return
         name = self.document_path.name if self.document_path else self.trx("untitled")
         marker = " *" if self.has_unsaved_changes else ""
-        self.setWindowTitle(f"OpenPDF Editor - {name}{marker}")
+        self.setWindowTitle(f"{APP_NAME} - {name}{marker}")
 
     def _maybe_save_changes(self) -> bool:
         if self.page_view.inline_editing:
@@ -3946,7 +3951,7 @@ class MainWindow(QMainWindow):
         self._clear_tile_render_source()
         if not self.engine.is_open:
             return
-        temporary = tempfile.TemporaryDirectory(prefix="OpenPDFEditor-render-source-")
+        temporary = tempfile.TemporaryDirectory(prefix="NettongiaPDFEditor-render-source-")
         workspace = Path(temporary.name)
         source_path = workspace / "source.pdf"
         try:
@@ -5443,7 +5448,7 @@ class MainWindow(QMainWindow):
         )
 
         preview = QPrintPreviewDialog(printer, self)
-        preview.setWindowTitle(f"OpenPDF Editor - {self.trx('print_preview')}")
+        preview.setWindowTitle(f"Nettongia PDF Editor - {self.trx('print_preview')}")
         preview.resize(1100, 800)
         preview_errors: list[Exception] = []
 
@@ -5508,7 +5513,7 @@ class MainWindow(QMainWindow):
         try:
             dialog = QPrintDialog(printer, preview)
             dialog.setWindowTitle(
-                f"OpenPDF Editor - {self.trx('print').rstrip('.')}"
+                f"Nettongia PDF Editor - {self.trx('print').rstrip('.')}"
             )
             dialog.setMinMax(1, self.engine.page_count)
             dialog.setFromTo(1, self.engine.page_count)
@@ -5993,7 +5998,7 @@ class MainWindow(QMainWindow):
         )
         progress = QProgressDialog(label, self.trx("cancel"), 0, 0, self)
         progress.setObjectName("documentWriteProgress")
-        progress.setWindowTitle("OpenPDF Editor")
+        progress.setWindowTitle("Nettongia PDF Editor")
         progress.setWindowModality(Qt.NonModal)
         progress.setMinimumDuration(0)
         progress.setAutoClose(False)
@@ -6392,7 +6397,7 @@ class MainWindow(QMainWindow):
         if answer != QMessageBox.Yes:
             return False
         suggested = Path(
-            f"OpenPDF_Editor_diagnostics_{datetime.now():%Y%m%d-%H%M%S}.zip"
+            f"Nettongia_PDF_Editor_diagnostics_{datetime.now():%Y%m%d-%H%M%S}.zip"
         )
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -6448,7 +6453,7 @@ class MainWindow(QMainWindow):
     def show_about(self) -> None:
         body_lines = self.trx("about_body").splitlines()
         if body_lines:
-            body_lines[0] = f"OpenPDF Editor {__version__}"
+            body_lines[0] = f"Nettongia PDF Editor {__version__}"
         QMessageBox.about(
             self,
             self.trx("about_title"),

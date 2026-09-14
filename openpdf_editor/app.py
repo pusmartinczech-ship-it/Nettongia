@@ -9,11 +9,13 @@ import traceback
 from pathlib import Path
 from typing import TextIO
 
+from .branding import APP_ID, APP_NAME, LEGACY_APP_NAME
 from .runtime import configure_packaged_runtime
 
 configure_packaged_runtime()
 
 from PySide6.QtCore import QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from .main_window import MainWindow
@@ -28,7 +30,7 @@ def _start_local_crash_log() -> tuple[Path | None, TextIO | None, object]:
 
     previous_hook = sys.excepthook
     try:
-        root = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / "OpenPDF Editor"
+        root = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir()) / LEGACY_APP_NAME
         root.mkdir(parents=True, exist_ok=True)
         path = root / "crash.log"
         if path.is_file() and path.stat().st_size > 0:
@@ -74,15 +76,15 @@ def _finish_local_crash_log(
 
 
 def _set_application_identity() -> None:
-    QApplication.setApplicationName("OpenPDF Editor")
-    QApplication.setApplicationDisplayName("OpenPDF Editor")
-    QApplication.setOrganizationName("OpenPDF Editor")
+    QApplication.setApplicationName(APP_NAME)
+    QApplication.setApplicationDisplayName(APP_NAME)
+    QApplication.setOrganizationName("Nettongia")
     if sys.platform == "win32":
         try:
             set_app_id = ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID
             set_app_id.argtypes = [ctypes.c_wchar_p]
             set_app_id.restype = ctypes.c_long
-            set_app_id("OpenPDF.Editor")
+            set_app_id(APP_ID)
         except (AttributeError, OSError, TypeError):
             pass
 
@@ -109,6 +111,7 @@ def main() -> int:
         _set_application_identity()
         app = QApplication(sys.argv)
         _set_application_identity()
+        app.setWindowIcon(QIcon(str(Path(__file__).resolve().parents[1] / "assets" / "app_logo.svg")))
         window = MainWindow()
         window.show()
 

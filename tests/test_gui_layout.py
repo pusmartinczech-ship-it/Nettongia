@@ -57,8 +57,8 @@ SAMPLES = Path(os.environ.get("OPENPDF_TEST_SAMPLES", Path(__file__).resolve().p
 
 def _application() -> QApplication:
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Tests")
-    app.setApplicationName("OpenPDF Editor Tests")
+    app.setOrganizationName("Nettongia PDF Editor Tests")
+    app.setApplicationName("Nettongia PDF Editor Tests")
     return app
 
 

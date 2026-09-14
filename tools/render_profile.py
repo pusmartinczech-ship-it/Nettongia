@@ -58,12 +58,22 @@ def windows_rss_bytes(*, peak: bool) -> int:
 
         counters = ProcessMemoryCounters()
         counters.cb = ctypes.sizeof(counters)
-        handle = ctypes.windll.kernel32.GetCurrentProcess()
-        if ctypes.windll.psapi.GetProcessMemoryInfo(
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        kernel32.GetCurrentProcess.argtypes = []
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.GetProcessMemoryInfo.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(ProcessMemoryCounters),
+            wintypes.DWORD,
+        ]
+        psapi.GetProcessMemoryInfo.restype = wintypes.BOOL
+        handle = kernel32.GetCurrentProcess()
+        if psapi.GetProcessMemoryInfo(
             handle, ctypes.byref(counters), counters.cb
         ):
             return int(counters.PeakWorkingSetSize if peak else counters.WorkingSetSize)
-    except (AttributeError, OSError):
+    except (AttributeError, OSError, TypeError, ValueError):
         pass
     return 0
 
@@ -190,8 +200,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Profiling")
-    app.setApplicationName("OpenPDF Editor Profiling")
+    app.setOrganizationName("Nettongia PDF Editor Profiling")
+    app.setApplicationName("Nettongia PDF Editor Profiling")
     report = {
         "application_version": __version__,
         "platform": os.name,
