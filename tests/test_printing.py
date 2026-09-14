@@ -17,8 +17,8 @@ from openpdf_editor.main_window import MainWindow
 
 def _application() -> QApplication:
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Tests")
-    app.setApplicationName("OpenPDF Editor Tests")
+    app.setOrganizationName("Nettongia PDF Editor Tests")
+    app.setApplicationName("Nettongia PDF Editor Tests")
     return app
 
 
@@ -115,7 +115,7 @@ def test_print_action_opens_application_preview(monkeypatch) -> None:
 
     window.print_document()
 
-    assert FakePreview.latest.title.startswith("OpenPDF Editor - ")
+    assert FakePreview.latest.title.startswith("Nettongia PDF Editor - ")
     assert FakePreview.latest.size == (1100, 800)
     assert rendered_pages == [[0, 1]]
 
@@ -130,8 +130,8 @@ def test_print_dialog_title_and_application_identity(monkeypatch) -> None:
     original_display_name = app.applicationDisplayName()
     original_organization = app.organizationName()
     _set_application_identity()
-    assert app.applicationName() == "OpenPDF Editor"
-    assert app.applicationDisplayName() == "OpenPDF Editor"
+    assert app.applicationName() == "Nettongia PDF Editor"
+    assert app.applicationDisplayName() == "Nettongia PDF Editor"
 
     window = MainWindow()
     window.language_code = "cs"
@@ -165,7 +165,7 @@ def test_print_dialog_title_and_application_identity(monkeypatch) -> None:
     monkeypatch.setattr(main_window_module, "QPrintDialog", FakePrintDialog)
     previous_non_native = QApplication.testAttribute(Qt.AA_DontUseNativeDialogs)
     window._print_from_preview(object(), QPrinter(QPrinter.HighResolution))
-    assert FakePrintDialog.latest.title == "OpenPDF Editor - Tisk"
+    assert FakePrintDialog.latest.title == "Nettongia PDF Editor - Tisk"
     assert (
         QApplication.testAttribute(Qt.AA_DontUseNativeDialogs)
         == previous_non_native
