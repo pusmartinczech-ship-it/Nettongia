@@ -89,6 +89,17 @@ def main() -> int:
         errors.append("Download section must publish portable and installer SHA-256")
     if re.search(r"<(?:script|img|link)[^>]+(?:src|href)=[\"']https?://", index, flags=re.I):
         errors.append("Homepage loads an external executable asset")
+    app = (ROOT / "app.js").read_text(encoding="utf-8")
+    styles = (ROOT / "styles.css").read_text(encoding="utf-8")
+    counters = ROOT / "functions" / "api" / "counters.js"
+    if 'setLanguage(stored || "en")' not in app:
+        errors.append("English must remain the default website language")
+    if "@media(prefers-color-scheme:dark)" not in styles:
+        errors.append("Website must follow the operating-system dark theme")
+    if not counters.exists() or "env.COUNTERS" not in counters.read_text(encoding="utf-8"):
+        errors.append("Cloudflare aggregate counter endpoint is missing")
+    if "connect-src 'self'" not in headers:
+        errors.append("CSP must permit same-origin counter requests")
     if errors:
         print("\n".join(f"ERROR: {error}" for error in errors))
         return 1
