@@ -1,6 +1,36 @@
-# OpenPDF Editor development progress
+# Nettongia PDF Editor development progress
 
-Updated: 2026-09-13
+Updated: 2026-09-14
+
+## Completed checkpoint: Nettongia branding and bettong icon
+
+- Renamed the visible product identity to **Nettongia PDF Editor** across the
+  application, dialogs, translations, diagnostics, README, Windows executable,
+  portable archive, installer and GitHub artifacts.
+- Added a teal-and-amber application icon whose mascot is a stylized bettong
+  with upright ears, long tail and strong hind feet beside a PDF page. The SVG
+  source and 16/32/48/64-pixel Windows ICO are checked in, together with a
+  matching file-action icon family.
+- Preserved the Inno Setup AppId and the established OpenPDF Editor settings,
+  recovery and local-diagnostic locations, so an upgrade does not orphan
+  user preferences or recoverable work.
+- Commit `799eef1be04c2d4605ce2f85b76bf1a00a60e4f2` passed GitHub-hosted
+  Windows Server 2022 workflow run 34862626578: frozen application self-test,
+  **135 source tests passed / 21 conditional tests skipped**, pixel-exact golden
+  no-op audit, 60-cycle / 180-render GUI memory soak and the full clean-portable
+  OCR matrix including Unicode paths and cancellation.
+- Golden audit changed zero pixels on all three no-op pages and zero pixels
+  outside declared regions for the representative edit. Memory steady-state
+  growth was 8,140,800 bytes, with no leaked temporary workspaces.
+- Unsigned GitHub artifact `Nettongia-PDF-Editor-Windows-unsigned` is
+  173,337,618 bytes; artifact SHA-256:
+  `fdcafa0323c7ca9f4e79f2f6b1370007ed5bfa6c0f816e9e43a652d4d464af21`.
+  Portable ZIP SHA-256:
+  `2e2022e6a107ea678e7e5aa79d000baf5c9d78bcc85915917da389b6e843649e`.
+  Installer SHA-256:
+  `4f6d9dd6862a73783be4ead26dc5d0f12ca1e89abf17e592fc2c106a59b3b8aa`.
+- Version remains 0.18.0. Stage 8 remains open because SignPath signing and
+  acceptance on clean Windows 10 and Windows 11 have not yet been completed.
 
 ## In-progress stage: integration candidate
 
