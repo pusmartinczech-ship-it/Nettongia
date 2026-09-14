@@ -96,6 +96,19 @@ def main() -> int:
         errors.append("English must remain the default website language")
     if "@media(prefers-color-scheme:dark)" not in styles:
         errors.append("Website must follow the operating-system dark theme")
+    for token in (
+        "color-scheme:light dark",
+        ".secondary{color:var(--teal)}",
+        ".language button[aria-pressed=true]{color:#061315}",
+        ".privacy-grid a{color:var(--teal)}",
+    ):
+        if token not in styles:
+            errors.append(f"Theme contrast or system preference rule is missing: {token}")
+    for page in HTML_FILES:
+        if 'name="color-scheme" content="light dark"' not in page.read_text(encoding="utf-8"):
+            errors.append(f"{page.name}: system color-scheme metadata is missing")
+    if index.count("mailto:support@nettongia.com") < 2:
+        errors.append("Support email must be visible in the homepage content and footer")
     if not counters.exists() or "env.COUNTERS" not in counters.read_text(encoding="utf-8"):
         errors.append("Cloudflare aggregate counter endpoint is missing")
     if "connect-src 'self'" not in headers:
