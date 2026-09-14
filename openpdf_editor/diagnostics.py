@@ -18,6 +18,7 @@ from PySide6 import __version__ as pyside_version
 from PySide6.QtCore import qVersion
 
 from . import __version__
+from .branding import LEGACY_APP_NAME
 
 
 LOG_FORMAT = "openpdf-editor-operation-log"
@@ -133,7 +134,7 @@ def error_reason(message: str | None) -> str:
 
 def default_diagnostics_root() -> Path:
     base = Path(os.environ.get("LOCALAPPDATA") or tempfile.gettempdir())
-    return base / "OpenPDF Editor"
+    return base / LEGACY_APP_NAME
 
 
 def default_operation_log_path() -> Path:

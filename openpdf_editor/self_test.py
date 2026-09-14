@@ -35,7 +35,7 @@ def run_self_test(result_path: str | Path) -> int:
 
     checks: dict[str, Any] = {}
     result: dict[str, Any] = {
-        "application": "OpenPDF Editor",
+        "application": "Nettongia PDF Editor",
         "version": __version__,
         "platform": platform.platform(),
         "python": platform.python_version(),

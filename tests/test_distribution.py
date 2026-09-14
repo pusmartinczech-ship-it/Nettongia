@@ -38,6 +38,10 @@ def test_windows_distribution_files_are_present_and_spec_is_valid_python() -> No
     assert "choco install tesseract" not in workflow
     assert "python ./tools/fetch_ocr_assets.py" in workflow
     assert runtime.verify_bundled_ocr(ROOT / "vendor" / "ocr")
+    assert 'name="NettongiaPDFEditor"' in spec
+    assert "nettongia.ico" in spec
+    assert "NettongiaPDFEditor.exe" in build_script
+    assert "Nettongia_PDF_Editor_" in build_script
 
 
 def test_packaged_runtime_prefers_bundled_tessdata(tmp_path: Path, monkeypatch) -> None:
@@ -109,6 +113,8 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "Start-Process -FilePath $executable.FullName" in workflow
     assert "isolated_ocr_execution" in workflow
     assert "process_cancellation" in workflow
+    assert "Nettongia_PDF_Editor_*-portable.zip" in workflow
+    assert "NettongiaPDFEditor.exe" in workflow
     assert "golden_pdf_audit.py" in workflow
     assert "integration_soak.py --cycles 60" in workflow
     assert "dist/integration-memory.json" in workflow

@@ -200,8 +200,8 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=15.0)
     args = parser.parse_args()
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Profiling")
-    app.setApplicationName("OpenPDF Editor Profiling")
+    app.setOrganizationName("Nettongia PDF Editor Profiling")
+    app.setApplicationName("Nettongia PDF Editor Profiling")
     report = {
         "application_version": __version__,
         "platform": os.name,

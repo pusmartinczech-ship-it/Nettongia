@@ -62,8 +62,8 @@ def run_soak(
         raise ValueError("timeout must be positive")
 
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Integration")
-    app.setApplicationName("OpenPDF Editor Integration Soak")
+    app.setOrganizationName("Nettongia PDF Editor Integration")
+    app.setApplicationName("Nettongia PDF Editor Integration Soak")
 
     with tempfile.TemporaryDirectory(prefix="OpenPDFEditor-integration-soak-") as root:
         root_path = Path(root)

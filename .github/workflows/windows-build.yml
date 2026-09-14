@@ -53,7 +53,7 @@ jobs:
       - name: Test OCR from a clean portable extraction
         shell: powershell
         run: |
-          $archive = Get-ChildItem dist\OpenPDF_Editor_*-portable.zip | Select-Object -First 1
+          $archive = Get-ChildItem dist\Nettongia_PDF_Editor_*-portable.zip | Select-Object -First 1
           $cleanRoot = Join-Path $env:RUNNER_TEMP "Čistý OCR balíček žluťoučký kůň"
           Remove-Item $cleanRoot -Recurse -Force -ErrorAction SilentlyContinue
           Expand-Archive $archive.FullName -DestinationPath $cleanRoot
@@ -61,7 +61,7 @@ jobs:
           if (Get-Command tesseract.exe -ErrorAction SilentlyContinue) {
             throw "Acceptance runner unexpectedly has a system Tesseract installation."
           }
-          $executable = Get-ChildItem $cleanRoot -Filter OpenPDFEditor.exe -Recurse | Select-Object -First 1
+          $executable = Get-ChildItem $cleanRoot -Filter NettongiaPDFEditor.exe -Recurse | Select-Object -First 1
           $acceptanceResult = Join-Path $cleanRoot "výsledek OCR.json"
           $acceptanceProcess = Start-Process -FilePath $executable.FullName `
             -ArgumentList @("--ocr-acceptance", ('"' + $acceptanceResult + '"')) `
@@ -81,7 +81,7 @@ jobs:
         id: upload-unsigned
         uses: actions/upload-artifact@v4
         with:
-          name: OpenPDF-Editor-Windows-unsigned
+          name: Nettongia-PDF-Editor-Windows-unsigned
           path: |
             dist/installer/*.exe
             dist/*-portable.zip
@@ -111,7 +111,7 @@ jobs:
         if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: OpenPDF-Editor-Windows-signed
+          name: Nettongia-PDF-Editor-Windows-signed
           path: dist/signed
           if-no-files-found: error
 

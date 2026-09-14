@@ -70,8 +70,8 @@ def main() -> int:
         parser.error("--cycles must be between 1 and 1000")
 
     app = QApplication.instance() or QApplication([])
-    app.setOrganizationName("OpenPDF Editor Profiling")
-    app.setApplicationName("OpenPDF Editor Inspection Soak")
+    app.setOrganizationName("Nettongia PDF Editor Profiling")
+    app.setApplicationName("Nettongia PDF Editor Inspection Soak")
     engine = PdfEngine()
     engine.open(args.pdf.resolve())
     window = MainWindow(

@@ -499,7 +499,7 @@ def _image_deletion_from_json(value: Any) -> ImageDeletion:
 
 
 def read_recovery_snapshot(path: str | Path) -> RecoverySnapshot:
-    """Read and strictly validate an OpenPDF Editor recovery archive."""
+    """Read and strictly validate an Nettongia PDF Editor recovery archive."""
 
     source_path = Path(path)
     try:
@@ -530,7 +530,7 @@ def read_recovery_snapshot(path: str | Path) -> RecoverySnapshot:
             raise ValueError("The recovery manifest is damaged.") from exc
         root = _mapping(manifest, "manifest")
         if root.get("format") != RECOVERY_FORMAT:
-            raise ValueError("This is not an OpenPDF Editor recovery file.")
+            raise ValueError("This is not an Nettongia PDF Editor recovery file.")
         if root.get("schema_version") != RECOVERY_SCHEMA_VERSION:
             raise ValueError("This recovery format version is not supported.")
 

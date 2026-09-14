@@ -25,12 +25,12 @@ Remove-Item -Recurse -Force build -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force dist -ErrorAction SilentlyContinue
 & $Python -m PyInstaller --noconfirm --clean OpenPDFEditor.spec
 
-$AppDirectory = Join-Path $ProjectRoot "dist\OpenPDFEditor"
+$AppDirectory = Join-Path $ProjectRoot "dist\NettongiaPDFEditor"
 & $Python tools\collect_licenses.py (Join-Path $AppDirectory "licenses")
 Copy-Item BUILD_ENVIRONMENT.txt $AppDirectory
 
 $SelfTest = Join-Path $ProjectRoot "dist\self-test.json"
-$PackagedExecutable = Join-Path $AppDirectory "OpenPDFEditor.exe"
+$PackagedExecutable = Join-Path $AppDirectory "NettongiaPDFEditor.exe"
 $SelfTestProcess = Start-Process -FilePath $PackagedExecutable `
     -ArgumentList @("--self-test", ('"' + $SelfTest + '"')) `
     -Wait -PassThru
@@ -55,7 +55,7 @@ $SourceItems = @(
 foreach ($Item in $SourceItems) {
     if (Test-Path $Item) { Copy-Item $Item $SourceStage -Recurse -Force }
 }
-$SourceArchive = Join-Path $AppDirectory "OpenPDF_Editor_$Version-source.zip"
+$SourceArchive = Join-Path $AppDirectory "Nettongia_PDF_Editor_$Version-source.zip"
 Compress-Archive -Path (Join-Path $SourceStage "*") -DestinationPath $SourceArchive -Force
 Remove-Item -Recurse -Force $SourceStage
 
@@ -82,7 +82,7 @@ if ($DirectoryBytes -gt $MaxDirectoryBytes) {
     throw "Portable application exceeds the 850 MiB unpacked release budget."
 }
 
-$PortableArchive = Join-Path $ProjectRoot "dist\OpenPDF_Editor_$Version-portable.zip"
+$PortableArchive = Join-Path $ProjectRoot "dist\Nettongia_PDF_Editor_$Version-portable.zip"
 Compress-Archive -Path $AppDirectory -DestinationPath $PortableArchive -Force
 $PortableBytes = (Get-Item $PortableArchive).Length
 $MaxPortableBytes = 400MB
@@ -115,8 +115,8 @@ if (-not $SkipInstaller) {
     & $Iscc installer\OpenPDFEditor.iss
 }
 
-Get-FileHash -Algorithm SHA256 (Join-Path $AppDirectory "OpenPDFEditor.exe")
+Get-FileHash -Algorithm SHA256 (Join-Path $AppDirectory "NettongiaPDFEditor.exe")
 Get-FileHash -Algorithm SHA256 $PortableArchive
 if (-not $SkipInstaller) {
-    Get-FileHash -Algorithm SHA256 (Join-Path $ProjectRoot "dist\installer\OpenPDF_Editor_$Version-x64.exe")
+    Get-FileHash -Algorithm SHA256 (Join-Path $ProjectRoot "dist\installer\Nettongia_PDF_Editor_$Version-x64.exe")
 }

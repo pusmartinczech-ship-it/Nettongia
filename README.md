@@ -1,6 +1,6 @@
-# OpenPDF Editor 0.18.0
+# Nettongia PDF Editor 0.18.0
 
-OpenPDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
+Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
 Version 0.18.0 adds reversible page reordering and direct transformation of images already embedded in a PDF. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
 
@@ -74,7 +74,7 @@ For documents with hundreds of pages, the page list appears immediately with pla
 
 ## Password-protected PDFs
 
-Open a protected PDF normally. OpenPDF Editor asks for its password in a masked field and allows another attempt if the password is incorrect. The same workflow is available when importing pages from another protected PDF.
+Open a protected PDF normally. Nettongia PDF Editor asks for its password in a masked field and allows another attempt if the password is incorrect. The same workflow is available when importing pages from another protected PDF.
 
 The password is used only to unlock the source and is not retained in the editor state or recovery data. The working document is decrypted in memory, and edited or recovered copies are saved without password protection. The status bar reports this behavior after a protected document is opened.
 
@@ -180,7 +180,7 @@ The new document is shown as `Untitled.pdf *` until it is saved for the first ti
 
 ## Printing
 
-Choose **File > Print**, click the printer icon between Save and Undo, or press **Ctrl+P**. OpenPDF Editor first shows its own complete print preview. Use the printer button in that window to open the editor-owned printer settings dialog. It lists the installed printers and supports all pages, the current page, or a selected page range; available driver properties remain accessible through the printer settings. Because this dialog belongs to OpenPDF Editor, its title no longer inherits `Python` from `pythonw.exe`. Unsaved text, image, page, and signature changes are included in both the preview and the print job.
+Choose **File > Print**, click the printer icon between Save and Undo, or press **Ctrl+P**. Nettongia PDF Editor first shows its own complete print preview. Use the printer button in that window to open the editor-owned printer settings dialog. It lists the installed printers and supports all pages, the current page, or a selected page range; available driver properties remain accessible through the printer settings. Because this dialog belongs to Nettongia PDF Editor, its title no longer inherits `Python` from `pythonw.exe`. Unsaved text, image, page, and signature changes are included in both the preview and the print job.
 
 ## Pages
 
@@ -244,27 +244,27 @@ The included languages are English, Mandarin Chinese, Hindi, Spanish, Standard A
 
 An asterisk in the window title marks a document with unsaved changes. Before closing the application, closing the current document, opening another PDF, or creating a new PDF, the editor offers **Save**, **Discard**, and **Cancel**. Cancelling leaves the current document open. After the first **Save As**, a later Save from this prompt writes to the same file.
 
-Choose **File > Close document** or press **Ctrl+W** to close only the active PDF while keeping OpenPDF Editor running.
+Choose **File > Close document** or press **Ctrl+W** to close only the active PDF while keeping Nettongia PDF Editor running.
 
 Saved PDFs are first written beside the destination as a temporary file and then replaced atomically. If a save is interrupted, the previously existing PDF is not left truncated and temporary files are cleaned up.
 
 ## Automatic crash recovery
 
-After a confirmed document change, OpenPDF Editor waits briefly for further edits and then records the latest working state on a background thread. It stores one current snapshot rather than the Undo history, so recovery remains bounded and does not render, compress, or rewrite every page. A newer snapshot atomically replaces the previous complete snapshot; an interrupted write therefore cannot damage the last usable recovery point.
+After a confirmed document change, Nettongia PDF Editor waits briefly for further edits and then records the latest working state on a background thread. It stores one current snapshot rather than the Undo history, so recovery remains bounded and does not render, compress, or rewrite every page. A newer snapshot atomically replaces the previous complete snapshot; an interrupted write therefore cannot damage the last usable recovery point.
 
 At the next start, choose **Restore** to reopen the recovered state or **Discard** to remove it. Recovered work is deliberately marked as unsaved until you save the PDF. A successful save, an explicit discard, or a normal document close removes the recovery data. A damaged recovery file is not executed or silently discarded: it is renamed with a `.damaged-<date>` suffix and its location is shown for diagnostics.
 
-On Windows the current snapshot is stored at `%LOCALAPPDATA%\OpenPDF Editor\Recovery\current.openpdf-recovery`. It can contain the source document and inserted images or signatures, remains exclusively on the computer, and is never transmitted automatically.
+On Windows the current snapshot is stored at `%LOCALAPPDATA%\Nettongia PDF Editor\Recovery\current.openpdf-recovery`. It can contain the source document and inserted images or signatures, remains exclusively on the computer, and is never transmitted automatically.
 
-If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at `%LOCALAPPDATA%\OpenPDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
+If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at `%LOCALAPPDATA%\Nettongia PDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
 
 The most recent non-empty crash log is preserved across the next start as
 `crash.previous.log`. Its raw content may contain technical paths or exception
-text, so OpenPDF Editor never puts it in an exported diagnostic package.
+text, so Nettongia PDF Editor never puts it in an exported diagnostic package.
 
 ## Anonymized diagnostics
 
-OpenPDF Editor keeps a local operation log at `%LOCALAPPDATA%\OpenPDF
+Nettongia PDF Editor keeps a local operation log at `%LOCALAPPDATA%\OpenPDF
 Editor\operation-log.jsonl`. It is capped at 256 KiB and 512 records and accepts
 only fixed event names, coarse outcomes, page/count values, timestamps, and a
 random identifier that changes at every program start. It does not accept PDF
@@ -304,10 +304,10 @@ build uses `requirements-windows.lock`, verifies the five checked-in OCR models
 complete corresponding source and runs the frozen executable self-test before
 creating:
 
-`dist\installer\OpenPDF_Editor_<version>-x64.exe`
+`dist\installer\Nettongia_PDF_Editor_<version>-x64.exe`
 
-The intermediate folder build remains at `dist\OpenPDFEditor`. Run
-`dist\OpenPDFEditor\OpenPDFEditor.exe --self-test result.json` to repeat its
+The intermediate folder build remains at `dist\NettongiaPDFEditor`. Run
+`dist\NettongiaPDFEditor\NettongiaPDFEditor.exe --self-test result.json` to repeat its
 non-GUI open/render/save/inspection check. The GitHub workflow produces an
 unsigned artifact by default and can submit it to the free SignPath Foundation
 service after the project owner completes the one-time setup in `SIGNING.md`.
