@@ -109,6 +109,12 @@ def main() -> int:
             errors.append(f"{page.name}: system color-scheme metadata is missing")
     if index.count("mailto:support@nettongia.com") < 2:
         errors.append("Support email must be visible in the homepage content and footer")
+    if 'id="support"' not in index or "buy.stripe.com/" not in index:
+        errors.append("Voluntary support section and external Stripe payment link are required")
+    if 'target="_blank" rel="noopener noreferrer"' not in index:
+        errors.append("External payment link must open safely in a separate tab")
+    if "buy.stripe.com/test_" in index and "Stripe test mode" not in index:
+        errors.append("A Stripe test link must be clearly identified as non-production")
     if not counters.exists() or "env.COUNTERS" not in counters.read_text(encoding="utf-8"):
         errors.append("Cloudflare aggregate counter endpoint is missing")
     if "connect-src 'self'" not in headers:
