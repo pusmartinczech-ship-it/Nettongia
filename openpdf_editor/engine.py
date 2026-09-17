@@ -283,6 +283,41 @@ class PdfEngine:
         self._require_open()
         return pymupdf.Rect(self._source[page_index].rect)
 
+    @staticmethod
+    def _view_rect(
+        page: pymupdf.Page,
+        bbox: tuple[float, float, float, float] | pymupdf.Rect,
+    ) -> pymupdf.Rect:
+        """Map an unrotated PDF rectangle into the page's visible coordinates."""
+
+        return pymupdf.Rect(bbox) * page.rotation_matrix
+
+    @staticmethod
+    def _page_rect_from_view(
+        page: pymupdf.Page,
+        bbox: tuple[float, float, float, float] | pymupdf.Rect,
+    ) -> pymupdf.Rect:
+        """Map a visible rectangle back into unrotated PDF coordinates."""
+
+        return pymupdf.Rect(bbox) * page.derotation_matrix
+
+    @staticmethod
+    def _mapped_point(page: pymupdf.Page, point: object, *, to_view: bool) -> pymupdf.Point:
+        matrix = page.rotation_matrix if to_view else page.derotation_matrix
+        return pymupdf.Point(point) * matrix
+
+    @staticmethod
+    def _mapped_direction(
+        page: pymupdf.Page,
+        direction: tuple[float, float],
+        *,
+        to_view: bool,
+    ) -> tuple[float, float]:
+        matrix = page.rotation_matrix if to_view else page.derotation_matrix
+        start = pymupdf.Point(0, 0) * matrix
+        end = pymupdf.Point(direction) * matrix
+        return _normalized_text_direction((end.x - start.x, end.y - start.y))
+
     def max_render_scale(
         self,
         page_index: int,
@@ -374,6 +409,8 @@ class PdfEngine:
                     if not text.strip():
                         continue
                     key = f"{page_index}:{block_index}:{line_index}:{span_index}"
+                    bbox = self._view_rect(page, tuple(float(v) for v in span["bbox"]))
+                    origin = self._mapped_point(page, span["origin"], to_view=True)
                     runs.append(
                         TextRun(
                             key=key,
@@ -382,13 +419,13 @@ class PdfEngine:
                             line_index=line_index,
                             span_index=span_index,
                             text=text,
-                            bbox=tuple(float(v) for v in span["bbox"]),
-                            origin=tuple(float(v) for v in span["origin"]),
+                            bbox=(bbox.x0, bbox.y0, bbox.x1, bbox.y1),
+                            origin=(origin.x, origin.y),
                             font_name=str(span.get("font", "Helvetica")),
                             font_size=float(span.get("size", 11.0)),
                             color=int(span.get("color", 0)),
                             flags=int(span.get("flags", 0)),
-                            direction=direction,
+                            direction=self._mapped_direction(page, direction, to_view=True),
                         )
                     )
         self._runs[page_index] = runs
@@ -404,8 +441,9 @@ class PdfEngine:
             for item in self._source[page_index].get_images(full=True)
             if len(item) > 1
         }
-        for occurrence, info in enumerate(self._source[page_index].get_image_info(xrefs=True)):
-            bbox = pymupdf.Rect(info.get("bbox", (0, 0, 0, 0)))
+        page = self._source[page_index]
+        for occurrence, info in enumerate(page.get_image_info(xrefs=True)):
+            bbox = self._view_rect(page, info.get("bbox", (0, 0, 0, 0)))
             if bbox.is_empty:
                 continue
             runs.append(
@@ -417,7 +455,11 @@ class PdfEngine:
                     width=int(info.get("width", 0)),
                     height=int(info.get("height", 0)),
                     smask=masks.get(int(info.get("xref", 0)), 0),
-                    rotation_degrees=self._image_rotation(info.get("transform")),
+                    rotation_degrees=(
+                        self._image_rotation(info.get("transform"))
+                        + float(page.rotation)
+                        + 180.0
+                    ) % 360.0 - 180.0,
                 )
             )
         self._image_runs[page_index] = runs
@@ -470,7 +512,8 @@ class PdfEngine:
                 mask = None
                 base = None
 
-        rect = pymupdf.Rect(run.bbox)
+        page = self._source[run.page_index]
+        rect = self._page_rect_from_view(page, run.bbox)
         if rect.is_empty:
             raise ValueError("The source image has invalid geometry.")
         scale = min(
@@ -485,7 +528,7 @@ class PdfEngine:
             scale,
             math.sqrt(MAX_RENDER_PIXELS / max(1.0, rect.width * rect.height)),
         )
-        pixmap = self._source[run.page_index].get_pixmap(
+        pixmap = page.get_pixmap(
             matrix=pymupdf.Matrix(scale, scale),
             clip=rect,
             alpha=True,
@@ -579,7 +622,7 @@ class PdfEngine:
             page = document[page_index]
             for deletion in page_deletions:
                 page.add_redact_annot(
-                    pymupdf.Rect(deletion.run.bbox),
+                    self._page_rect_from_view(page, deletion.run.bbox),
                     fill=(1, 1, 1) if deletion.fill_removed_area else False,
                     cross_out=False,
                 )
@@ -592,12 +635,28 @@ class PdfEngine:
             if not 0 <= page_index < document.page_count:
                 continue
             page = document[page_index]
+            page_space_edits: list[TextEdit] = []
             for edit in page_edits:
-                rect = self._redaction_rect(edit.run, page.rect)
+                run = edit.run
+                run_bbox = self._page_rect_from_view(page, run.bbox)
+                run_origin = self._mapped_point(page, run.origin, to_view=False)
+                page_run = replace(
+                    run,
+                    bbox=(run_bbox.x0, run_bbox.y0, run_bbox.x1, run_bbox.y1),
+                    origin=(run_origin.x, run_origin.y),
+                    direction=self._mapped_direction(page, run.direction, to_view=False),
+                )
+                target_bbox = None
+                if edit.bbox is not None:
+                    target = self._page_rect_from_view(page, edit.bbox)
+                    target_bbox = (target.x0, target.y0, target.x1, target.y1)
+                page_edit = replace(edit, run=page_run, bbox=target_bbox)
+                page_space_edits.append(page_edit)
+                rect = self._redaction_rect(page_run, page.cropbox)
                 page.add_redact_annot(rect, fill=(1, 1, 1), cross_out=False)
             page.apply_redactions(images=0, graphics=0, text=0)
 
-            for ordinal, edit in enumerate(page_edits):
+            for ordinal, edit in enumerate(page_space_edits):
                 if edit.new_text:
                     self._insert_edit(page, edit, ordinal)
 
@@ -741,8 +800,8 @@ class PdfEngine:
         try:
             document.set_metadata(
                 {
-                    "creator": "OpenPDF Editor",
-                    "producer": "OpenPDF Editor 0.18.0",
+                    "creator": "Nettongia PDF Editor",
+                    "producer": "Nettongia PDF Editor 0.19.0",
                 }
             )
             for _ in range(page_count):
@@ -811,6 +870,29 @@ class PdfEngine:
             # Page movement changes the page tree but does not require the
             # expensive whole-document duplicate-stream cleanup used by
             # `_serialize`. Keep this interactive even for CAD/EPLAN files.
+            return document.tobytes(
+                garbage=2,
+                clean=False,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+                use_objstms=1,
+            )
+        finally:
+            document.close()
+
+    def bytes_with_page_rotated(self, page_index: int, quarter_turns: int) -> bytes:
+        """Return the PDF with one page rotated in 90-degree increments."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        turns = int(quarter_turns)
+        if turns == 0 or turns % 4 == 0:
+            return self.source_bytes
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            page.set_rotation((int(page.rotation) + turns * 90) % 360)
             return document.tobytes(
                 garbage=2,
                 clean=False,
@@ -909,10 +991,16 @@ class PdfEngine:
         if not 0 <= page_index < document.page_count:
             return
         page = document[page_index]
-        rect = pymupdf.Rect(bbox) & page.rect
+        view_rect = pymupdf.Rect(bbox) & page.rect
+        rect = PdfEngine._page_rect_from_view(page, view_rect)
         if rect.is_empty or rect.width < 1 or rect.height < 1:
             return
-        angle = (float(rotation_degrees) + 180.0) % 360.0 - 180.0
+        # Placement rotations are expressed exactly as the user sees them.
+        # PDF drawing commands use the unrotated page coordinate space, so
+        # compensate for the page's /Rotate value before inserting the image.
+        angle = (
+            float(rotation_degrees) - float(page.rotation) + 180.0
+        ) % 360.0 - 180.0
         nearest_quarter_turn = round(angle / 90.0) * 90.0
         if abs(angle - nearest_quarter_turn) < 0.01:
             # PDF handles quarter turns through the placement matrix. Keeping
@@ -1178,10 +1266,15 @@ class PdfEngine:
             font = pymupdf.Font(fallback_font_name)
             font_name = fallback_font_name
 
-        page_rect = page.rect
-        rect = pymupdf.Rect(placement.bbox) & page_rect
+        view_rect = pymupdf.Rect(placement.bbox) & page.rect
+        rect = self._page_rect_from_view(page, view_rect)
         if rect.width < 1 or rect.height < 1:
             return
+        page_rotation = int(page.rotation) % 360
+        # PyMuPDF's textbox rotation is counter-clockwise in the unrotated
+        # page coordinate system. Matching the page's clockwise /Rotate value
+        # keeps newly entered text upright in the visible page.
+        text_rotation = page_rotation
         color = self._pdf_color(placement.color)
         remaining = -1.0
         attempted_size = font_size
@@ -1196,6 +1289,7 @@ class PdfEngine:
                 color=color,
                 lineheight=1.15,
                 align=pymupdf.TEXT_ALIGN_LEFT,
+                rotate=text_rotation,
                 overlay=True,
             )
             if remaining >= 0:
@@ -1214,22 +1308,37 @@ class PdfEngine:
                 fontfile=font_file,
                 set_simple=int(simple_font),
                 color=color,
+                rotate=text_rotation,
                 overlay=True,
             )
 
         if placement.underline:
-            baseline = rect.y0 + font_size
+            baseline = view_rect.y0 + font_size
             line_step = font_size * 1.15
             for line in placement.text.splitlines() or [placement.text]:
-                if baseline > rect.y1:
+                if baseline > view_rect.y1:
                     break
                 try:
                     line_width = font.text_length(line, fontsize=font_size)
                 except Exception:
                     line_width = pymupdf.get_text_length(line, fontname="helv", fontsize=font_size)
+                underline_y = baseline + max(0.8, font_size * 0.08)
+                start = self._mapped_point(
+                    page,
+                    pymupdf.Point(view_rect.x0, underline_y),
+                    to_view=False,
+                )
+                end = self._mapped_point(
+                    page,
+                    pymupdf.Point(
+                        min(view_rect.x1, view_rect.x0 + line_width),
+                        underline_y,
+                    ),
+                    to_view=False,
+                )
                 page.draw_line(
-                    pymupdf.Point(rect.x0, baseline + max(0.8, font_size * 0.08)),
-                    pymupdf.Point(min(rect.x1, rect.x0 + line_width), baseline + max(0.8, font_size * 0.08)),
+                    start,
+                    end,
                     color=color,
                     width=max(0.45, font_size * 0.045),
                     overlay=True,

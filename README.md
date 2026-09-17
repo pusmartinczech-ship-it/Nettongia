@@ -1,8 +1,10 @@
-# Nettongia PDF Editor 0.18.0
+# Nettongia PDF Editor 0.19.0
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
-Version 0.18.0 adds reversible page reordering and direct transformation of images already embedded in a PDF. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
+Version 0.19.0 adds reversible page rotation. Rotate the selected page left or right from the **Page** menu, the thumbnail context menu, or the `Ctrl+Shift+Left` / `Ctrl+Shift+Right` shortcuts. The page contents, pending text, images and visual signatures rotate together, and Undo/Redo restores the complete earlier state. Rotated source pages now expose their text and image selection geometry in the visible orientation, so editing remains aligned after a quarter turn.
+
+The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete

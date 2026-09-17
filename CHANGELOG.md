@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.19.0
+
+- Added clockwise and counter-clockwise page rotation from the Page menu, the
+  thumbnail context menu and keyboard shortcuts.
+- Made page rotation one reversible history operation that keeps page content,
+  pending text, images, signatures and deletions together.
+- Corrected text and image geometry on PDFs whose pages already carry a PDF
+  rotation value; newly inserted text remains upright in the visible page.
+- Changed the public website to offer only the portable Windows ZIP and added a
+  clear invitation for bug reports and improvement ideas.
+- Added a tag-only GitHub release gate that publishes the portable ZIP only
+  after Windows regression, golden-PDF, memory and clean OCR checks pass.
+
 ## Privacy-safe diagnostics checkpoint after 0.18.0
 
 - Added a local JSON-lines operation log capped at 256 KiB / 512 records. It

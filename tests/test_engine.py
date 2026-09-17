@@ -49,7 +49,7 @@ def test_blank_document_creation() -> None:
         assert document.page_count == 3
         assert document[0].rect.width == pytest.approx(595.28, abs=0.1)
         assert document[0].rect.height == pytest.approx(841.89, abs=0.1)
-        assert document.metadata["creator"] == "OpenPDF Editor"
+        assert document.metadata["creator"] == "Nettongia PDF Editor"
 
 
 def test_password_protected_pdf_can_be_opened_and_edited() -> None:
@@ -97,6 +97,49 @@ def test_large_page_render_scale_is_capped() -> None:
 
     assert maximum < 4.0
     assert maximum == pytest.approx((32_000_000 / (3370.4 * 2383.94)) ** 0.5, rel=1e-6)
+
+
+def test_page_rotation_updates_visible_geometry_and_keeps_new_text_upright() -> None:
+    document = fitz.open()
+    page = document.new_page(width=400, height=300)
+    page.insert_text((50, 60), "ORIGINAL", fontsize=20)
+    payload = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+
+    assert engine._source[0].rotation == 90
+    assert engine.page_rect(0).width == pytest.approx(300)
+    assert engine.page_rect(0).height == pytest.approx(400)
+    original = next(run for run in engine.text_runs(0) if run.text == "ORIGINAL")
+    assert original.direction == pytest.approx((0.0, 1.0), abs=1e-6)
+    assert 0 <= original.bbox[0] < original.bbox[2] <= 300
+    assert 0 <= original.bbox[1] < original.bbox[3] <= 400
+
+    replaced = engine.compose_bytes(
+        edits=[TextEdit(original, "CHANGED", original.font_size)]
+    )
+    engine.load_bytes(replaced)
+    changed = next(run for run in engine.text_runs(0) if run.text == "CHANGED")
+    assert changed.direction == pytest.approx((0.0, 1.0), abs=1e-6)
+
+    composed = engine.compose_bytes(
+        inserted_texts=[
+            TextPlacement("upright", 0, (20, 20, 180, 60), "UPRIGHT")
+        ]
+    )
+    engine.load_bytes(composed)
+    inserted = next(run for run in engine.text_runs(0) if run.text == "UPRIGHT")
+    assert inserted.direction == pytest.approx((1.0, 0.0), abs=1e-6)
+    assert inserted.bbox[0] == pytest.approx(20, abs=1)
+    assert 20 <= inserted.bbox[1] <= 35
+
+    engine.load_bytes(engine.bytes_with_page_rotated(0, -1))
+    assert engine._source[0].rotation == 0
+    assert engine.page_rect(0).width == pytest.approx(400)
+    assert engine.page_rect(0).height == pytest.approx(300)
 
 
 def test_atomic_save_keeps_existing_target_when_save_fails(tmp_path: Path) -> None:
