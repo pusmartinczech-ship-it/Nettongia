@@ -88,7 +88,7 @@ def main() -> int:
     index = (ROOT / "index.html").read_text(encoding="utf-8")
     if len(re.findall(r"\b[a-f0-9]{64}\b", index, flags=re.I)) != 1:
         errors.append("Download section must publish exactly one portable ZIP SHA-256")
-    if index.count("data-download") != 1 or "-portable.zip" not in index:
+    if index.count("data-download") != 1 or not re.search(r"-portable(?:-release)?\.zip", index):
         errors.append("Homepage must offer exactly one portable-version download")
     if "Installer SHA-256" in index or "-x64.exe" in index:
         errors.append("Homepage must not offer an installer download")
@@ -116,7 +116,7 @@ def main() -> int:
         errors.append("Support email must be visible in the homepage content and footer")
     if index.count(APPROVED_SUPPORT_URL) != 1:
         errors.append("Homepage must publish exactly the approved Stripe support link")
-    stripe_links = re.findall(r"https://buy\\.stripe\\.com/[A-Za-z0-9_]+", index)
+    stripe_links = re.findall(r"https://buy\.stripe\.com/[A-Za-z0-9_]+", index)
     if stripe_links != [APPROVED_SUPPORT_URL]:
         errors.append("Homepage contains an unapproved Stripe payment link")
     if any(token in index for token in ("stripe-buy-button", "js.stripe.com", "pk_test_", "buy.stripe.com/test_")):
