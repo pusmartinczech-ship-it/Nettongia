@@ -113,10 +113,17 @@ jobs:
           SHA-256: $sha256
           "@
           $notes | Set-Content -Encoding utf8 dist\release-notes.md
-          gh release create $env:GITHUB_REF_NAME $archive.FullName `
-            --verify-tag `
-            --title "Nettongia PDF Editor $env:GITHUB_REF_NAME (unsigned public beta)" `
-            --notes-file dist\release-notes.md
+          if (gh release view $env:GITHUB_REF_NAME *> $null) {
+            gh release upload $env:GITHUB_REF_NAME $archive.FullName --clobber
+            gh release edit $env:GITHUB_REF_NAME `
+              --title "Nettongia PDF Editor $env:GITHUB_REF_NAME (unsigned public beta)" `
+              --notes-file dist\release-notes.md
+          } else {
+            gh release create $env:GITHUB_REF_NAME $archive.FullName `
+              --verify-tag `
+              --title "Nettongia PDF Editor $env:GITHUB_REF_NAME (unsigned public beta)" `
+              --notes-file dist\release-notes.md
+          }
 
       - name: Submit free SignPath signing request
         if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
