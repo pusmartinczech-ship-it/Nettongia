@@ -15,6 +15,7 @@ REQUIRED_POLICY = (
     "SignPath Foundation",
     "This program will not transfer any information",
 )
+APPROVED_SUPPORT_URL = "https://buy.stripe.com/dRm00ca0yeYK1am9ix7ss00"
 
 class PageParser(HTMLParser):
     def __init__(self) -> None:
@@ -113,8 +114,13 @@ def main() -> int:
             errors.append(f"{page.name}: system color-scheme metadata is missing")
     if index.count("mailto:support@nettongia.com") < 2:
         errors.append("Support email must be visible in the homepage content and footer")
-    if "buy.stripe.com/" in index or "stripe-buy-button" in index:
-        errors.append("Payment links must remain unpublished until Stripe verification is complete")
+    if index.count(APPROVED_SUPPORT_URL) != 1:
+        errors.append("Homepage must publish exactly the approved Stripe support link")
+    stripe_links = re.findall(r"https://buy\\.stripe\\.com/[A-Za-z0-9_]+", index)
+    if stripe_links != [APPROVED_SUPPORT_URL]:
+        errors.append("Homepage contains an unapproved Stripe payment link")
+    if any(token in index for token in ("stripe-buy-button", "js.stripe.com", "pk_test_", "buy.stripe.com/test_")):
+        errors.append("Homepage must not embed Stripe scripts or test credentials")
     for phrase in ("User feedback", "improvement ideas", "GitHub Issues"):
         if phrase not in index:
             errors.append(f"Feedback invitation is missing: {phrase}")
