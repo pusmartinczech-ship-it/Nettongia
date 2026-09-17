@@ -45,6 +45,9 @@ def test_core_controls_are_translated_for_every_language() -> None:
             "move_page_up",
             "move_page_down",
             "page_moved",
+            "rotate_page_left",
+            "rotate_page_right",
+            "page_rotated",
             "edit_original_image",
             "edit_original_image_hint",
             "original_image_ready",
@@ -86,6 +89,7 @@ def test_core_controls_are_translated_for_every_language() -> None:
     assert translate("cs", "restore") == "Obnovit"
     assert translate("cs", "document_compatibility") == "Kompatibilita dokumentu..."
     assert translate("cs", "save_copy") == "Uložit kopii..."
+    assert translate("cs", "rotate_page_right") == "Otočit stránku doprava"
     assert translate("cs", "ocr_page") == "OCR aktuální stránky..."
     assert translate("sk", "menu_file") == "Súbor"
     assert translate("pl", "save_as") == "Zapisz jako..."

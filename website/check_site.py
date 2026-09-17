@@ -85,8 +85,12 @@ def main() -> int:
         if header not in headers:
             errors.append(f"Missing security header: {header}")
     index = (ROOT / "index.html").read_text(encoding="utf-8")
-    if len(re.findall(r"\b[a-f0-9]{64}\b", index, flags=re.I)) < 2:
-        errors.append("Download section must publish portable and installer SHA-256")
+    if len(re.findall(r"\b[a-f0-9]{64}\b", index, flags=re.I)) != 1:
+        errors.append("Download section must publish exactly one portable ZIP SHA-256")
+    if index.count("data-download") != 1 or "-portable.zip" not in index:
+        errors.append("Homepage must offer exactly one portable-version download")
+    if "Installer SHA-256" in index or "-x64.exe" in index:
+        errors.append("Homepage must not offer an installer download")
     if re.search(r"<(?:script|img|link)[^>]+(?:src|href)=[\"']https?://", index, flags=re.I):
         errors.append("Homepage loads an external executable asset")
     app = (ROOT / "app.js").read_text(encoding="utf-8")
@@ -109,6 +113,11 @@ def main() -> int:
             errors.append(f"{page.name}: system color-scheme metadata is missing")
     if index.count("mailto:support@nettongia.com") < 2:
         errors.append("Support email must be visible in the homepage content and footer")
+    if "buy.stripe.com/" in index or "stripe-buy-button" in index:
+        errors.append("Payment links must remain unpublished until Stripe verification is complete")
+    for phrase in ("User feedback", "improvement ideas", "GitHub Issues"):
+        if phrase not in index:
+            errors.append(f"Feedback invitation is missing: {phrase}")
     if not counters.exists() or "env.COUNTERS" not in counters.read_text(encoding="utf-8"):
         errors.append("Cloudflare aggregate counter endpoint is missing")
     if "connect-src 'self'" not in headers:

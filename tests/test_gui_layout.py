@@ -92,6 +92,8 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     assert window.save_copy_action.shortcut() == QKeySequence("Ctrl+Alt+S")
     assert window.move_page_up_action.shortcut() == QKeySequence("Alt+Shift+Up")
     assert window.move_page_down_action.shortcut() == QKeySequence("Alt+Shift+Down")
+    assert window.rotate_page_left_action.shortcut() == QKeySequence("Ctrl+Shift+Left")
+    assert window.rotate_page_right_action.shortcut() == QKeySequence("Ctrl+Shift+Right")
     file_actions = window.file_menu.actions()
     assert file_actions.index(window.save_action) < file_actions.index(
         window.save_as_action
@@ -103,6 +105,8 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     assert window.export_diagnostics_action in window.help_menu.actions()
     assert window.move_page_up_action in window.page_menu.actions()
     assert window.move_page_down_action in window.page_menu.actions()
+    assert window.rotate_page_left_action in window.page_menu.actions()
+    assert window.rotate_page_right_action in window.page_menu.actions()
 
     widgets = (
         window.text_font_box,
@@ -326,6 +330,51 @@ def test_thumbnail_context_menu_deletes_the_right_page(
         "PAGE C",
     ]
     assert window.current_page == 1
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_page_rotation_is_undoable_and_available_from_thumbnail_menu(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((50, 90), "ROTATE ME", fontsize=28)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+
+    def choose_rotate_right(menu: QMenu, _position: QPoint):
+        action = next(
+            action
+            for action in menu.actions()
+            if action.text() == window.trx("rotate_page_right")
+        )
+        action.trigger()
+        return action
+
+    monkeypatch.setattr(window, "_exec_context_menu", choose_rotate_right)
+    window._show_page_context_menu(0, QPoint(0, 0))
+    app.processEvents(QEventLoop.AllEvents, 200)
+
+    assert window.engine._source[0].rotation == 90
+    assert window.engine.page_rect(0).width == pytest.approx(300)
+    assert window.history_index == 1
+    assert window.has_unsaved_changes
+
+    window.undo()
+    assert window.engine._source[0].rotation == 0
+    assert window.engine.page_rect(0).width == pytest.approx(420)
+    window.redo()
+    assert window.engine._source[0].rotation == 90
 
     window._maybe_save_changes = lambda: True
     window.close()

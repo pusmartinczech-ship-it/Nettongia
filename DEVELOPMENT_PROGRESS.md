@@ -1,6 +1,24 @@
 # Nettongia PDF Editor development progress
 
-Updated: 2026-09-14
+Updated: 2026-09-17
+
+## 0.19.0 page-rotation and portable-publication candidate
+
+- Added 90-degree page rotation in both directions through the Page menu,
+  thumbnail context menu and `Ctrl+Shift+Left` / `Ctrl+Shift+Right`.
+- Rotation is covered by Undo/Redo and materializes pending editor objects into
+  the rotated working snapshot so content cannot drift away from its page.
+- Corrected visible-coordinate mapping for text and source images on pages that
+  already carry `/Rotate`; added regression coverage for visible geometry,
+  replacement text, upright inserted text and GUI Undo/Redo.
+- The website now exposes one portable ZIP download only and explicitly invites
+  user feedback, bug reports and improvement proposals. The unverified Stripe
+  test link remains unpublished.
+- Local targeted result: **45 passed, 7 fixture-dependent skipped**; website
+  validation passed. The full suite, Windows package gate, final ZIP SHA-256 and
+  public release are still pending, so this candidate is not yet complete.
+- Next step: run the complete regression and golden checks, then build and test
+  the portable ZIP on GitHub Windows before publishing tag `v0.19.0`.
 
 ## Completed checkpoint: Nettongia branding and bettong icon
 

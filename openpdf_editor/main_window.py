@@ -2509,6 +2509,24 @@ class MainWindow(QMainWindow):
         self.move_page_down_action = QAction("Move page later", self)
         self.move_page_down_action.setShortcut(QKeySequence("Alt+Shift+Down"))
         self.move_page_down_action.triggered.connect(self.move_current_page_down)
+        self.rotate_page_left_action = QAction(
+            self._asset_icon("rotate_left.svg"),
+            "Rotate page left",
+            self,
+        )
+        self.rotate_page_left_action.setShortcut(QKeySequence("Ctrl+Shift+Left"))
+        self.rotate_page_left_action.triggered.connect(
+            lambda _checked=False: self.rotate_current_page(-1)
+        )
+        self.rotate_page_right_action = QAction(
+            self._asset_icon("rotate_right.svg"),
+            "Rotate page right",
+            self,
+        )
+        self.rotate_page_right_action.setShortcut(QKeySequence("Ctrl+Shift+Right"))
+        self.rotate_page_right_action.triggered.connect(
+            lambda _checked=False: self.rotate_current_page(1)
+        )
 
         self.add_image_action = QAction(self._asset_icon("image_add.svg"), "Insert image...", self)
         self.add_image_action.setToolTip("Insert a PNG, JPEG, BMP, TIFF, or WebP image")
@@ -2583,6 +2601,9 @@ class MainWindow(QMainWindow):
         self.page_menu.addAction(self.move_page_up_action)
         self.page_menu.addAction(self.move_page_down_action)
         self.page_menu.addSeparator()
+        self.page_menu.addAction(self.rotate_page_left_action)
+        self.page_menu.addAction(self.rotate_page_right_action)
+        self.page_menu.addSeparator()
         self.page_menu.addAction(self.delete_page_action)
         self.page_menu.addSeparator()
         self.page_menu.addAction(self.ocr_page_action)
@@ -2648,6 +2669,8 @@ class MainWindow(QMainWindow):
         toolbar.addAction(self.compress_action)
         toolbar.addAction(self.add_blank_page_action)
         toolbar.addAction(self.insert_pdf_action)
+        toolbar.addAction(self.rotate_page_left_action)
+        toolbar.addAction(self.rotate_page_right_action)
         toolbar.addAction(self.delete_page_action)
         toolbar.addSeparator()
         toolbar.addAction(self.add_image_action)
@@ -2890,6 +2913,8 @@ class MainWindow(QMainWindow):
             self.delete_page_action: "delete_page",
             self.move_page_up_action: "move_page_up",
             self.move_page_down_action: "move_page_down",
+            self.rotate_page_left_action: "rotate_page_left",
+            self.rotate_page_right_action: "rotate_page_right",
             self.add_image_action: "insert_image",
             self.edit_original_image_action: "edit_original_image",
             self.delete_image_action: "delete_image",
@@ -3801,6 +3826,15 @@ class MainWindow(QMainWindow):
         move_down.setEnabled(row + 1 < self.engine.page_count)
         move_down.triggered.connect(
             lambda _checked=False, source=row: self._move_page(source, source + 1)
+        )
+        menu.addSeparator()
+        rotate_left = menu.addAction(self.trx("rotate_page_left"))
+        rotate_left.triggered.connect(
+            lambda _checked=False, page=row: self._rotate_page(page, -1)
+        )
+        rotate_right = menu.addAction(self.trx("rotate_page_right"))
+        rotate_right.triggered.connect(
+            lambda _checked=False, page=row: self._rotate_page(page, 1)
         )
         menu.addSeparator()
         delete = menu.addAction(self.trx("delete_page"))
@@ -5029,6 +5063,54 @@ class MainWindow(QMainWindow):
 
     def move_current_page_down(self) -> None:
         self._move_current_page(1)
+
+    def rotate_current_page(self, quarter_turns: int) -> None:
+        if self.engine.is_open:
+            self._rotate_page(self.current_page, quarter_turns)
+
+    def _rotate_page(self, page_index: int, quarter_turns: int) -> bool:
+        """Rotate one logical page while preserving all pending editor work."""
+
+        if not self.engine.is_open or not 0 <= page_index < self.engine.page_count:
+            return False
+        turns = int(quarter_turns)
+        if turns == 0 or turns % 4 == 0:
+            return False
+        self.cancel_special_mode()
+        temp = PdfEngine()
+        try:
+            # Materialize pending objects into the working snapshot before the
+            # PDF page rotation. This makes text, images, signatures and their
+            # deletions rotate together instead of drifting in screen space.
+            composed = self.engine.compose_bytes(
+                self.edits.values(),
+                self.signatures,
+                self.inserted_images,
+                self.deleted_images,
+                self.inserted_texts,
+            )
+            temp.load_bytes(composed)
+            rotated_bytes = temp.bytes_with_page_rotated(page_index, turns)
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("menu_page"), str(exc))
+            return False
+        finally:
+            temp.close()
+        state = EditorState(rotated_bytes, {}, [], [], [], [])
+        self._push_state(state, page_index)
+        self._operation_log.record(
+            "page_rotated",
+            operation="page_rotate",
+            outcome="succeeded",
+            page_index=page_index,
+            quarter_turns=turns,
+            page_count=self.engine.page_count,
+        )
+        self.statusBar().showMessage(
+            self.trx("page_rotated", page=page_index + 1),
+            4000,
+        )
+        return True
 
     def _move_current_page(self, offset: int) -> None:
         if not self.engine.is_open:
@@ -6305,6 +6387,8 @@ class MainWindow(QMainWindow):
             self.add_blank_page_action,
             self.insert_pdf_action,
             self.delete_page_action,
+            self.rotate_page_left_action,
+            self.rotate_page_right_action,
             self.edit_original_image_action,
             self.add_image_action,
             self.delete_image_action,
