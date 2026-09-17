@@ -113,8 +113,11 @@ jobs:
           SHA-256: $sha256
           "@
           $notes | Set-Content -Encoding utf8 dist\release-notes.md
-          if (gh release view $env:GITHUB_REF_NAME *> $null) {
+          gh release view $env:GITHUB_REF_NAME *> $null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          if ($releaseExists) {
             gh release upload $env:GITHUB_REF_NAME $archive.FullName --clobber
+            if ($LASTEXITCODE -ne 0) { throw "Failed to upload the verified portable archive." }
             gh release edit $env:GITHUB_REF_NAME `
               --title "Nettongia PDF Editor $env:GITHUB_REF_NAME (unsigned public beta)" `
               --notes-file dist\release-notes.md
