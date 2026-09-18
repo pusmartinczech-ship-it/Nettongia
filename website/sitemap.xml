@@ -15,18 +15,18 @@
     <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
   </url>
   <url>
-    <loc>https://nettongia.com/offline-pdf-editor-windows.html</loc>
+    <loc>https://nettongia.com/offline-pdf-editor-windows</loc>
     <lastmod>2026-09-18</lastmod>
-    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/offline-pdf-editor-windows.html"/>
-    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/bezplatny-pdf-editor.html"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/offline-pdf-editor-windows"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/bezplatny-pdf-editor"/>
   </url>
   <url>
-    <loc>https://nettongia.com/cs/bezplatny-pdf-editor.html</loc>
+    <loc>https://nettongia.com/cs/bezplatny-pdf-editor</loc>
     <lastmod>2026-09-18</lastmod>
-    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/bezplatny-pdf-editor.html"/>
-    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/offline-pdf-editor-windows.html"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/bezplatny-pdf-editor"/>
+    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/offline-pdf-editor-windows"/>
   </url>
-  <url><loc>https://nettongia.com/privacy.html</loc><lastmod>2026-09-18</lastmod></url>
-  <url><loc>https://nettongia.com/license.html</loc><lastmod>2026-09-18</lastmod></url>
-  <url><loc>https://nettongia.com/code-signing-policy.html</loc><lastmod>2026-09-18</lastmod></url>
+  <url><loc>https://nettongia.com/privacy</loc><lastmod>2026-09-18</lastmod></url>
+  <url><loc>https://nettongia.com/license</loc><lastmod>2026-09-18</lastmod></url>
+  <url><loc>https://nettongia.com/code-signing-policy</loc><lastmod>2026-09-18</lastmod></url>
 </urlset>
