@@ -117,6 +117,10 @@ def main() -> int:
                 errors.append(f"{label}: indexable page is missing a canonical URL")
             else:
                 canonical = canonical_match.group(1)
+                if canonical.endswith(".html"):
+                    errors.append(
+                        f"{label}: canonical URL must use Cloudflare's final extensionless URL"
+                    )
                 if canonical in canonicals:
                     errors.append(f"{label}: duplicate canonical also used by {canonicals[canonical].relative_to(ROOT)}")
                 canonicals[canonical] = page
