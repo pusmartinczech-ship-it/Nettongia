@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<XML_DIZ_INFO>
+  <MASTER_PAD_VERSION_INFO>
+    <MASTER_PAD_VERSION>4.0</MASTER_PAD_VERSION>
+    <MASTER_PAD_EDITOR>Hand-authored</MASTER_PAD_EDITOR>
+    <MASTER_PAD_INFO>Portable Application Description for Nettongia PDF Editor.</MASTER_PAD_INFO>
+  </MASTER_PAD_VERSION_INFO>
+  <Company_Info>
+    <Company_Name>Nettongia</Company_Name>
+    <Country>Czech Republic</Country>
+    <Company_WebSite_URL>https://nettongia.com/</Company_WebSite_URL>
+    <Contact_Info>
+      <Author_First_Name>Martin</Author_First_Name>
+      <Author_Email>support@nettongia.com</Author_Email>
+      <Contact_First_Name>Martin</Contact_First_Name>
+      <Contact_Email>support@nettongia.com</Contact_Email>
+    </Contact_Info>
+  </Company_Info>
+  <Program_Info>
+    <Program_Name>Nettongia PDF Editor</Program_Name>
+    <Program_Version>0.19.0</Program_Version>
+    <Program_Release_Month>09</Program_Release_Month>
+    <Program_Release_Day>17</Program_Release_Day>
+    <Program_Release_Year>2026</Program_Release_Year>
+    <Program_Cost_Dollars>0</Program_Cost_Dollars>
+    <Program_Cost_Other_Code>EUR</Program_Cost_Other_Code>
+    <Program_Cost_Other>0</Program_Cost_Other>
+    <Program_Type>Open Source</Program_Type>
+    <Program_Release_Status>New Release</Program_Release_Status>
+    <Program_Install_Support>No Install Support</Program_Install_Support>
+    <Program_OS_Support>Win10x64,Win11</Program_OS_Support>
+    <Program_Language>English, Chinese, Hindi, Spanish, Arabic, French, Bengali, Portuguese, Indonesian, Urdu, German, Russian, Turkish, Italian, Dutch, Romanian, Hungarian, Ukrainian, Czech, Slovak, Polish</Program_Language>
+    <Program_Change_Info>Version 0.19.0 adds reversible page rotation and is distributed as a portable Windows package.</Program_Change_Info>
+    <Program_Specific_Category>Business</Program_Specific_Category>
+    <Program_Category_Class>Business::Applications</Program_Category_Class>
+    <Program_System_Requirements>64-bit Windows 10 or Windows 11. No system Tesseract installation is required.</Program_System_Requirements>
+    <File_Info>
+      <File_Size_Bytes>100673131</File_Size_Bytes>
+      <File_Size_K>98314</File_Size_K>
+      <File_Size_MB>96.01</File_Size_MB>
+    </File_Info>
+    <Expire_Info>
+      <Has_Expire_Info>N</Has_Expire_Info>
+    </Expire_Info>
+  </Program_Info>
+  <Program_Descriptions>
+    <English>
+      <Keywords>PDF editor, PDF reader, OCR, document editing, offline, privacy, portable, Windows, open source</Keywords>
+      <Char_Desc_45>Private offline PDF editing for Windows.</Char_Desc_45>
+      <Char_Desc_80>Free, open-source and privacy-focused offline PDF editor for Windows.</Char_Desc_80>
+      <Char_Desc_250>Nettongia PDF Editor is a free, open-source PDF editor for Windows. Edit text and images, reorder, rotate or delete pages, add signatures and run OCR locally in five languages without uploading documents to a server.</Char_Desc_250>
+      <Char_Desc_450>Nettongia PDF Editor is a free and open-source PDF editor for Windows that processes documents locally. It can edit existing text, add or remove images, reorder, rotate and delete pages, create visual signatures, search documents, and undo or redo changes. Offline OCR for Czech, Slovak, Polish, German and English is included. The portable package requires no traditional installation.</Char_Desc_450>
+      <Char_Desc_2000>Nettongia PDF Editor is a free and open-source desktop application for editing PDF documents locally on Windows. Documents remain on the computer and are not uploaded to a processing service.
+
+Users can edit existing text, add movable text boxes, insert or remove images, reorder, rotate and delete pages, create blank pages, add visual signatures, search documents, print, and undo or redo changes. The prominent Save a copy workflow helps protect the original document from accidental overwriting.
+
+The portable package includes offline OCR for Czech, Slovak, Polish, German and English. It does not require a system-wide Tesseract installation or a separate language-model download. The interface is available in 21 languages and can follow the Windows light or dark appearance.
+
+Version 0.19.0 is an unsigned public beta distributed as a portable ZIP for 64-bit Windows 10 and Windows 11. The source code is available under the GNU Affero General Public License version 3.</Char_Desc_2000>
+    </English>
+  </Program_Descriptions>
+  <Web_Info>
+    <Application_URLs>
+      <Application_Info_URL>https://nettongia.com/</Application_Info_URL>
+      <Application_Icon_URL>https://nettongia.com/assets/mascot.svg</Application_Icon_URL>
+      <Application_XML_File_URL>https://nettongia.com/nettongia-pdf-editor.xml</Application_XML_File_URL>
+    </Application_URLs>
+    <Download_URLs>
+      <Primary_Download_URL>https://github.com/pusmartinczech-ship-it/Nettongia/releases/download/v0.19.0/Nettongia_PDF_Editor_0.19.0-portable-release.zip</Primary_Download_URL>
+    </Download_URLs>
+  </Web_Info>
+  <Permissions>
+    <Distribution_Permissions>Nettongia PDF Editor is open-source software under the GNU Affero General Public License version 3. Redistribution is permitted under that license when the license terms and corresponding source-code requirements are preserved. The source code is available at https://github.com/pusmartinczech-ship-it/Nettongia.</Distribution_Permissions>
+    <EULA>GNU Affero General Public License version 3. Full text: https://github.com/pusmartinczech-ship-it/Nettongia/blob/main/LICENSE</EULA>
+  </Permissions>
+</XML_DIZ_INFO>
