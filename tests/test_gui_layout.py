@@ -62,6 +62,30 @@ def _application() -> QApplication:
     return app
 
 
+def _form_pdf_bytes() -> bytes:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    for field_type, name, label, rect, value, choices in (
+        (fitz.PDF_WIDGET_TYPE_TEXT, "customer", "Customer", (40, 40, 240, 70), "Old", None),
+        (fitz.PDF_WIDGET_TYPE_CHECKBOX, "approved", "Approved", (40, 90, 60, 110), None, None),
+        (fitz.PDF_WIDGET_TYPE_COMBOBOX, "country", "Country", (40, 130, 240, 160), "Czechia", ["Czechia", "Poland"]),
+    ):
+        widget = fitz.Widget()
+        widget.field_type = field_type
+        widget.field_name = name
+        widget.field_label = label
+        widget.rect = fitz.Rect(rect)
+        if value is not None:
+            widget.field_value = value
+        if choices is not None:
+            widget.choice_values = choices
+        page.add_widget(widget)
+    try:
+        return document.tobytes()
+    finally:
+        document.close()
+
+
 def test_text_controls_use_one_toolbar_without_overlap() -> None:
     app = _application()
     window = MainWindow()
@@ -442,6 +466,64 @@ def test_native_comments_and_highlights_are_listed_and_undoable(
     assert len(window.engine.annotations()) == 1
     window.undo()
     assert len(window.engine.annotations()) == 2
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_acroform_sidebar_edits_fields_with_undo_redo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(_form_pdf_bytes())
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    assert window.forms_list.count() == 3
+    assert window.sidebar_tabs.isTabEnabled(window.forms_tab_index)
+
+    def select_field(name: str) -> None:
+        field = next(item for item in window.engine.form_fields() if item.name == name)
+        row = next(
+            index
+            for index in range(window.forms_list.count())
+            if int(window.forms_list.item(index).data(Qt.UserRole)) == field.xref
+        )
+        window.forms_list.setCurrentRow(row)
+
+    select_field("customer")
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: ("New customer", True),
+    )
+    window.edit_selected_form_field()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "New customer"
+    assert window.history_index == 1
+    window.undo()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "Old"
+    window.redo()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "New customer"
+
+    select_field("approved")
+    window.edit_selected_form_field()
+    assert next(item for item in window.engine.form_fields() if item.name == "approved").checked
+
+    select_field("country")
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getItem",
+        lambda *args, **kwargs: ("Poland", True),
+    )
+    window.edit_selected_form_field()
+    assert {item.name: item.value for item in window.engine.form_fields()}["country"] == "Poland"
+    assert window.has_unsaved_changes
 
     window._maybe_save_changes = lambda: True
     window.close()

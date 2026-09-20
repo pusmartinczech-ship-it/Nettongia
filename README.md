@@ -38,6 +38,12 @@ Version 0.19.0 adds reversible page rotation. Rotate the selected page left or r
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
 
+Existing AcroForm fields are available in the **Forms** sidebar. Double-click a
+text field, check box, radio button, combo box or list box to change its value;
+every change participates in Undo/Redo and is stored in the saved PDF. Read-only
+fields are identified and protected. XFA forms, push buttons and digital
+signature fields are detected by compatibility inspection but are not edited.
+
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete
 commands, or right-click an object on the page for object-specific actions.
@@ -324,6 +330,9 @@ Vector text and graphics remain sharp in all profiles. Lossy profiles are intend
 
 ## Current limitations
 
+- Interactive form filling supports standard AcroForm text, check, radio and
+  choice fields. Dynamic XFA, push-button actions and certificate-signature
+  fields are intentionally not modified.
 - OCR requires the checked-in language bundle; both source and packaged builds use it offline, with no Tesseract installation or model download. A damaged or incomplete bundle is reported by the self-test.
 - Letters converted to vector outlines cannot be treated as text.
 - Deleted images leave a white area. Complex backgrounds may require later retouching support.

@@ -394,6 +394,19 @@ gates. Do not create a new release version unless every material gate passes.
   the tested portable ZIP. Installer generation remains an explicit legacy
   opt-in and is no longer part of the GitHub workflow.
 
+## Completed checkpoint: AcroForm filling
+
+- Added a Forms sidebar that lists supported fields with page, label, type,
+  current value and read-only status, and navigates directly to field geometry.
+- Added editing for standard text fields, check boxes, radio buttons, combo
+  boxes and list boxes. Each change is materialized as one Undo/Redo state and
+  survives both foreground and isolated background saves.
+- Kept dynamic XFA, push-button actions and certificate-signature fields
+  read-only/out of the editor path; malformed, missing and unavailable values
+  fail without changing the document.
+- Added all 21 interface translations and direct engine/UI regressions for
+  listing, editing, protected fields, saving and Undo/Redo.
+
 ## Completed release candidate: 0.18.0 page and source-image editing
 
 - Added Page menu commands and keyboard shortcuts for moving the current page

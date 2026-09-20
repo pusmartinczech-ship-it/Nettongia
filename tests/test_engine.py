@@ -37,6 +37,47 @@ def _encrypted_pdf(password: str = "open-sesame") -> bytes:
         document.close()
 
 
+def _acroform_pdf() -> bytes:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+
+    text = fitz.Widget()
+    text.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    text.field_name = "customer_name"
+    text.field_label = "Customer name"
+    text.field_value = "Old value"
+    text.rect = fitz.Rect(40, 40, 240, 70)
+    page.add_widget(text)
+
+    checkbox = fitz.Widget()
+    checkbox.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+    checkbox.field_name = "approved"
+    checkbox.field_label = "Approved"
+    checkbox.rect = fitz.Rect(40, 90, 60, 110)
+    page.add_widget(checkbox)
+
+    choice = fitz.Widget()
+    choice.field_type = fitz.PDF_WIDGET_TYPE_COMBOBOX
+    choice.field_name = "country"
+    choice.field_label = "Country"
+    choice.choice_values = ["Czechia", "Slovakia", "Poland"]
+    choice.field_value = "Czechia"
+    choice.rect = fitz.Rect(40, 130, 240, 160)
+    page.add_widget(choice)
+
+    locked = fitz.Widget()
+    locked.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    locked.field_name = "locked"
+    locked.field_value = "Do not change"
+    locked.field_flags = fitz.PDF_FIELD_IS_READ_ONLY
+    locked.rect = fitz.Rect(40, 180, 240, 210)
+    page.add_widget(locked)
+    try:
+        return document.tobytes()
+    finally:
+        document.close()
+
+
 def test_styled_builtin_font_fallbacks() -> None:
     assert _builtin_pdf_font_name("TimesNewRomanPS-BoldMT", True, False) == "tibo"
     assert _builtin_pdf_font_name("Arial-BoldItalicMT", True, True) == "hebi"
@@ -686,3 +727,43 @@ def test_highlight_uses_visible_coordinates_on_rotated_page() -> None:
     assert annotation.bbox[1] == pytest.approx(bbox[1], abs=8)
     assert annotation.bbox[2] == pytest.approx(bbox[2], abs=8)
     assert annotation.bbox[3] == pytest.approx(bbox[3], abs=8)
+
+
+def test_acroform_fields_can_be_listed_changed_and_saved(tmp_path: Path) -> None:
+    engine = PdfEngine()
+    engine.load_bytes(_acroform_pdf())
+
+    fields = {field.name: field for field in engine.form_fields()}
+    assert set(fields) == {"customer_name", "approved", "country", "locked"}
+    assert fields["customer_name"].label == "Customer name"
+    assert fields["customer_name"].value == "Old value"
+    assert fields["approved"].checked is False
+    assert fields["country"].choices == ("Czechia", "Slovakia", "Poland")
+    assert fields["locked"].read_only is True
+
+    engine.load_bytes(
+        engine.bytes_with_form_value(fields["customer_name"].xref, "New value")
+    )
+    fields = {field.name: field for field in engine.form_fields()}
+    engine.load_bytes(engine.bytes_with_form_value(fields["approved"].xref, True))
+    fields = {field.name: field for field in engine.form_fields()}
+    engine.load_bytes(engine.bytes_with_form_value(fields["country"].xref, "Poland"))
+    fields = {field.name: field for field in engine.form_fields()}
+
+    assert fields["customer_name"].value == "New value"
+    assert fields["approved"].checked is True
+    assert fields["country"].value == "Poland"
+    with pytest.raises(ValueError, match="read-only"):
+        engine.bytes_with_form_value(fields["locked"].xref, "Changed")
+    with pytest.raises(ValueError, match="unavailable"):
+        engine.bytes_with_form_value(fields["country"].xref, "Germany")
+
+    output = tmp_path / "filled-form.pdf"
+    engine.save(output, ())
+    reopened = PdfEngine()
+    reopened.open(output)
+    saved = {field.name: field for field in reopened.form_fields()}
+    assert saved["customer_name"].value == "New value"
+    assert saved["approved"].checked is True
+    assert saved["country"].value == "Poland"
+    reopened.close()

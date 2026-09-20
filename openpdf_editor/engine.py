@@ -212,6 +212,25 @@ class AnnotationInfo:
     bbox: tuple[float, float, float, float]
 
 
+@dataclass(frozen=True)
+class FormFieldInfo:
+    """A detached description of one editable AcroForm widget."""
+
+    xref: int
+    page_index: int
+    name: str
+    label: str
+    type_code: int
+    type_name: str
+    value: str
+    choices: tuple[str, ...]
+    bbox: tuple[float, float, float, float]
+    read_only: bool
+    multiline: bool
+    checked: bool
+    on_value: str
+
+
 class PdfEngine:
     def __init__(self) -> None:
         self.path: Path | None = None
@@ -316,6 +335,99 @@ class PdfEngine:
                     )
                 )
         return result
+
+    def form_fields(self) -> list[FormFieldInfo]:
+        """Return supported AcroForm widgets without retaining PDF proxies."""
+
+        self._require_open()
+        result: list[FormFieldInfo] = []
+        supported = {
+            pymupdf.PDF_WIDGET_TYPE_TEXT,
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        }
+        for page_index in range(self._source.page_count):
+            page = self._source[page_index]
+            for widget in page.widgets() or ():
+                field_type = int(widget.field_type or 0)
+                if field_type not in supported:
+                    continue
+                value = str(widget.field_value or "")
+                on_value = ""
+                checked = False
+                if field_type in (
+                    pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                    pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                ):
+                    on_value = str(widget.on_state() or "Yes")
+                    checked = value not in ("", "Off") and value == on_value
+                rect = self._view_rect(page, widget.rect)
+                choices = tuple(str(item) for item in (widget.choice_values or ()))
+                flags = int(widget.field_flags or 0)
+                result.append(
+                    FormFieldInfo(
+                        xref=int(widget.xref),
+                        page_index=page_index,
+                        name=str(widget.field_name or ""),
+                        label=str(widget.field_label or ""),
+                        type_code=field_type,
+                        type_name=str(widget.field_type_string or "Form field"),
+                        value=value,
+                        choices=choices,
+                        bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        read_only=bool(flags & pymupdf.PDF_FIELD_IS_READ_ONLY),
+                        multiline=bool(
+                            field_type == pymupdf.PDF_WIDGET_TYPE_TEXT
+                            and flags & (1 << 12)
+                        ),
+                        checked=checked,
+                        on_value=on_value,
+                    )
+                )
+        return result
+
+    def bytes_with_form_value(self, field_xref: int, value: str | bool) -> bytes:
+        """Return a PDF with one supported AcroForm widget value changed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    if int(widget.xref) != int(field_xref):
+                        continue
+                    flags = int(widget.field_flags or 0)
+                    if flags & pymupdf.PDF_FIELD_IS_READ_ONLY:
+                        raise ValueError("This form field is read-only.")
+                    field_type = int(widget.field_type or 0)
+                    if field_type == pymupdf.PDF_WIDGET_TYPE_TEXT:
+                        text = str(value)
+                        if len(text) > 10_000:
+                            raise ValueError("The form value is too long.")
+                        widget.field_value = text
+                    elif field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        text = str(value)
+                        choices = tuple(str(item) for item in (widget.choice_values or ()))
+                        if choices and text not in choices:
+                            raise ValueError("The selected form value is unavailable.")
+                        widget.field_value = text
+                    elif field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+                        widget.field_value = str(widget.on_state() or "Yes") if bool(value) else "Off"
+                    elif field_type == pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+                        if not bool(value):
+                            raise ValueError("A radio button can only be selected.")
+                        widget.field_value = str(widget.on_state() or "Yes")
+                    else:
+                        raise ValueError("This form field type is not editable.")
+                    widget.update()
+                    return self._serialize(document)
+            raise ValueError("The form field is no longer available.")
+        finally:
+            document.close()
 
     @staticmethod
     def _view_rect(

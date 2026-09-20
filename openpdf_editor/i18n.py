@@ -1,412 +1,4212 @@
-from __future__ import annotations
-
-import math
-from dataclasses import dataclass
-
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
-
-from .european_translations import EUROPEAN_LANGUAGE_CODES, EUROPEAN_ROWS
-
-
-@dataclass(frozen=True)
-class Language:
-    code: str
-    native_name: str
-    english_name: str
-
-
-LANGUAGES = (
-    Language("en", "English", "English"),
-    Language("zh", "ä¸­æ–‡", "Chinese"),
-    Language("hi", "à¤¹à¤¿à¤¨à¥à¤¦à¥€", "Hindi"),
-    Language("es", "EspaÃ±ol", "Spanish"),
-    Language("ar", "Ø§Ù„Ø¹Ø±Ø¨ÙŠØ©", "Arabic"),
-    Language("fr", "FranÃ§ais", "French"),
-    Language("bn", "à¦¬à¦¾à¦‚à¦²à¦¾", "Bengali"),
-    Language("pt", "PortuguÃªs", "Portuguese"),
-    Language("id", "Bahasa Indonesia", "Indonesian"),
-    Language("ur", "Ø§Ø±Ø¯Ùˆ", "Urdu"),
-    Language("de", "Deutsch", "German"),
-    Language("ru", "Ğ ÑƒÑÑĞºĞ¸Ğ¹", "Russian"),
-    Language("tr", "TÃ¼rkÃ§e", "Turkish"),
-    Language("it", "Italiano", "Italian"),
-    Language("nl", "Nederlands", "Dutch"),
-    Language("ro", "RomÃ¢nÄƒ", "Romanian"),
-    Language("hu", "Magyar", "Hungarian"),
-    Language("uk", "Ğ£ĞºÑ€Ğ°Ñ—Ğ½ÑÑŒĞºĞ°", "Ukrainian"),
-    Language("cs", "ÄŒeÅ¡tina", "Czech"),
-    Language("sk", "SlovenÄina", "Slovak"),
-    Language("pl", "Polski", "Polish"),
-)
-LANGUAGE_CODES = {language.code for language in LANGUAGES}
-RIGHT_TO_LEFT = {"ar", "ur"}
-_ROW_LANGUAGE_CODES = ("en", "zh", "hi", "es", "fr", "ar", "bn", "pt", "id", "ur", "cs", "sk", "pl")
-
-
-BASE = {
-    "menu_file": "File",
-    "menu_edit": "Edit",
-    "menu_insert": "Insert",
-    "menu_page": "Page",
-    "menu_image": "Image",
-    "menu_view": "View",
-    "menu_appearance": "Appearance",
-    "menu_language": "Language",
-    "menu_help": "Help",
-    "new_pdf": "New PDF...",
-    "open": "Open...",
-    "recent_files": "Recent files",
-    "no_recent_files": "No recent files",
-    "clear_recent_files": "Clear recent files",
-    "recent_file_missing": "The file is no longer available:\n{path}",
-    "close_document": "Close document",
-    "save_as": "Save As...",
-    "save_copy": "Save a Copy...",
-    "print": "Print...",
-    "print_preview": "Print preview",
-    "compress": "Compress PDF...",
-    "exit": "Exit",
-    "undo": "Undo",
-    "redo": "Redo",
-    "find": "Find...",
-    "find_label": "Find:",
-    "find_placeholder": "Find in document...",
-    "find_previous": "Previous match",
-    "find_next": "Next match",
-    "close_search": "Close search",
-    "find_no_results": "No matches found",
-    "document_closed": "Document closed",
-    "add_text": "Add text box",
-    "delete_text": "Delete selected text",
-    "edit_text": "Edit text",
-    "zoom_in": "Zoom in",
-    "zoom_out": "Zoom out",
-    "fit_width": "Fit width",
-    "theme_auto": "Automatic (system)",
-    "theme_dark": "Dark",
-    "theme_light": "Light",
-    "add_blank_page": "Add blank page",
-    "insert_pages": "Insert pages from PDF...",
-    "delete_page": "Delete current page",
-    "move_page_up": "Move page earlier",
-    "move_page_down": "Move page later",
-    "page_moved": "Page moved to position {page}.",
-    "rotate_page_left": "Rotate page left",
-    "rotate_page_right": "Rotate page right",
-    "page_rotated": "Page {page} rotated.",
-    "insert_image": "Insert image...",
-    "edit_original_image": "Edit original image...",
-    "edit_original_image_hint": "Click an original image to make it movable, resizable, and rotatable. Press Esc to cancel.",
-    "original_image": "Original image",
-    "original_image_ready": "The original image is now editable. Drag it or use the resize and rotation handles.",
-    "delete_image": "Delete image",
-    "add_signature": "Add visual signature...",
-    "export_diagnostics": "Export anonymized diagnostics...",
-    "diagnostics_title": "Anonymized diagnostics",
-    "diagnostics_review": "Before export, review the complete contents.\n\nIncluded:\nâ€¢ bundle generation time and application/diagnostics versions\nâ€¢ frozen-build flag, operating-system family, release and architecture\nâ€¢ Python, Qt, PySide6 and PyMuPDF versions\nâ€¢ interface language and appearance mode\nâ€¢ page count, current page and coarse PDF size bucket\nâ€¢ unsaved-state flag and counts of pending objects\nâ€¢ tile-cache counters\nâ€¢ bounded operation timestamps, random per-start session IDs, names and outcomes\nâ€¢ presence of current/previous crash logs and their coarse size\n\nExcluded:\nâ€¢ PDF files and rendered pages\nâ€¢ document text, images, annotations and metadata\nâ€¢ file names, folder paths and recent-file history\nâ€¢ user name, computer name, IP and hardware identifiers\nâ€¢ raw exception messages and raw crash-log contents\n\nCreate the ZIP?",
-    "diagnostics_filter": "ZIP archives (*.zip)",
-    "diagnostics_saved": "Anonymized diagnostics saved ({records} operation records):\n{path}",
-    "diagnostics_failed": "Unable to create diagnostics: {error}",
-    "about": "About",
-    "check_for_updates": "Check for updates...",
-    "automatic_updates": "Automatically check for updates (GitHub)",
-    "update_check_title": "Nettongia PDF Editor updates",
-    "update_available": "A newer version is available: {version}\n\nCurrent version: {current}\n\nOpen the release page to download it?",
-    "no_update_available": "You are using the latest available version ({version}).",
-    "update_check_failed": "The update check is currently unavailable. Nettongia can continue working offline.",
-    "open_release_page": "Open release page",
-    "document_compatibility": "Document compatibility...",
-    "ocr_page": "OCR current page...",
-    "ocr_document": "OCR document...",
-    "ocr_title": "Text recognition (OCR)",
-    "ocr_language_prompt": "Recognition language:",
-    "ocr_unavailable": "The bundled offline OCR language data is unavailable. Reinstall the complete Nettongia PDF Editor package.",
-    "ocr_working": "Recognizing text in a separate process...",
-    "ocr_complete": "OCR completed: {pages} page(s), {words} recognized word(s).",
-    "ocr_nothing": "OCR found no image-only page with recognizable text. Pages that already contain text were left unchanged.",
-    "ocr_discarded": "The OCR result was discarded because the document changed.",
-    "compatibility_checking": "Checking document compatibility in an isolated process...",
-    "compatibility_ok": "No risky PDF features were detected.",
-    "compatibility_warnings": "Compatibility check found {count} item(s) to review.",
-    "compatibility_failed": "The isolated compatibility check failed: {error}",
-    "compatibility_signature_risk": "Editing and saving will invalidate existing digital signatures.",
-    "compatibility_features": "Features to review: {features}",
-    "compatibility_level_safe": "Safe",
-    "compatibility_level_possible_changes": "Possible changes",
-    "compatibility_level_high_risk": "High risk",
-    "representative_render_ok": "Representative pages rendered safely: {count}",
-    "font": "Font",
-    "font_size": "Font size",
-    "bold": "Bold",
-    "italic": "Italic",
-    "underline": "Underline",
-    "text_color": "Text color",
-    "current_zoom": "Current zoom",
-    "create": "Create",
-    "cancel": "Cancel",
-    "save": "Save",
-    "discard": "Discard",
-    "yes": "Yes",
-    "no": "No",
-    "new_title": "Create new PDF",
-    "custom_size": "Custom size",
-    "portrait": "Portrait",
-    "landscape": "Landscape",
-    "page_size": "Page size",
-    "orientation": "Orientation",
-    "width": "Width",
-    "height": "Height",
-    "page_count": "Number of pages",
-    "result": "Result",
-    "blank_pdf_intro": "Create a blank PDF document:",
-    "pages_count": "{count} page(s)",
-    "signature_title": "Insert visual signature",
-    "signature_warning": "This inserts a visible signature into the page. It is not a certificate-based digital signature.",
-    "draw_signature": "Draw signature",
-    "type_signature": "Type signature",
-    "clear_drawing": "Clear drawing",
-    "draw_hint": "Draw inside the box using the mouse or a pen:",
-    "your_name": "Your name",
-    "signature_text": "Signature text",
-    "size": "Size",
-    "style": "Style",
-    "width_on_page": "Width on page",
-    "rotation": "Rotation",
-    "empty_signature": "Empty signature",
-    "empty_draw": "Draw a signature or switch to Type signature.",
-    "empty_type": "Enter the signature text.",
-    "drawn_signature_desc": "Drawn visual signature",
-    "typed_signature_desc": "Typed visual signature: {text}",
-    "compress_title": "Compress PDF",
-    "lossless": "Lossless optimization",
-    "balanced": "Balanced - recommended",
-    "strong": "Strong - smallest file",
-    "compression_profile": "Compression profile",
-    "lossless_desc": "Optimizes PDF objects and streams without lowering image quality.",
-    "balanced_desc": "Downsamples oversized images to about 150 dpi and uses medium JPEG compression.",
-    "strong_desc": "Downsamples oversized images to about 105 dpi and uses stronger JPEG compression.",
-    "compression_note": "Lossy profiles are most effective for scans and photographs. Vector text and graphics remain sharp.",
-    "open_to_begin": "Open a PDF or create a new one to begin",
-    "sidebar_pages": "Pages",
-    "sidebar_tree": "Tree",
-    "comments": "Comments",
-    "add_comment": "Add comment...",
-    "edit_comment": "Edit selected comment...",
-    "delete_annotation": "Delete selected annotation",
-    "highlight_text": "Highlight text",
-    "comment_place_hint": "Click the page where the comment icon should be placed. Press Esc to cancel.",
-    "comment_text_prompt": "Comment text:",
-    "comment_empty": "Enter comment text before placing the annotation.",
-    "comment_added": "Comment added. Use Undo to remove it.",
-    "highlight_added": "Text highlighted. Use Undo to remove the highlight.",
-    "comment_updated": "Comment updated. Use Undo to restore the previous text.",
-    "delete_annotation_question": "Delete the selected annotation?",
-    "annotation_deleted": "Annotation deleted. Use Undo to restore it.",
-    "annotation_without_comment": "No comment text",
-    "no_document_tree": "This PDF has no document tree.",
-    "untitled": "Untitled.pdf",
-    "page_word": "Page",
-    "editable_text": "editable text",
-    "ocr_required": "image-only page - OCR required",
-    "images": "images",
-    "signatures": "signatures",
-    "text_boxes": "text objects",
-    "unsaved_title": "Unsaved changes",
-    "unsaved_question": "Save changes to {name} before continuing?",
-    "recovery_title": "Recover unsaved work",
-    "recovery_question": "Nettongia PDF Editor found automatically saved unsaved work for {name}. Restore it?",
-    "restore": "Restore",
-    "recovery_unavailable": "Automatic recovery is currently unavailable: {error}",
-    "recovery_failed_title": "Recovery failed",
-    "recovery_failed_message": "The recovery data could not be opened. It was preserved for diagnostics at:\n{path}\n\n{error}",
-    "recovery_restored": "Unsaved work was restored. Save the document to keep it.",
-    "choose_text_color": "Choose text color",
-    "add_text_hint": "Drag a text box on the page, or click once for a standard box. Press Esc to cancel.",
-    "type_text_hint": "Type the new text. Press Ctrl+Enter to finish or Esc to cancel.",
-    "direct_edit_hint": "Edit directly on the page. Ctrl+Enter confirms; Esc cancels.",
-    "text_inserted": "Text inserted. It remains selectable, movable, and editable.",
-    "text_updated": "Text updated. Use Undo to restore the previous version.",
-    "text_cancelled": "Text editing cancelled.",
-    "text_removed": "Text removed. Use Undo to restore it.",
-    "text_frame_updated": "Text frame updated. Use Undo to restore its previous geometry.",
-    "select_text_hint": "Double-click to type directly. Drag the frame to move it or its lower-right handle to resize it.",
-    "about_title": "About Nettongia PDF Editor",
-    "pdf_filter": "PDF documents (*.pdf)",
-    "image_filter": "Images (*.png *.jpg *.jpeg *.bmp *.tif *.tiff *.webp)",
-    "new_created": "New PDF created: {count} page(s), {width:.0f} x {height:.0f} pt. Save it to choose a filename.",
-    "unable_create_title": "Unable to create PDF",
-    "open_pdf_title": "Open PDF",
-    "unable_open_title": "Unable to open PDF",
-    "pdf_password_title": "Protected PDF",
-    "pdf_password_prompt": "Enter the password to open this PDF:",
-    "pdf_password_incorrect": "Incorrect password. Try again:",
-    "pdf_password_removed_notice": "The PDF was unlocked. Edited copies will be saved without password protection.",
-    "render_error_title": "Rendering error",
-    "cannot_delete_page": "A PDF must contain at least one page.",
-    "delete_page_question": "Delete page {page}?",
-    "invalid_image_format": "The selected image format could not be read.",
-    "image_width_prompt": "Width on page (points):",
-    "unable_open_image": "Unable to open image",
-    "unable_create_signature": "Unable to create signature",
-    "visual_place_hint": "Click on the page where the {kind} should be placed. Press Esc to cancel.",
-    "unable_place_image": "Unable to place image",
-    "invalid_image_data": "The image data is invalid.",
-    "signature_inserted": "Signature inserted. Click it to move, resize, or rotate it.",
-    "image_inserted": "Image inserted. Use Undo to remove it.",
-    "image_updated": "Image updated. Use Undo to restore its previous position.",
-    "signature_updated": "Signature updated. Use Undo to restore its previous position.",
-    "signature_select_hint": "Drag the signature to move it; use the lower handle to resize and the upper handle to rotate.",
-    "no_image": "No image",
-    "no_image_message": "There is no image or visual signature on this page.",
-    "delete_visual_hint": "Click the image or visual signature to remove. Press Esc to cancel.",
-    "image_removed": "Image removed. Use Undo to restore it.",
-    "save_pdf_title": "Save edited PDF",
-    "pdf_saved": "PDF saved",
-    "pdf_saved_message": "The edited document was saved to:\n{path}",
-    "saved_status": "Saved: {path}",
-    "unable_save": "Unable to save PDF",
-    "print_failed": "Printing failed",
-    "print_complete": "Print job sent: {count} page(s).",
-    "save_compressed_title": "Save compressed PDF",
-    "compression_failed": "Compression failed",
-    "compression_complete": "Compression complete",
-    "reduction": "Reduction: {value:.1f}%",
-    "increase": "Increase: {value:.1f}% (the source was already efficiently compressed)",
-    "original_working": "Original working document",
-    "compressed_copy": "Compressed copy",
-    "recompressed_images": "Recompressed images",
-    "about_body": "Nettongia PDF Editor 0.17.0\n\nEdit existing text directly on the page and add movable, resizable text boxes. Create blank PDFs; insert or remove images; manage pages; add rotatable visual signatures; switch appearance and interface language; preview and print documents; and save compressed copies.\n\nOriginal selected text and deleted images are removed from page content before saving.\n\nUnsaved work is marked with an asterisk, protected by a Save / Discard / Cancel prompt, and captured by automatic crash recovery. Recently opened PDFs are available from the File menu.\n\nVisual signatures are not certificate-based digital signatures. Image-only text still requires OCR.",
-}
-
-
-# Each row follows _ROW_LANGUAGE_CODES. The first value is English and is
-# intentionally repeated so the table can be validated and inspected easily.
-_ROWS = {
-    "automatic_updates": ("Automatically check for updates (GitHub)", "è‡ªåŠ¨æ£€æŸ¥æ›´æ–° (GitHub)", "à¤¸à¥à¤µà¤šà¤¾à¤²à¤¿à¤¤ à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤œà¤¾à¤à¤š (GitHub)", "Buscar actualizaciones automÃ¡ticamente (GitHub)", "VÃ©rifier automatiquement les mises Ã  jour (GitHub)", "Ø§Ù„ØªØ­Ù‚Ù‚ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ù…Ù† Ø§Ù„ØªØ­Ø¯ÙŠØ«Ø§Øª (GitHub)", "à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼à¦­à¦¾à¦¬à§‡ à¦†à¦ªà¦¡à§‡à¦Ÿ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨ (GitHub)", "Verificar atualizaÃ§Ãµes automaticamente (GitHub)", "Periksa pembaruan otomatis (GitHub)", "Ø§Ù¾ ÚˆÛŒÙ¹Ø³ Ø®ÙˆØ¯Ú©Ø§Ø± Ø·ÙˆØ± Ù¾Ø± Ú†ÛŒÚ© Ú©Ø±ÛŒÚº (GitHub)", "Automaticky kontrolovat aktualizace (GitHub)", "Automaticky kontrolovaÅ¥ aktualizÃ¡cie (GitHub)", "Automatycznie sprawdzaj aktualizacje (GitHub)"),
-    "menu_file": ("File", "æ–‡ä»¶", "à¤«à¤¼à¤¾à¤‡à¤²", "Archivo", "Fichier", "Ù…Ù„Ù", "à¦«à¦¾à¦‡à¦²", "Ficheiro", "Ğ¤Ğ°Ğ¹Ğ»", "ÙØ§Ø¦Ù„", "Soubor", "SÃºbor", "Plik"),
-    "menu_edit": ("Edit", "ç¼–è¾‘", "à¤¸à¤‚à¤ªà¤¾à¤¦à¤¨", "Editar", "Ã‰dition", "ØªØ­Ø±ÙŠØ±", "à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¨à¦¾", "Editar", "ĞŸÑ€Ğ°Ğ²ĞºĞ°", "ØªØ±Ù…ÛŒÙ…", "Ãšpravy", "UpraviÅ¥", "Edycja"),
-    "menu_insert": ("Insert", "æ’å…¥", "à¤¸à¤®à¥à¤®à¤¿à¤²à¤¿à¤¤ à¤•à¤°à¥‡à¤‚", "Insertar", "Insertion", "Ø¥Ø¯Ø±Ø§Ø¬", "à¦¸à¦¨à§à¦¨à¦¿à¦¬à§‡à¦¶", "Inserir", "Ğ’ÑÑ‚Ğ°Ğ²ĞºĞ°", "Ø¯Ø§Ø®Ù„ Ú©Ø±ÛŒÚº", "VloÅ¾it", "VloÅ¾iÅ¥", "Wstaw"),
-    "menu_page": ("Page", "é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤ ", "PÃ¡gina", "Page", "ØµÙØ­Ø©", "à¦ªà§ƒà¦·à§à¦ à¦¾", "PÃ¡gina", "Ğ¡Ñ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ğ°", "ØµÙØ­Û", "StrÃ¡nka", "Strana", "Strona"),
-    "menu_image": ("Image", "å›¾åƒ", "à¤›à¤µà¤¿", "Imagen", "Image", "ØµÙˆØ±Ø©", "à¦›à¦¬à¦¿", "Imagem", "Ğ˜Ğ·Ğ¾Ğ±Ñ€Ğ°Ğ¶ĞµĞ½Ğ¸Ğµ", "ØªØµÙˆÛŒØ±", "ObrÃ¡zek", "ObrÃ¡zok", "Obraz"),
-    "menu_view": ("View", "è§†å›¾", "à¤¦à¥ƒà¤¶à¥à¤¯", "Ver", "Affichage", "Ø¹Ø±Ø¶", "à¦¦à§ƒà¦¶à§à¦¯", "Ver", "Ğ’Ğ¸Ğ´", "Ù…Ù†Ø¸Ø±", "ZobrazenÃ­", "Zobrazenie", "Widok"),
-    "menu_appearance": ("Appearance", "å¤–è§‚", "à¤°à¥‚à¤ª", "Apariencia", "Apparence", "Ø§Ù„Ù…Ø¸Ù‡Ø±", "à¦šà§‡à¦¹à¦¾à¦°à¦¾", "Aspeto", "ĞÑ„Ğ¾Ñ€Ğ¼Ğ»ĞµĞ½Ğ¸Ğµ", "Ø¸Ø§ÛØ±ÛŒ Ø´Ú©Ù„", "Vzhled", "VzhÄ¾ad", "WyglÄ…d"),
-    "menu_language": ("Language", "è¯­è¨€", "à¤­à¤¾à¤·à¤¾", "Idioma", "Langue", "Ø§Ù„Ù„ØºØ©", "à¦­à¦¾à¦·à¦¾", "Idioma", "Ğ¯Ğ·Ñ‹Ğº", "Ø²Ø¨Ø§Ù†", "Jazyk", "Jazyk", "JÄ™zyk"),
-    "menu_help": ("Help", "å¸®åŠ©", "à¤¸à¤¹à¤¾à¤¯à¤¤à¤¾", "Ayuda", "Aide", "Ù…Ø³Ø§Ø¹Ø¯Ø©", "à¦¸à¦¹à¦¾à¦¯à¦¼à¦¤à¦¾", "Ajuda", "Ğ¡Ğ¿Ñ€Ğ°Ğ²ĞºĞ°", "Ù…Ø¯Ø¯", "NÃ¡povÄ›da", "PomocnÃ­k", "Pomoc"),
-    "new_pdf": ("New PDF...", "æ–°å»º PDF...", "à¤¨à¤¯à¤¾ PDF...", "Nuevo PDF...", "Nouveau PDF...", "PDF Ø¬Ø¯ÙŠØ¯...", "à¦¨à¦¤à§à¦¨ PDF...", "Novo PDF...", "ĞĞ¾Ğ²Ñ‹Ğ¹ PDF...", "Ù†Ø¦ÛŒ PDF...", "NovÃ© PDF...", "NovÃ© PDF...", "Nowy PDF..."),
-    "open": ("Open...", "æ‰“å¼€...", "à¤–à¥‹à¤²à¥‡à¤‚...", "Abrir...", "Ouvrir...", "ÙØªØ­...", "à¦–à§à¦²à§à¦¨...", "Abrir...", "ĞÑ‚ĞºÑ€Ñ‹Ñ‚ÑŒ...", "Ú©Ú¾ÙˆÙ„ÛŒÚº...", "OtevÅ™Ã­t...", "OtvoriÅ¥...", "OtwÃ³rz..."),
-    "close_document": ("Close document", "å…³é—­æ–‡æ¡£", "à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤¬à¤‚à¤¦ à¤•à¤°à¥‡à¤‚", "Cerrar documento", "Fermer le document", "Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù…Ø³ØªÙ†Ø¯", "à¦¨à¦¥à¦¿ à¦¬à¦¨à§à¦§ à¦•à¦°à§à¦¨", "Fechar documento", "Tutup dokumen", "Ø¯Ø³ØªØ§ÙˆÛŒØ² Ø¨Ù†Ø¯ Ú©Ø±ÛŒÚº", "ZavÅ™Ã­t dokument", "ZavrieÅ¥ dokument", "Zamknij dokument"),
-    "save_as": ("Save As...", "å¦å­˜ä¸º...", "à¤‡à¤¸ à¤°à¥‚à¤ª à¤®à¥‡à¤‚ à¤¸à¤¹à¥‡à¤œà¥‡à¤‚...", "Guardar como...", "Enregistrer sous...", "Ø­ÙØ¸ Ø¨Ø§Ø³Ù…...", "à¦¨à¦¾à¦®à§‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦£...", "Guardar como...", "Ğ¡Ğ¾Ñ…Ñ€Ğ°Ğ½Ğ¸Ñ‚ÑŒ ĞºĞ°Ğº...", "Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚº Ø¨Ø·ÙˆØ±...", "UloÅ¾it jako...", "UloÅ¾iÅ¥ ako...", "Zapisz jako..."),
-    "print": ("Print...", "æ‰“å°...", "à¤ªà¥à¤°à¤¿à¤‚à¤Ÿ à¤•à¤°à¥‡à¤‚...", "Imprimir...", "Imprimer...", "Ø·Ø¨Ø§Ø¹Ø©...", "à¦ªà§à¦°à¦¿à¦¨à§à¦Ÿ...", "Imprimir...", "Cetak...", "Ù¾Ø±Ù†Ù¹...", "Tisk...", "TlaÄiÅ¥...", "Drukuj..."),
-    "print_preview": ("Print preview", "æ‰“å°é¢„è§ˆ", "à¤ªà¥à¤°à¤¿à¤‚à¤Ÿ à¤ªà¥‚à¤°à¥à¤µà¤¾à¤µà¤²à¥‹à¤•à¤¨", "Vista previa de impresiÃ³n", "AperÃ§u avant impression", "Ù…Ø¹Ø§ÙŠÙ†Ø© Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©", "à¦ªà§à¦°à¦¿à¦¨à§à¦Ÿ à¦ªà§à¦°à¦¿à¦­à¦¿à¦‰", "PrÃ©-visualizaÃ§Ã£o da impressÃ£o", "Pratinjau cetak", "Ù¾Ø±Ù†Ù¹ Ù¾ÛŒØ´ Ù…Ù†Ø¸Ø±", "NÃ¡hled tisku", "UkÃ¡Å¾ka pred tlaÄou", "PodglÄ…d wydruku"),
-    "compress": ("Compress PDF...", "å‹ç¼© PDF...", "PDF à¤¸à¤‚à¤ªà¥€à¤¡à¤¼à¤¿à¤¤ à¤•à¤°à¥‡à¤‚...", "Comprimir PDF...", "Compresser le PDF...", "Ø¶ØºØ· PDF...", "PDF à¦¸à¦‚à¦•à§à¦šà¦¿à¦¤ à¦•à¦°à§à¦¨...", "Comprimir PDF...", "Ğ¡Ğ¶Ğ°Ñ‚ÑŒ PDF...", "PDF Ø³Ú©ÛŒÚ‘ÛŒÚº...", "Komprimovat PDF...", "KomprimovaÅ¥ PDF...", "Kompresuj PDF..."),
-    "exit": ("Exit", "é€€å‡º", "à¤¬à¤¾à¤¹à¤° à¤¨à¤¿à¤•à¤²à¥‡à¤‚", "Salir", "Quitter", "Ø®Ø±ÙˆØ¬", "à¦ªà§à¦°à¦¸à§à¦¥à¦¾à¦¨", "Sair", "Ğ’Ñ‹Ñ…Ğ¾Ğ´", "Ø¨Ø§ÛØ± Ù†Ú©Ù„ÛŒÚº", "UkonÄit", "UkonÄiÅ¥", "ZakoÅ„cz"),
-    "undo": ("Undo", "æ’¤é”€", "à¤ªà¥‚à¤°à¥à¤µà¤µà¤¤ à¤•à¤°à¥‡à¤‚", "Deshacer", "Annuler", "ØªØ±Ø§Ø¬Ø¹", "à¦ªà§‚à¦°à§à¦¬à¦¾à¦¬à¦¸à§à¦¥à¦¾à¦¯à¦¼", "Desfazer", "ĞÑ‚Ğ¼ĞµĞ½Ğ¸Ñ‚ÑŒ", "ÙˆØ§Ù¾Ø³", "ZpÄ›t", "SpÃ¤Å¥", "Cofnij"),
-    "redo": ("Redo", "é‡åš", "à¤«à¤¿à¤° à¤¸à¥‡ à¤•à¤°à¥‡à¤‚", "Rehacer", "RÃ©tablir", "Ø¥Ø¹Ø§Ø¯Ø©", "à¦ªà§à¦¨à¦°à¦¾à¦¯à¦¼", "Refazer", "ĞŸĞ¾Ğ²Ñ‚Ğ¾Ñ€Ğ¸Ñ‚ÑŒ", "Ø¯ÙˆØ¨Ø§Ø±Û", "Znovu", "Znova", "PonÃ³w"),
-    "find": ("Find...", "æŸ¥æ‰¾...", "à¤–à¥‹à¤œà¥‡à¤‚...", "Buscar...", "Rechercher...", "Ø¨Ø­Ø«...", "à¦–à§à¦à¦œà§à¦¨...", "Localizar...", "Cari...", "ØªÙ„Ø§Ø´ Ú©Ø±ÛŒÚº...", "NajÃ­t...", "NÃ¡jsÅ¥...", "ZnajdÅº..."),
-    "find_label": ("Find:", "æŸ¥æ‰¾ï¼š", "à¤–à¥‹à¤œà¥‡à¤‚:", "Buscar:", "Rechercher :", "Ø¨Ø­Ø«:", "à¦–à§à¦à¦œà§à¦¨:", "Localizar:", "Cari:", "ØªÙ„Ø§Ø´:", "NajÃ­t:", "NÃ¡jsÅ¥:", "ZnajdÅº:"),
-    "find_placeholder": ("Find in document...", "åœ¨æ–‡æ¡£ä¸­æŸ¥æ‰¾...", "à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤®à¥‡à¤‚ à¤–à¥‹à¤œà¥‡à¤‚...", "Buscar en el documento...", "Rechercher dans le document...", "Ø§Ù„Ø¨Ø­Ø« ÙÙŠ Ø§Ù„Ù…Ø³ØªÙ†Ø¯...", "à¦¨à¦¥à¦¿à¦¤à§‡ à¦–à§à¦à¦œà§à¦¨...", "Localizar no documento...", "Cari dalam dokumen...", "Ø¯Ø³ØªØ§ÙˆÛŒØ² Ù…ÛŒÚº ØªÙ„Ø§Ø´ Ú©Ø±ÛŒÚº...", "Hledat v dokumentu...", "HÄ¾adaÅ¥ v dokumente...", "Szukaj w dokumencie..."),
-    "find_previous": ("Previous match", "ä¸Šä¸€ä¸ªåŒ¹é…é¡¹", "à¤ªà¤¿à¤›à¤²à¤¾ à¤®à¤¿à¤²à¤¾à¤¨", "Coincidencia anterior", "RÃ©sultat prÃ©cÃ©dent", "Ø§Ù„Ù†ØªÙŠØ¬Ø© Ø§Ù„Ø³Ø§Ø¨Ù‚Ø©", "à¦†à¦—à§‡à¦° à¦®à¦¿à¦²", "CorrespondÃªncia anterior", "Hasil sebelumnya", "Ù¾Ú†Ú¾Ù„Ø§ Ù†ØªÛŒØ¬Û", "PÅ™edchozÃ­ vÃ½sledek", "PredchÃ¡dzajÃºci vÃ½sledok", "Poprzedni wynik"),
-    "find_next": ("Next match", "ä¸‹ä¸€ä¸ªåŒ¹é…é¡¹", "à¤…à¤—à¤²à¤¾ à¤®à¤¿à¤²à¤¾à¤¨", "Coincidencia siguiente", "RÃ©sultat suivant", "Ø§Ù„Ù†ØªÙŠØ¬Ø© Ø§Ù„ØªØ§Ù„ÙŠØ©", "à¦ªà¦°à§‡à¦° à¦®à¦¿à¦²", "CorrespondÃªncia seguinte", "Hasil berikutnya", "Ø§Ú¯Ù„Ø§ Ù†ØªÛŒØ¬Û", "DalÅ¡Ã­ vÃ½sledek", "NasledujÃºci vÃ½sledok", "NastÄ™pny wynik"),
-    "close_search": ("Close search", "å…³é—­æŸ¥æ‰¾", "à¤–à¥‹à¤œ à¤¬à¤‚à¤¦ à¤•à¤°à¥‡à¤‚", "Cerrar bÃºsqueda", "Fermer la recherche", "Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ø¨Ø­Ø«", "à¦–à§‹à¦à¦œ à¦¬à¦¨à§à¦§ à¦•à¦°à§à¦¨", "Fechar pesquisa", "Tutup pencarian", "ØªÙ„Ø§Ø´ Ø¨Ù†Ø¯ Ú©Ø±ÛŒÚº", "ZavÅ™Ã­t vyhledÃ¡vÃ¡nÃ­", "ZavrieÅ¥ vyhÄ¾adÃ¡vanie", "Zamknij wyszukiwanie"),
-    "find_no_results": ("No matches found", "æœªæ‰¾åˆ°åŒ¹é…é¡¹", "à¤•à¥‹à¤ˆ à¤®à¤¿à¤²à¤¾à¤¨ à¤¨à¤¹à¥€à¤‚ à¤®à¤¿à¤²à¤¾", "No se encontraron coincidencias", "Aucun rÃ©sultat trouvÃ©", "Ù„Ù… ÙŠØªÙ… Ø§Ù„Ø¹Ø«ÙˆØ± Ø¹Ù„Ù‰ Ù†ØªØ§Ø¦Ø¬", "à¦•à§‹à¦¨à§‹ à¦®à¦¿à¦² à¦ªà¦¾à¦“à¦¯à¦¼à¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿", "Nenhuma correspondÃªncia encontrada", "Tidak ada hasil", "Ú©ÙˆØ¦ÛŒ Ù†ØªÛŒØ¬Û Ù†ÛÛŒÚº Ù…Ù„Ø§", "Nenalezen Å¾Ã¡dnÃ½ vÃ½sledek", "NenaÅ¡iel sa Å¾iadny vÃ½sledok", "Nie znaleziono wynikÃ³w"),
-    "document_closed": ("Document closed", "æ–‡æ¡£å·²å…³é—­", "à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤¬à¤‚à¤¦ à¤•à¤¿à¤¯à¤¾ à¤—à¤¯à¤¾", "Documento cerrado", "Document fermÃ©", "ØªÙ… Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù…Ø³ØªÙ†Ø¯", "à¦¨à¦¥à¦¿ à¦¬à¦¨à§à¦§ à¦¹à¦¯à¦¼à§‡à¦›à§‡", "Documento fechado", "Dokumen ditutup", "Ø¯Ø³ØªØ§ÙˆÛŒØ² Ø¨Ù†Ø¯ ÛÙˆ Ú¯Ø¦ÛŒ", "Dokument byl zavÅ™en", "Dokument bol zatvorenÃ½", "Dokument zostaÅ‚ zamkniÄ™ty"),
-    "add_text": ("Add text box", "æ·»åŠ æ–‡æœ¬æ¡†", "à¤Ÿà¥‡à¤•à¥à¤¸à¥à¤Ÿ à¤¬à¥‰à¤•à¥à¤¸ à¤œà¥‹à¤¡à¤¼à¥‡à¤‚", "AÃ±adir cuadro de texto", "Ajouter une zone de texte", "Ø¥Ø¶Ø§ÙØ© Ù…Ø±Ø¨Ø¹ Ù†Øµ", "à¦Ÿà§‡à¦•à§à¦¸à¦Ÿ à¦¬à¦•à§à¦¸ à¦¯à§‹à¦— à¦•à¦°à§à¦¨", "Adicionar caixa de texto", "Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ¸Ñ‚ÑŒ Ñ‚ĞµĞºÑÑ‚Ğ¾Ğ²Ğ¾Ğµ Ğ¿Ğ¾Ğ»Ğµ", "Ù…ØªÙ† Ø®Ø§Ù†Û Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº", "PÅ™idat textovÃ© pole", "PridaÅ¥ textovÃ© pole", "Dodaj pole tekstowe"),
-    "delete_text": ("Delete selected text", "åˆ é™¤æ‰€é€‰æ–‡æœ¬", "à¤šà¤¯à¤¨à¤¿à¤¤ à¤ªà¤¾à¤  à¤¹à¤Ÿà¤¾à¤à¤", "Eliminar texto seleccionado", "Supprimer le texte sÃ©lectionnÃ©", "Ø­Ø°Ù Ø§Ù„Ù†Øµ Ø§Ù„Ù…Ø­Ø¯Ø¯", "à¦¨à¦¿à¦°à§à¦¬à¦¾à¦šà¦¿à¦¤ à¦²à§‡à¦–à¦¾ à¦®à§à¦›à§à¦¨", "Eliminar texto selecionado", "Ğ£Ğ´Ğ°Ğ»Ğ¸Ñ‚ÑŒ Ğ²Ñ‹Ğ±Ñ€Ğ°Ğ½Ğ½Ñ‹Ğ¹ Ñ‚ĞµĞºÑÑ‚", "Ù…Ù†ØªØ®Ø¨ Ù…ØªÙ† Ø­Ø°Ù Ú©Ø±ÛŒÚº", "Odstranit vybranÃ½ text", "OdstrÃ¡niÅ¥ vybranÃ½ text", "UsuÅ„ zaznaczony tekst"),
-    "edit_text": ("Edit text", "ç¼–è¾‘æ–‡æœ¬", "à¤ªà¤¾à¤  à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¥‡à¤‚", "Editar texto", "Modifier le texte", "ØªØ­Ø±ÙŠØ± Ø§Ù„Ù†Øµ", "à¦ªà¦¾à¦  à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¨à¦¾ à¦•à¦°à§à¦¨", "Editar texto", "Ğ ĞµĞ´Ğ°ĞºÑ‚Ğ¸Ñ€Ğ¾Ğ²Ğ°Ñ‚ÑŒ Ñ‚ĞµĞºÑÑ‚", "Ù…ØªÙ† Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©Ø±ÛŒÚº", "Upravit text", "UpraviÅ¥ text", "Edytuj tekst"),
-    "zoom_in": ("Zoom in", "æ”¾å¤§", "à¤œà¤¼à¥‚à¤® à¤‡à¤¨", "Acercar", "Zoom avant", "ØªÙƒØ¨ÙŠØ±", "à¦¬à¦¡à¦¼ à¦•à¦°à§à¦¨", "Ampliar", "Ğ£Ğ²ĞµĞ»Ğ¸Ñ‡Ğ¸Ñ‚ÑŒ", "Ø¨Ú‘Ø§ Ú©Ø±ÛŒÚº", "PÅ™iblÃ­Å¾it", "PriblÃ­Å¾iÅ¥", "PowiÄ™ksz"),
-    "zoom_out": ("Zoom out", "ç¼©å°", "à¤œà¤¼à¥‚à¤® à¤†à¤‰à¤Ÿ", "Alejar", "Zoom arriÃ¨re", "ØªØµØºÙŠØ±", "à¦›à§‹à¦Ÿ à¦•à¦°à§à¦¨", "Reduzir", "Ğ£Ğ¼ĞµĞ½ÑŒÑˆĞ¸Ñ‚ÑŒ", "Ú†Ú¾ÙˆÙ¹Ø§ Ú©Ø±ÛŒÚº", "OddÃ¡lit", "OddialiÅ¥", "Pomniejsz"),
-    "fit_width": ("Fit width", "é€‚åˆå®½åº¦", "à¤šà¥Œà¤¡à¤¼à¤¾à¤ˆ à¤®à¥‡à¤‚ à¤«à¤¿à¤Ÿ", "Ajustar al ancho", "Ajuster Ã  la largeur", "Ù…Ù„Ø§Ø¡Ù…Ø© Ø§Ù„Ø¹Ø±Ø¶", "à¦ªà§à¦°à¦¸à§à¦¥à§‡ à¦®à¦¾à¦¨à¦¾à¦¨", "Ajustar Ã  largura", "ĞŸĞ¾ ÑˆĞ¸Ñ€Ğ¸Ğ½Ğµ", "Ú†ÙˆÚ‘Ø§Ø¦ÛŒ Ú©Û’ Ù…Ø·Ø§Ø¨Ù‚", "PÅ™izpÅ¯sobit Å¡Ã­Å™ce", "PrispÃ´sobiÅ¥ Å¡Ã­rke", "Dopasuj do szerokoÅ›ci"),
-    "theme_auto": ("Automatic (system)", "è‡ªåŠ¨ï¼ˆç³»ç»Ÿï¼‰", "à¤¸à¥à¤µà¤šà¤¾à¤²à¤¿à¤¤ (à¤¸à¤¿à¤¸à¥à¤Ÿà¤®)", "AutomÃ¡tico (sistema)", "Automatique (systÃ¨me)", "ØªÙ„Ù‚Ø§Ø¦ÙŠ (Ø§Ù„Ù†Ø¸Ø§Ù…)", "à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼ (à¦¸à¦¿à¦¸à§à¦Ÿà§‡à¦®)", "AutomÃ¡tico (sistema)", "ĞĞ²Ñ‚Ğ¾Ğ¼Ğ°Ñ‚Ğ¸Ñ‡ĞµÑĞºĞ¸ (ÑĞ¸ÑÑ‚ĞµĞ¼Ğ°)", "Ø®ÙˆØ¯Ú©Ø§Ø± (Ù†Ø¸Ø§Ù…)", "Automaticky (systÃ©m)", "Automaticky (systÃ©m)", "Automatyczny (system)"),
-    "theme_dark": ("Dark", "æ·±è‰²", "à¤—à¤¹à¤°à¤¾", "Oscuro", "Sombre", "Ø¯Ø§ÙƒÙ†", "à¦—à¦¾à¦¢à¦¼", "Escuro", "Ğ¢Ñ‘Ğ¼Ğ½Ğ°Ñ", "Ú¯ÛØ±Ø§", "TmavÃ½", "TmavÃ½", "Ciemny"),
-    "theme_light": ("Light", "æµ…è‰²", "à¤¹à¤²à¥à¤•à¤¾", "Claro", "Clair", "ÙØ§ØªØ­", "à¦¹à¦¾à¦²à¦•à¦¾", "Claro", "Ğ¡Ğ²ĞµÑ‚Ğ»Ğ°Ñ", "ÛÙ„Ú©Ø§", "SvÄ›tlÃ½", "SvetlÃ½", "Jasny"),
-    "add_blank_page": ("Add blank page", "æ·»åŠ ç©ºç™½é¡µ", "à¤–à¤¾à¤²à¥€ à¤ªà¥ƒà¤·à¥à¤  à¤œà¥‹à¤¡à¤¼à¥‡à¤‚", "AÃ±adir pÃ¡gina en blanco", "Ajouter une page vierge", "Ø¥Ø¶Ø§ÙØ© ØµÙØ­Ø© ÙØ§Ø±ØºØ©", "à¦«à¦¾à¦à¦•à¦¾ à¦ªà§ƒà¦·à§à¦ à¦¾ à¦¯à§‹à¦— à¦•à¦°à§à¦¨", "Adicionar pÃ¡gina em branco", "Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ¸Ñ‚ÑŒ Ğ¿ÑƒÑÑ‚ÑƒÑ ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ñƒ", "Ø®Ø§Ù„ÛŒ ØµÙØ­Û Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº", "PÅ™idat prÃ¡zdnou strÃ¡nku", "PridaÅ¥ prÃ¡zdnu stranu", "Dodaj pustÄ… stronÄ™"),
-    "insert_pages": ("Insert pages from PDF...", "ä» PDF æ’å…¥é¡µé¢...", "PDF à¤¸à¥‡ à¤ªà¥ƒà¤·à¥à¤  à¤¡à¤¾à¤²à¥‡à¤‚...", "Insertar pÃ¡ginas desde PDF...", "InsÃ©rer des pages depuis un PDF...", "Ø¥Ø¯Ø±Ø§Ø¬ ØµÙØ­Ø§Øª Ù…Ù† PDF...", "PDF à¦¥à§‡à¦•à§‡ à¦ªà§ƒà¦·à§à¦ à¦¾ à¦¯à§‹à¦— à¦•à¦°à§à¦¨...", "Inserir pÃ¡ginas de PDF...", "Ğ’ÑÑ‚Ğ°Ğ²Ğ¸Ñ‚ÑŒ ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ñ‹ Ğ¸Ğ· PDF...", "PDF Ø³Û’ ØµÙØ­Ø§Øª Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº...", "VloÅ¾it strÃ¡nky z PDF...", "VloÅ¾iÅ¥ strany z PDF...", "Wstaw strony z PDF..."),
-    "delete_page": ("Delete current page", "åˆ é™¤å½“å‰é¡µ", "à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤ªà¥ƒà¤·à¥à¤  à¤¹à¤Ÿà¤¾à¤à¤", "Eliminar pÃ¡gina actual", "Supprimer la page actuelle", "Ø­Ø°Ù Ø§Ù„ØµÙØ­Ø© Ø§Ù„Ø­Ø§Ù„ÙŠØ©", "à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦ªà§ƒà¦·à§à¦ à¦¾ à¦®à§à¦›à§à¦¨", "Eliminar pÃ¡gina atual", "Ğ£Ğ´Ğ°Ğ»Ğ¸Ñ‚ÑŒ Ñ‚ĞµĞºÑƒÑ‰ÑƒÑ ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ñƒ", "Ù…ÙˆØ¬ÙˆØ¯Û ØµÙØ­Û Ø­Ø°Ù Ú©Ø±ÛŒÚº", "Odstranit aktuÃ¡lnÃ­ strÃ¡nku", "OdstrÃ¡niÅ¥ aktuÃ¡lnu stranu", "UsuÅ„ bieÅ¼Ä…cÄ… stronÄ™"),
-    "insert_image": ("Insert image...", "æ’å…¥å›¾åƒ...", "à¤›à¤µà¤¿ à¤¡à¤¾à¤²à¥‡à¤‚...", "Insertar imagen...", "InsÃ©rer une image...", "Ø¥Ø¯Ø±Ø§Ø¬ ØµÙˆØ±Ø©...", "à¦›à¦¬à¦¿ à¦¯à§‹à¦— à¦•à¦°à§à¦¨...", "Inserir imagem...", "Ğ’ÑÑ‚Ğ°Ğ²Ğ¸Ñ‚ÑŒ Ğ¸Ğ·Ğ¾Ğ±Ñ€Ğ°Ğ¶ĞµĞ½Ğ¸Ğµ...", "ØªØµÙˆÛŒØ± Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº...", "VloÅ¾it obrÃ¡zek...", "VloÅ¾iÅ¥ obrÃ¡zok...", "Wstaw obraz..."),
-    "delete_image": ("Delete image", "åˆ é™¤å›¾åƒ", "à¤›à¤µà¤¿ à¤¹à¤Ÿà¤¾à¤à¤", "Eliminar imagen", "Supprimer lâ€™image", "Ø­Ø°Ù Ø§Ù„ØµÙˆØ±Ø©", "à¦›à¦¬à¦¿ à¦®à§à¦›à§à¦¨", "Eliminar imagem", "Ğ£Ğ´Ğ°Ğ»Ğ¸Ñ‚ÑŒ Ğ¸Ğ·Ğ¾Ğ±Ñ€Ğ°Ğ¶ĞµĞ½Ğ¸Ğµ", "ØªØµÙˆÛŒØ± Ø­Ø°Ù Ú©Ø±ÛŒÚº", "Odstranit obrÃ¡zek", "OdstrÃ¡niÅ¥ obrÃ¡zok", "UsuÅ„ obraz"),
-    "add_signature": ("Add visual signature...", "æ·»åŠ å¯è§†ç­¾å...", "à¤¦à¥ƒà¤¶à¥à¤¯ à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤œà¥‹à¤¡à¤¼à¥‡à¤‚...", "AÃ±adir firma visual...", "Ajouter une signature visuelle...", "Ø¥Ø¶Ø§ÙØ© ØªÙˆÙ‚ÙŠØ¹ Ù…Ø±Ø¦ÙŠ...", "à¦¦à§ƒà¦¶à§à¦¯à¦®à¦¾à¦¨ à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦¯à§‹à¦— à¦•à¦°à§à¦¨...", "Adicionar assinatura visual...", "Ğ”Ğ¾Ğ±Ğ°Ğ²Ğ¸Ñ‚ÑŒ Ğ²Ğ¸Ğ·ÑƒĞ°Ğ»ÑŒĞ½ÑƒÑ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ...", "Ø¸Ø§ÛØ±ÛŒ Ø¯Ø³ØªØ®Ø· Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº...", "PÅ™idat vizuÃ¡lnÃ­ podpis...", "PridaÅ¥ vizuÃ¡lny podpis...", "Dodaj podpis wizualny..."),
-    "about": ("About", "å…³äº", "à¤ªà¤°à¤¿à¤šà¤¯", "Acerca de", "Ã€ propos", "Ø­ÙˆÙ„", "à¦¸à¦®à§à¦ªà¦°à§à¦•à§‡", "Acerca de", "Ğ Ğ¿Ñ€Ğ¾Ğ³Ñ€Ğ°Ğ¼Ğ¼Ğµ", "Ù…ØªØ¹Ù„Ù‚", "O programu", "O programe", "O programie"),
-    "check_for_updates": ("Check for updates...", "æ£€æŸ¥æ›´æ–°...", "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤•à¥€ à¤œà¤¾à¤à¤š à¤•à¤°à¥‡à¤‚...", "Buscar actualizaciones...", "Rechercher des mises Ã  jour...", "Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† ÙˆØ¬ÙˆØ¯ ØªØ­Ø¯ÙŠØ«Ø§Øª...", "à¦†à¦ªà¦¡à§‡à¦Ÿà§‡à¦° à¦œà¦¨à§à¦¯ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦•à¦°à§à¦¨...", "Verificar atualizaÃ§Ãµes...", "Periksa pembaruan...", "Ø§Ù¾ ÚˆÛŒÙ¹Ø³ Ú©ÛŒ Ø¬Ø§Ù†Ú† Ú©Ø±ÛŒÚº...", "Kontrola aktualizacÃ­...", "SkontrolovaÅ¥ aktualizÃ¡cie...", "SprawdÅº aktualizacje..."),
-    "update_check_title": ("Nettongia PDF Editor updates", "Nettongia PDF Editor æ›´æ–°", "Nettongia PDF Editor à¤…à¤ªà¤¡à¥‡à¤Ÿ", "Actualizaciones de Nettongia PDF Editor", "Mises Ã  jour de Nettongia PDF Editor", "ØªØ­Ø¯ÙŠØ«Ø§Øª Nettongia PDF Editor", "Nettongia PDF Editor à¦†à¦ªà¦¡à§‡à¦Ÿ", "AtualizaÃ§Ãµes do Nettongia PDF Editor", "Pembaruan Nettongia PDF Editor", "ØªØ§Ø²Û Ú©Ø§Ø±ÛŒâ€ŒÙ‡Ø§ÛŒ Nettongia PDF Editor", "Aktualizace Nettongia PDF Editor", "AktualizÃ¡cie Nettongia PDF Editor", "Aktualizacje Nettongia PDF Editor"),
-    "update_available": ("A newer version is available: {version}\n\nCurrent version: {current}\n\nOpen the release page to download it?", "æœ‰å¯ç”¨çš„æ–°ç‰ˆæœ¬ï¼š{version}\n\nå½“å‰ç‰ˆæœ¬ï¼š{current}\n\næ‰“å¼€å‘å¸ƒé¡µé¢ä¸‹è½½å—ï¼Ÿ", "à¤à¤• à¤¨à¤¯à¤¾ à¤¸à¤‚à¤¸à¥à¤•à¤°à¤£ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¹à¥ˆ: {version}\n\nà¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤¸à¤‚à¤¸à¥à¤•à¤°à¤£: {current}\n\nà¤¡à¤¾à¤‰à¤¨à¤²à¥‹à¤¡ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤°à¤¿à¤²à¥€à¤œà¤¼ à¤ªà¥ƒà¤·à¥à¤  à¤–à¥‹à¤²à¥‡à¤‚?", "Hay una versiÃ³n mÃ¡s reciente disponible: {version}\n\nVersiÃ³n actual: {current}\n\nÂ¿Abrir la pÃ¡gina de publicaciÃ³n para descargarla?", "Une nouvelle version est disponible : {version}\n\nVersion actuelle : {current}\n\nOuvrir la page de publication pour la tÃ©lÃ©charger ?", "ÙŠØªÙˆÙØ± Ø¥ØµØ¯Ø§Ø± Ø£Ø­Ø¯Ø«: {version}\n\nØ§Ù„Ø¥ØµØ¯Ø§Ø± Ø§Ù„Ø­Ø§Ù„ÙŠ: {current}\n\nÙ‡Ù„ ØªØ±ÙŠØ¯ ÙØªØ­ ØµÙØ­Ø© Ø§Ù„Ø¥ØµØ¯Ø§Ø± Ù„ØªÙ†Ø²ÙŠÙ„Ù‡ØŸ", "à¦à¦•à¦Ÿà¦¿ à¦¨à¦¤à§à¦¨ à¦¸à¦‚à¦¸à§à¦•à¦°à¦£ à¦‰à¦ªà¦²à¦¬à§à¦§: {version}\n\nà¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦¸à¦‚à¦¸à§à¦•à¦°à¦£: {current}\n\nà¦¡à¦¾à¦‰à¦¨à¦²à§‹à¦¡ à¦•à¦°à¦¤à§‡ à¦°à¦¿à¦²à¦¿à¦œ à¦ªà§ƒà¦·à§à¦ à¦¾ à¦–à§à¦²à¦¬à§‡à¦¨?", "EstÃ¡ disponÃ­vel uma versÃ£o mais recente: {version}\n\nVersÃ£o atual: {current}\n\nAbrir a pÃ¡gina da versÃ£o para descarregar?", "Versi terbaru tersedia: {version}\n\nVersi saat ini: {current}\n\nBuka halaman rilis untuk mengunduhnya?", "Ø§ÛŒÚ© Ù†ÛŒØ§ ÙˆØ±Ú˜Ù† Ø¯Ø³ØªÛŒØ§Ø¨ ÛÛ’: {version}\n\nÙ…ÙˆØ¬ÙˆØ¯Û ÙˆØ±Ú˜Ù†: {current}\n\nÚˆØ§Ø¤Ù† Ù„ÙˆÚˆ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø±ÛŒÙ„ÛŒØ² ØµÙØ­Û Ú©Ú¾ÙˆÙ„ÛŒÚºØŸ", "Je k dispozici novÄ›jÅ¡Ã­ verze: {version}\n\nAktuÃ¡lnÃ­ verze: {current}\n\nOtevÅ™Ã­t strÃ¡nku vydÃ¡nÃ­ a stÃ¡hnout ji?", "Je k dispozÃ­cii novÅ¡ia verzia: {version}\n\nAktuÃ¡lna verzia: {current}\n\nOtvoriÅ¥ strÃ¡nku vydania a stiahnuÅ¥ ju?", "DostÄ™pna jest nowsza wersja: {version}\n\nBieÅ¼Ä…ca wersja: {current}\n\nOtworzyÄ‡ stronÄ™ wydania, aby jÄ… pobraÄ‡?"),
-    "no_update_available": ("You are using the latest available version ({version}).", "æ‚¨ä½¿ç”¨çš„æ˜¯æœ€æ–°å¯ç”¨ç‰ˆæœ¬ï¼ˆ{version}ï¼‰ã€‚", "à¤†à¤ª à¤¨à¤µà¥€à¤¨à¤¤à¤® à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¸à¤‚à¤¸à¥à¤•à¤°à¤£ ({version}) à¤•à¤¾ à¤‰à¤ªà¤¯à¥‹à¤— à¤•à¤° à¤°à¤¹à¥‡ à¤¹à¥ˆà¤‚à¥¤", "EstÃ¡ utilizando la versiÃ³n disponible mÃ¡s reciente ({version}).", "Vous utilisez la derniÃ¨re version disponible ({version}).", "Ø£Ù†Øª ØªØ³ØªØ®Ø¯Ù… Ø£Ø­Ø¯Ø« Ø¥ØµØ¯Ø§Ø± Ù…ØªØ§Ø­ ({version}).", "à¦†à¦ªà¦¨à¦¿ à¦¸à¦°à§à¦¬à¦¶à§‡à¦· à¦‰à¦ªà¦²à¦¬à§à¦§ à¦¸à¦‚à¦¸à§à¦•à¦°à¦£ ({version}) à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à¦›à§‡à¦¨à¥¤", "EstÃ¡ a utilizar a versÃ£o mais recente disponÃ­vel ({version}).", "Anda menggunakan versi terbaru yang tersedia ({version}).", "Ø¢Ù¾ Ø¯Ø³ØªÛŒØ§Ø¨ ØªØ§Ø²Û ØªØ±ÛŒÙ† ÙˆØ±Ú˜Ù† ({version}) Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø± Ø±ÛÛ’ ÛÛŒÚºÛ”", "PouÅ¾Ã­vÃ¡te nejnovÄ›jÅ¡Ã­ dostupnou verzi ({version}).", "PouÅ¾Ã­vate najnovÅ¡iu dostupnÃº verziu ({version}).", "UÅ¼ywasz najnowszej dostÄ™pnej wersji ({version})."),
-    "update_check_failed": ("The update check is currently unavailable. Nettongia can continue working offline.", "æ›´æ–°æ£€æŸ¥ç›®å‰ä¸å¯ç”¨ã€‚Nettongia å¯ä»¥ç»§ç»­ç¦»çº¿å·¥ä½œã€‚", "à¤…à¤ªà¤¡à¥‡à¤Ÿ à¤œà¤¾à¤à¤š à¤…à¤­à¥€ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤ Nettongia à¤‘à¤«à¤¼à¤²à¤¾à¤‡à¤¨ à¤•à¤¾à¤® à¤œà¤¾à¤°à¥€ à¤°à¤– à¤¸à¤•à¤¤à¤¾ à¤¹à¥ˆà¥¤", "La comprobaciÃ³n de actualizaciones no estÃ¡ disponible. Nettongia puede seguir funcionando sin conexiÃ³n.", "La recherche de mises Ã  jour est indisponible. Nettongia peut continuer Ã  fonctionner hors ligne.", "Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„ØªØ­Ø¯ÙŠØ«Ø§Øª ØºÙŠØ± Ù…ØªØ§Ø­ Ø­Ø§Ù„ÙŠÙ‹Ø§. ÙŠÙ…ÙƒÙ† Ù„Ù€ Nettongia Ù…ØªØ§Ø¨Ø¹Ø© Ø§Ù„Ø¹Ù…Ù„ Ø¯ÙˆÙ† Ø§ØªØµØ§Ù„.", "à¦†à¦ªà¦¡à§‡à¦Ÿ à¦ªà¦°à§€à¦•à§à¦·à¦¾ à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨à§‡ à¦‰à¦ªà¦²à¦¬à§à¦§ à¦¨à¦¯à¦¼à¥¤ Nettongia à¦…à¦«à¦²à¦¾à¦‡à¦¨à§‡ à¦•à¦¾à¦œ à¦šà¦¾à¦²à¦¿à¦¯à¦¼à§‡ à¦¯à§‡à¦¤à§‡ à¦ªà¦¾à¦°à§‡à¥¤", "A verificaÃ§Ã£o de atualizaÃ§Ãµes nÃ£o estÃ¡ disponÃ­vel. O Nettongia pode continuar a funcionar offline.", "Pemeriksaan pembaruan saat ini tidak tersedia. Nettongia tetap dapat bekerja secara offline.", "Ø§Ù¾ ÚˆÛŒÙ¹ Ú©ÛŒ Ø¬Ø§Ù†Ú† ÙÛŒ Ø§Ù„Ø­Ø§Ù„ Ø¯Ø³ØªÛŒØ§Ø¨ Ù†ÛÛŒÚºÛ” Nettongia Ø¢Ù Ù„Ø§Ø¦Ù† Ú©Ø§Ù… Ø¬Ø§Ø±ÛŒ Ø±Ú©Ú¾ Ø³Ú©ØªØ§ ÛÛ’Û”", "Kontrola aktualizacÃ­ nenÃ­ nynÃ­ dostupnÃ¡. Nettongia mÅ¯Å¾e dÃ¡l pracovat offline.", "Kontrola aktualizÃ¡ciÃ­ momentÃ¡lne nie je dostupnÃ¡. Nettongia mÃ´Å¾e Äalej pracovaÅ¥ offline.", "Sprawdzanie aktualizacji jest obecnie niedostÄ™pne. Nettongia moÅ¼e nadal dziaÅ‚aÄ‡ offline."),
-    "open_release_page": ("Open release page", "æ‰“å¼€å‘å¸ƒé¡µé¢", "à¤°à¤¿à¤²à¥€à¤œà¤¼ à¤ªà¥ƒà¤·à¥à¤  à¤–à¥‹à¤²à¥‡à¤‚", "Abrir pÃ¡gina de publicaciÃ³n", "Ouvrir la page de publication", "ÙØªØ­ ØµÙØ­Ø© Ø§Ù„Ø¥ØµØ¯Ø§Ø±", "à¦°à¦¿à¦²à¦¿à¦œ à¦ªà§ƒà¦·à§à¦ à¦¾ à¦–à§à¦²à§à¦¨", "Abrir pÃ¡gina da versÃ£o", "Buka halaman rilis", "Ø±ÛŒÙ„ÛŒØ² ØµÙØ­Û Ú©Ú¾ÙˆÙ„ÛŒÚº", "OtevÅ™Ã­t strÃ¡nku vydÃ¡nÃ­", "OtvoriÅ¥ strÃ¡nku vydania", "OtwÃ³rz stronÄ™ wydania"),
-    "font": ("Font", "å­—ä½“", "à¤«à¤¼à¥‰à¤¨à¥à¤Ÿ", "Fuente", "Police", "Ø§Ù„Ø®Ø·", "à¦«à¦¨à§à¦Ÿ", "Tipo de letra", "Ğ¨Ñ€Ğ¸Ñ„Ñ‚", "ÙÙˆÙ†Ù¹", "PÃ­smo", "PÃ­smo", "Czcionka"),
-    "font_size": ("Font size", "å­—å·", "à¤«à¤¼à¥‰à¤¨à¥à¤Ÿ à¤†à¤•à¤¾à¤°", "TamaÃ±o de fuente", "Taille de police", "Ø­Ø¬Ù… Ø§Ù„Ø®Ø·", "à¦«à¦¨à§à¦Ÿà§‡à¦° à¦†à¦•à¦¾à¦°", "Tamanho da letra", "Ğ Ğ°Ğ·Ğ¼ĞµÑ€ ÑˆÑ€Ğ¸Ñ„Ñ‚Ğ°", "ÙÙˆÙ†Ù¹ Ø³Ø§Ø¦Ø²", "Velikost pÃ­sma", "VeÄ¾kosÅ¥ pÃ­sma", "Rozmiar czcionki"),
-    "bold": ("Bold", "ç²—ä½“", "à¤¬à¥‹à¤²à¥à¤¡", "Negrita", "Gras", "Ø¹Ø±ÙŠØ¶", "à¦—à¦¾à¦¢à¦¼", "Negrito", "ĞŸĞ¾Ğ»ÑƒĞ¶Ğ¸Ñ€Ğ½Ñ‹Ğ¹", "Ù…ÙˆÙ¹Ø§", "TuÄnÃ©", "TuÄnÃ©", "Pogrubienie"),
-    "italic": ("Italic", "æ–œä½“", "à¤‡à¤Ÿà¥ˆà¤²à¤¿à¤•", "Cursiva", "Italique", "Ù…Ø§Ø¦Ù„", "à¦¤à¦¿à¦°à§à¦¯à¦•", "ItÃ¡lico", "ĞšÑƒÑ€ÑĞ¸Ğ²", "ØªØ±Ú†Ú¾Ø§", "KurzÃ­va", "KurzÃ­va", "Kursywa"),
-    "underline": ("Underline", "ä¸‹åˆ’çº¿", "à¤°à¥‡à¤–à¤¾à¤‚à¤•à¤¿à¤¤", "Subrayado", "SoulignÃ©", "ØªØ³Ø·ÙŠØ±", "à¦¨à¦¿à¦®à§à¦¨à¦°à§‡à¦–à¦¾", "Sublinhado", "ĞŸĞ¾Ğ´Ñ‡Ñ‘Ñ€ĞºĞ¸Ğ²Ğ°Ğ½Ğ¸Ğµ", "Ø®Ø· Ú©Ø´ÛŒØ¯Û", "PodtrÅ¾enÃ­", "PodÄiarknutie", "PodkreÅ›lenie"),
-    "text_color": ("Text color", "æ–‡æœ¬é¢œè‰²", "à¤ªà¤¾à¤  à¤°à¤‚à¤—", "Color del texto", "Couleur du texte", "Ù„ÙˆÙ† Ø§Ù„Ù†Øµ", "à¦²à§‡à¦–à¦¾à¦° à¦°à¦‚", "Cor do texto", "Ğ¦Ğ²ĞµÑ‚ Ñ‚ĞµĞºÑÑ‚Ğ°", "Ù…ØªÙ† Ú©Ø§ Ø±Ù†Ú¯", "Barva textu", "Farba textu", "Kolor tekstu"),
-    "current_zoom": ("Current zoom", "å½“å‰ç¼©æ”¾", "à¤µà¤°à¥à¤¤à¤®à¤¾à¤¨ à¤œà¤¼à¥‚à¤®", "Zoom actual", "Zoom actuel", "Ø§Ù„ØªÙƒØ¨ÙŠØ± Ø§Ù„Ø­Ø§Ù„ÙŠ", "à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨ à¦œà§à¦®", "Zoom atual", "Ğ¢ĞµĞºÑƒÑ‰Ğ¸Ğ¹ Ğ¼Ğ°ÑÑˆÑ‚Ğ°Ğ±", "Ù…ÙˆØ¬ÙˆØ¯Û Ø²ÙˆÙ…", "AktuÃ¡lnÃ­ pÅ™iblÃ­Å¾enÃ­", "AktuÃ¡lne priblÃ­Å¾enie", "BieÅ¼Ä…ce powiÄ™kszenie"),
-    "create": ("Create", "åˆ›å»º", "à¤¬à¤¨à¤¾à¤à¤", "Crear", "CrÃ©er", "Ø¥Ù†Ø´Ø§Ø¡", "à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨", "Criar", "Ğ¡Ğ¾Ğ·Ğ´Ğ°Ñ‚ÑŒ", "Ø¨Ù†Ø§Ø¦ÛŒÚº", "VytvoÅ™it", "VytvoriÅ¥", "UtwÃ³rz"),
-    "cancel": ("Cancel", "å–æ¶ˆ", "à¤°à¤¦à¥à¤¦ à¤•à¤°à¥‡à¤‚", "Cancelar", "Annuler", "Ø¥Ù„ØºØ§Ø¡", "à¦¬à¦¾à¦¤à¦¿à¦²", "Cancelar", "ĞÑ‚Ğ¼ĞµĞ½Ğ°", "Ù…Ù†Ø³ÙˆØ®", "ZruÅ¡it", "ZruÅ¡iÅ¥", "Anuluj"),
-    "save": ("Save", "ä¿å­˜", "à¤¸à¤¹à¥‡à¤œà¥‡à¤‚", "Guardar", "Enregistrer", "Ø­ÙØ¸", "à¦¸à¦‚à¦°à¦•à§à¦·à¦£", "Guardar", "Ğ¡Ğ¾Ñ…Ñ€Ğ°Ğ½Ğ¸Ñ‚ÑŒ", "Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚº", "UloÅ¾it", "UloÅ¾iÅ¥", "Zapisz"),
-    "discard": ("Discard", "æ”¾å¼ƒ", "à¤›à¥‹à¤¡à¤¼à¥‡à¤‚", "Descartar", "Ignorer", "ØªØ¬Ø§Ù‡Ù„", "à¦¬à¦¾à¦¤à¦¿à¦² à¦•à¦°à§à¦¨", "Descartar", "ĞĞµ ÑĞ¾Ñ…Ñ€Ğ°Ğ½ÑÑ‚ÑŒ", "Ø±Ø¯ Ú©Ø±ÛŒÚº", "Zahodit", "ZahodiÅ¥", "OdrzuÄ‡"),
-    "yes": ("Yes", "æ˜¯", "à¤¹à¤¾à¤", "SÃ­", "Oui", "Ù†Ø¹Ù…", "à¦¹à§à¦¯à¦¾à¦", "Sim", "Ğ”Ğ°", "ÛØ§Úº", "Ano", "Ãno", "Tak"),
-    "no": ("No", "å¦", "à¤¨à¤¹à¥€à¤‚", "No", "Non", "Ù„Ø§", "à¦¨à¦¾", "NÃ£o", "ĞĞµÑ‚", "Ù†ÛÛŒÚº", "Ne", "Nie", "Nie"),
-    "new_title": ("Create new PDF", "åˆ›å»ºæ–° PDF", "à¤¨à¤¯à¤¾ PDF à¤¬à¤¨à¤¾à¤à¤", "Crear nuevo PDF", "CrÃ©er un nouveau PDF", "Ø¥Ù†Ø´Ø§Ø¡ PDF Ø¬Ø¯ÙŠØ¯", "à¦¨à¦¤à§à¦¨ PDF à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨", "Criar novo PDF", "Ğ¡Ğ¾Ğ·Ğ´Ğ°Ñ‚ÑŒ Ğ½Ğ¾Ğ²Ñ‹Ğ¹ PDF", "Ù†Ø¦ÛŒ PDF Ø¨Ù†Ø§Ø¦ÛŒÚº", "VytvoÅ™it novÃ© PDF", "VytvoriÅ¥ novÃ© PDF", "UtwÃ³rz nowy PDF"),
-    "custom_size": ("Custom size", "è‡ªå®šä¹‰å°ºå¯¸", "à¤•à¤¸à¥à¤Ÿà¤® à¤†à¤•à¤¾à¤°", "TamaÃ±o personalizado", "Format personnalisÃ©", "Ø­Ø¬Ù… Ù…Ø®ØµØµ", "à¦¨à¦¿à¦œà¦¸à§à¦¬ à¦†à¦•à¦¾à¦°", "Tamanho personalizado", "Ğ”Ñ€ÑƒĞ³Ğ¾Ğ¹ Ñ€Ğ°Ğ·Ğ¼ĞµÑ€", "Ù…Ø®ØµÙˆØµ Ø³Ø§Ø¦Ø²", "VlastnÃ­ velikost", "VlastnÃ¡ veÄ¾kosÅ¥", "Rozmiar niestandardowy"),
-    "portrait": ("Portrait", "çºµå‘", "à¤ªà¥‹à¤°à¥à¤Ÿà¥à¤°à¥‡à¤Ÿ", "Vertical", "Portrait", "Ø¹Ù…ÙˆØ¯ÙŠ", "à¦²à¦®à§à¦¬à¦¾à¦²à¦®à§à¦¬à¦¿", "Vertical", "ĞšĞ½Ğ¸Ğ¶Ğ½Ğ°Ñ", "Ø¹Ù…ÙˆØ¯ÛŒ", "Na vÃ½Å¡ku", "Na vÃ½Å¡ku", "Pionowa"),
-    "landscape": ("Landscape", "æ¨ªå‘", "à¤²à¥ˆà¤‚à¤¡à¤¸à¥à¤•à¥‡à¤ª", "Horizontal", "Paysage", "Ø£ÙÙ‚ÙŠ", "à¦†à¦¡à¦¼à¦¾à¦†à¦¡à¦¼à¦¿", "Horizontal", "ĞĞ»ÑŒĞ±Ğ¾Ğ¼Ğ½Ğ°Ñ", "Ø§ÙÙ‚ÛŒ", "Na Å¡Ã­Å™ku", "Na Å¡Ã­rku", "Pozioma"),
-    "page_size": ("Page size", "é¡µé¢å¤§å°", "à¤ªà¥ƒà¤·à¥à¤  à¤†à¤•à¤¾à¤°", "TamaÃ±o de pÃ¡gina", "Format de page", "Ø­Ø¬Ù… Ø§Ù„ØµÙØ­Ø©", "à¦ªà§ƒà¦·à§à¦ à¦¾à¦° à¦†à¦•à¦¾à¦°", "Tamanho da pÃ¡gina", "Ğ Ğ°Ğ·Ğ¼ĞµÑ€ ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ñ‹", "ØµÙØ­Û’ Ú©Ø§ Ø³Ø§Ø¦Ø²", "Velikost strÃ¡nky", "VeÄ¾kosÅ¥ strany", "Rozmiar strony"),
-    "orientation": ("Orientation", "æ–¹å‘", "à¤…à¤­à¤¿à¤µà¤¿à¤¨à¥à¤¯à¤¾à¤¸", "OrientaciÃ³n", "Orientation", "Ø§Ù„Ø§ØªØ¬Ø§Ù‡", "à¦…à¦­à¦¿à¦®à§à¦–", "OrientaÃ§Ã£o", "ĞÑ€Ğ¸ĞµĞ½Ñ‚Ğ°Ñ†Ğ¸Ñ", "Ø³Ù…Øª", "Orientace", "OrientÃ¡cia", "Orientacja"),
-    "width": ("Width", "å®½åº¦", "à¤šà¥Œà¤¡à¤¼à¤¾à¤ˆ", "Ancho", "Largeur", "Ø§Ù„Ø¹Ø±Ø¶", "à¦ªà§à¦°à¦¸à§à¦¥", "Largura", "Ğ¨Ğ¸Ñ€Ğ¸Ğ½Ğ°", "Ú†ÙˆÚ‘Ø§Ø¦ÛŒ", "Å Ã­Å™ka", "Å Ã­rka", "SzerokoÅ›Ä‡"),
-    "height": ("Height", "é«˜åº¦", "à¤Šà¤à¤šà¤¾à¤ˆ", "Alto", "Hauteur", "Ø§Ù„Ø§Ø±ØªÙØ§Ø¹", "à¦‰à¦šà§à¦šà¦¤à¦¾", "Altura", "Ğ’Ñ‹ÑĞ¾Ñ‚Ğ°", "Ø§ÙˆÙ†Ú†Ø§Ø¦ÛŒ", "VÃ½Å¡ka", "VÃ½Å¡ka", "WysokoÅ›Ä‡"),
-    "page_count": ("Number of pages", "é¡µæ•°", "à¤ªà¥ƒà¤·à¥à¤ à¥‹à¤‚ à¤•à¥€ à¤¸à¤‚à¤–à¥à¤¯à¤¾", "NÃºmero de pÃ¡ginas", "Nombre de pages", "Ø¹Ø¯Ø¯ Ø§Ù„ØµÙØ­Ø§Øª", "à¦ªà§ƒà¦·à§à¦ à¦¾ à¦¸à¦‚à¦–à§à¦¯à¦¾", "NÃºmero de pÃ¡ginas", "ĞšĞ¾Ğ»Ğ¸Ñ‡ĞµÑÑ‚Ğ²Ğ¾ ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†", "ØµÙØ­Ø§Øª Ú©ÛŒ ØªØ¹Ø¯Ø§Ø¯", "PoÄet strÃ¡nek", "PoÄet strÃ¡n", "Liczba stron"),
-    "result": ("Result", "ç»“æœ", "à¤ªà¤°à¤¿à¤£à¤¾à¤®", "Resultado", "RÃ©sultat", "Ø§Ù„Ù†ØªÙŠØ¬Ø©", "à¦«à¦²à¦¾à¦«à¦²", "Resultado", "Ğ ĞµĞ·ÑƒĞ»ÑŒÑ‚Ğ°Ñ‚", "Ù†ØªÛŒØ¬Û", "VÃ½sledek", "VÃ½sledok", "Wynik"),
-    "blank_pdf_intro": ("Create a blank PDF document:", "åˆ›å»ºç©ºç™½ PDF æ–‡æ¡£ï¼š", "à¤à¤• à¤–à¤¾à¤²à¥€ PDF à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤¬à¤¨à¤¾à¤à¤:", "Crear un documento PDF en blanco:", "CrÃ©er un document PDF vierge :", "Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø³ØªÙ†Ø¯ PDF ÙØ§Ø±Øº:", "à¦à¦•à¦Ÿà¦¿ à¦«à¦¾à¦à¦•à¦¾ PDF à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨:", "Criar um documento PDF em branco:", "Ğ¡Ğ¾Ğ·Ğ´Ğ°Ñ‚ÑŒ Ğ¿ÑƒÑÑ‚Ğ¾Ğ¹ PDF-Ğ´Ğ¾ĞºÑƒĞ¼ĞµĞ½Ñ‚:", "Ø®Ø§Ù„ÛŒ PDF Ø¯Ø³ØªØ§ÙˆÛŒØ² Ø¨Ù†Ø§Ø¦ÛŒÚº:", "VytvoÅ™it prÃ¡zdnÃ½ dokument PDF:", "VytvoriÅ¥ prÃ¡zdny dokument PDF:", "UtwÃ³rz pusty dokument PDF:"),
-    "signature_title": ("Insert visual signature", "æ’å…¥å¯è§†ç­¾å", "à¤¦à¥ƒà¤¶à¥à¤¯ à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤¡à¤¾à¤²à¥‡à¤‚", "Insertar firma visual", "InsÃ©rer une signature visuelle", "Ø¥Ø¯Ø±Ø§Ø¬ ØªÙˆÙ‚ÙŠØ¹ Ù…Ø±Ø¦ÙŠ", "à¦¦à§ƒà¦¶à§à¦¯à¦®à¦¾à¦¨ à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦¯à§‹à¦— à¦•à¦°à§à¦¨", "Inserir assinatura visual", "Ğ’ÑÑ‚Ğ°Ğ²Ğ¸Ñ‚ÑŒ Ğ²Ğ¸Ğ·ÑƒĞ°Ğ»ÑŒĞ½ÑƒÑ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ", "Ø¸Ø§ÛØ±ÛŒ Ø¯Ø³ØªØ®Ø· Ø´Ø§Ù…Ù„ Ú©Ø±ÛŒÚº", "VloÅ¾it vizuÃ¡lnÃ­ podpis", "VloÅ¾iÅ¥ vizuÃ¡lny podpis", "Wstaw podpis wizualny"),
-    "signature_warning": ("This inserts a visible signature into the page. It is not a certificate-based digital signature.", "è¿™ä¼šåœ¨é¡µé¢ä¸­æ’å…¥å¯è§ç­¾åï¼Œå¹¶éåŸºäºè¯ä¹¦çš„æ•°å­—ç­¾åã€‚", "à¤¯à¤¹ à¤ªà¥ƒà¤·à¥à¤  à¤ªà¤° à¤¦à¤¿à¤–à¤¾à¤ˆ à¤¦à¥‡à¤¨à¥‡ à¤µà¤¾à¤²à¤¾ à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤œà¥‹à¤¡à¤¼à¤¤à¤¾ à¤¹à¥ˆà¥¤ à¤¯à¤¹ à¤ªà¥à¤°à¤®à¤¾à¤£à¤ªà¤¤à¥à¤°-à¤†à¤§à¤¾à¤°à¤¿à¤¤ à¤¡à¤¿à¤œà¤¿à¤Ÿà¤² à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤", "Esto inserta una firma visible en la pÃ¡gina. No es una firma digital basada en certificado.", "Ceci insÃ¨re une signature visible dans la page. Ce nâ€™est pas une signature numÃ©rique certifiÃ©e.", "ÙŠÙØ¯Ø±Ø¬ Ù‡Ø°Ø§ ØªÙˆÙ‚ÙŠØ¹Ù‹Ø§ Ù…Ø±Ø¦ÙŠÙ‹Ø§ ÙÙŠ Ø§Ù„ØµÙØ­Ø©ØŒ ÙˆÙ„ÙŠØ³ ØªÙˆÙ‚ÙŠØ¹Ù‹Ø§ Ø±Ù‚Ù…ÙŠÙ‹Ø§ Ù‚Ø§Ø¦Ù…Ù‹Ø§ Ø¹Ù„Ù‰ Ø´Ù‡Ø§Ø¯Ø©.", "à¦à¦Ÿà¦¿ à¦ªà§ƒà¦·à§à¦ à¦¾à¦¯à¦¼ à¦¦à§ƒà¦¶à§à¦¯à¦®à¦¾à¦¨ à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦¯à§‹à¦— à¦•à¦°à§‡; à¦à¦Ÿà¦¿ à¦¸à¦¾à¦°à§à¦Ÿà¦¿à¦«à¦¿à¦•à§‡à¦Ÿà¦­à¦¿à¦¤à§à¦¤à¦¿à¦• à¦¡à¦¿à¦œà¦¿à¦Ÿà¦¾à¦² à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦¨à¦¯à¦¼à¥¤", "Isto insere uma assinatura visÃ­vel na pÃ¡gina. NÃ£o Ã© uma assinatura digital baseada em certificado.", "Ğ­Ñ‚Ğ¾ Ğ´Ğ¾Ğ±Ğ°Ğ²Ğ»ÑĞµÑ‚ Ğ²Ğ¸Ğ´Ğ¸Ğ¼ÑƒÑ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ Ğ½Ğ° ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ñƒ, Ğ° Ğ½Ğµ Ñ†Ğ¸Ñ„Ñ€Ğ¾Ğ²ÑƒÑ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ Ğ½Ğ° Ğ¾ÑĞ½Ğ¾Ğ²Ğµ ÑĞµÑ€Ñ‚Ğ¸Ñ„Ğ¸ĞºĞ°Ñ‚Ğ°.", "ÛŒÛ ØµÙØ­Û’ Ù¾Ø± Ù†Ø¸Ø± Ø¢Ù†Û’ ÙˆØ§Ù„Ø§ Ø¯Ø³ØªØ®Ø· Ø´Ø§Ù…Ù„ Ú©Ø±ØªØ§ ÛÛ’Ø› ÛŒÛ Ø³Ø±Ù¹ÛŒÙÚ©ÛŒÙ¹ Ù¾Ø± Ù…Ø¨Ù†ÛŒ ÚˆÛŒØ¬ÛŒÙ¹Ù„ Ø¯Ø³ØªØ®Ø· Ù†ÛÛŒÚº ÛÛ’Û”", "TÃ­mto vloÅ¾Ã­te na strÃ¡nku viditelnÃ½ podpis. Nejde o digitÃ¡lnÃ­ podpis zaloÅ¾enÃ½ na certifikÃ¡tu.", "TÃ½mto vloÅ¾Ã­te na stranu viditeÄ¾nÃ½ podpis. Nejde o digitÃ¡lny podpis zaloÅ¾enÃ½ na certifikÃ¡te.", "Spowoduje to wstawienie widocznego podpisu na stronie. Nie jest to podpis cyfrowy oparty na certyfikacie."),
-    "draw_signature": ("Draw signature", "ç»˜åˆ¶ç­¾å", "à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤¬à¤¨à¤¾à¤à¤", "Dibujar firma", "Dessiner la signature", "Ø±Ø³Ù… Ø§Ù„ØªÙˆÙ‚ÙŠØ¹", "à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦†à¦à¦•à§à¦¨", "Desenhar assinatura", "ĞĞ°Ñ€Ğ¸ÑĞ¾Ğ²Ğ°Ñ‚ÑŒ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ", "Ø¯Ø³ØªØ®Ø· Ø¨Ù†Ø§Ø¦ÛŒÚº", "Nakreslit podpis", "NakresliÅ¥ podpis", "Narysuj podpis"),
-    "type_signature": ("Type signature", "è¾“å…¥ç­¾å", "à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤²à¤¿à¤–à¥‡à¤‚", "Escribir firma", "Saisir la signature", "ÙƒØªØ§Ø¨Ø© Ø§Ù„ØªÙˆÙ‚ÙŠØ¹", "à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦° à¦²à¦¿à¦–à§à¦¨", "Escrever assinatura", "ĞĞ°Ğ¿ĞµÑ‡Ğ°Ñ‚Ğ°Ñ‚ÑŒ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑÑŒ", "Ø¯Ø³ØªØ®Ø· Ù„Ú©Ú¾ÛŒÚº", "Napsat podpis", "NapÃ­saÅ¥ podpis", "Wpisz podpis"),
-    "clear_drawing": ("Clear drawing", "æ¸…é™¤ç»˜å›¾", "à¤šà¤¿à¤¤à¥à¤° à¤¸à¤¾à¤«à¤¼ à¤•à¤°à¥‡à¤‚", "Borrar dibujo", "Effacer le dessin", "Ù…Ø³Ø­ Ø§Ù„Ø±Ø³Ù…", "à¦…à¦™à§à¦•à¦¨ à¦®à§à¦›à§à¦¨", "Limpar desenho", "ĞÑ‡Ğ¸ÑÑ‚Ğ¸Ñ‚ÑŒ Ñ€Ğ¸ÑÑƒĞ½Ğ¾Ğº", "ÚˆØ±Ø§Ø¦Ù†Ú¯ ØµØ§Ù Ú©Ø±ÛŒÚº", "Vymazat kresbu", "VymazaÅ¥ kresbu", "WyczyÅ›Ä‡ rysunek"),
-    "draw_hint": ("Draw inside the box using the mouse or a pen:", "ä½¿ç”¨é¼ æ ‡æˆ–æ‰‹å†™ç¬”åœ¨æ¡†å†…ç»˜åˆ¶ï¼š", "à¤®à¤¾à¤‰à¤¸ à¤¯à¤¾ à¤ªà¥‡à¤¨ à¤¸à¥‡ à¤¬à¥‰à¤•à¥à¤¸ à¤®à¥‡à¤‚ à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤¬à¤¨à¤¾à¤à¤:", "Dibuje dentro del cuadro con el ratÃ³n o un lÃ¡piz:", "Dessinez dans le cadre avec la souris ou un stylet :", "Ø§Ø±Ø³Ù… Ø¯Ø§Ø®Ù„ Ø§Ù„Ù…Ø±Ø¨Ø¹ Ø¨Ø§Ø³ØªØ®Ø¯Ø§Ù… Ø§Ù„ÙØ£Ø±Ø© Ø£Ùˆ Ø§Ù„Ù‚Ù„Ù…:", "à¦®à¦¾à¦‰à¦¸ à¦¬à¦¾ à¦•à¦²à¦® à¦¦à¦¿à¦¯à¦¼à§‡ à¦¬à¦¾à¦•à§à¦¸à§‡à¦° à¦®à¦§à§à¦¯à§‡ à¦†à¦à¦•à§à¦¨:", "Desenhe dentro da caixa com o rato ou uma caneta:", "Ğ Ğ¸ÑÑƒĞ¹Ñ‚Ğµ Ğ² Ñ€Ğ°Ğ¼ĞºĞµ Ğ¼Ñ‹ÑˆÑŒÑ Ğ¸Ğ»Ğ¸ Ğ¿ĞµÑ€Ğ¾Ğ¼:", "Ù…Ø§Ø¤Ø³ ÛŒØ§ Ù‚Ù„Ù… Ø³Û’ Ø®Ø§Ù†Û’ Ú©Û’ Ø§Ù†Ø¯Ø± Ø¨Ù†Ø§Ø¦ÛŒÚº:", "Kreslete do rÃ¡meÄku myÅ¡Ã­ nebo perem:", "Kreslite do rÃ¡mÄeka myÅ¡ou alebo perom:", "Rysuj w polu za pomocÄ… myszy lub piÃ³ra:"),
-    "your_name": ("Your name", "æ‚¨çš„å§“å", "à¤†à¤ªà¤•à¤¾ à¤¨à¤¾à¤®", "Su nombre", "Votre nom", "Ø§Ø³Ù…Ùƒ", "à¦†à¦ªà¦¨à¦¾à¦° à¦¨à¦¾à¦®", "O seu nome", "Ğ’Ğ°ÑˆĞµ Ğ¸Ğ¼Ñ", "Ø¢Ù¾ Ú©Ø§ Ù†Ø§Ù…", "VaÅ¡e jmÃ©no", "VaÅ¡e meno", "Twoje imiÄ™ i nazwisko"),
-    "signature_text": ("Signature text", "ç­¾åæ–‡æœ¬", "à¤¹à¤¸à¥à¤¤à¤¾à¤•à¥à¤·à¤° à¤ªà¤¾à¤ ", "Texto de firma", "Texte de la signature", "Ù†Øµ Ø§Ù„ØªÙˆÙ‚ÙŠØ¹", "à¦¸à§à¦¬à¦¾à¦•à§à¦·à¦°à§‡à¦° à¦²à§‡à¦–à¦¾", "Texto da assinatura", "Ğ¢ĞµĞºÑÑ‚ Ğ¿Ğ¾Ğ´Ğ¿Ğ¸ÑĞ¸", "Ø¯Ø³ØªØ®Ø· Ú©Ø§ Ù…ØªÙ†", "Text podpisu", "Text podpisu", "Tekst podpisu"),
-    "size": ("Size", "å¤§å°", "à¤†à¤•à¤¾à¤°", "TamaÃ±o", "Taille", "Ø§Ù„Ø­Ø¬Ù…", "à¦†à¦•à¦¾à¦°", "Tamanho", "Ğ Ğ°Ğ·Ğ¼ĞµÑ€", "Ø³Ø§Ø¦Ø²", "Velikost", "VeÄ¾kosÅ¥", "Rozmiar"),
-    "style": ("Style", "æ ·å¼", "à¤¶à¥ˆà¤²à¥€", "Estilo", "Style", "Ø§Ù„Ù†Ù…Ø·", "à¦¶à§ˆà¦²à§€", "Estilo", "Ğ¡Ñ‚Ğ¸Ğ»ÑŒ", "Ø§Ù†Ø¯Ø§Ø²", "Styl", "Å tÃ½l", "Styl"),
-    "width_on_page": ("Width on page", "é¡µé¢å®½åº¦", "à¤ªà¥ƒà¤·à¥à¤  à¤ªà¤° à¤šà¥Œà¤¡à¤¼à¤¾à¤ˆ", "Ancho en la pÃ¡gina", "Largeur sur la page", "Ø§Ù„Ø¹Ø±Ø¶ Ø¹Ù„Ù‰ Ø§Ù„ØµÙØ­Ø©", "à¦ªà§ƒà¦·à§à¦ à¦¾à¦¯à¦¼ à¦ªà§à¦°à¦¸à§à¦¥", "Largura na pÃ¡gina", "Ğ¨Ğ¸Ñ€Ğ¸Ğ½Ğ° Ğ½Ğ° ÑÑ‚Ñ€Ğ°Ğ½Ğ¸Ñ†Ğµ", "ØµÙØ­Û’ Ù¾Ø± Ú†ÙˆÚ‘Ø§Ø¦ÛŒ", "Å Ã­Å™ka na strÃ¡nce", "Å Ã­rka na strane", "SzerokoÅ›Ä‡ na stronie"),
-    "rotation": ("Rotation", "æ—‹è½¬", "à¤˜à¥à¤®à¤¾à¤µ", "RotaciÃ³n", "Rotation", "Ø§Ù„ØªØ¯ÙˆÙŠØ±", "à¦˜à§‚à¦°à§à¦£à¦¨", "RotaÃ§Ã£o", "ĞŸĞ¾Ğ²Ğ¾Ñ€Ğ¾Ñ‚", "Ú¯Ø±Ø¯Ø´", "NatoÄenÃ­", "OtoÄenie", "ObrÃ³t"),
-    "compress_title": ("Compress PDF", "å‹ç¼© PDF", "PDF à¤¸à¤‚à¤ªà¥€à¤¡à¤¼à¤¿à¤¤ à¤•à¤°à¥‡à¤‚", "Comprimir PDF", "Compresser le PDF", "Ø¶ØºØ· PDF", "PDF à¦¸à¦‚à¦•à§à¦šà¦¿à¦¤ à¦•à¦°à§à¦¨", "Comprimir PDF", "Ğ¡Ğ¶Ğ°Ñ‚ÑŒ PDF", "PDF Ø³Ú©ÛŒÚ‘ÛŒÚº", "Komprimovat PDF", "KomprimovaÅ¥ PDF", "Kompresuj PDF"),
-    "lossless": ("Lossless optimization", "æ— æŸä¼˜åŒ–", "à¤¦à¥‹à¤·à¤°à¤¹à¤¿à¤¤ à¤…à¤¨à¥à¤•à¥‚à¤²à¤¨", "OptimizaciÃ³n sin pÃ©rdida", "Optimisation sans perte", "ØªØ­Ø³ÙŠÙ† Ø¯ÙˆÙ† ÙÙ‚Ø¯", "à¦•à§à¦·à¦¤à¦¿à¦¹à§€à¦¨ à¦…à¦ªà§à¦Ÿà¦¿à¦®à¦¾à¦‡à¦œà§‡à¦¶à¦¨", "OtimizaÃ§Ã£o sem perdas", "ĞĞ¿Ñ‚Ğ¸Ğ¼Ğ¸Ğ·Ğ°Ñ†Ğ¸Ñ Ğ±ĞµĞ· Ğ¿Ğ¾Ñ‚ĞµÑ€ÑŒ", "Ø¨Û’ Ø¶Ø±Ø± Ø§ØµÙ„Ø§Ø­", "BezeztrÃ¡tovÃ¡ optimalizace", "BezstratovÃ¡ optimalizÃ¡cia", "Optymalizacja bezstratna"),
-    "balanced": ("Balanced - recommended", "å¹³è¡¡ - æ¨è", "à¤¸à¤‚à¤¤à¥à¤²à¤¿à¤¤ - à¤…à¤¨à¥à¤¶à¤‚à¤¸à¤¿à¤¤", "Equilibrado - recomendado", "Ã‰quilibrÃ© - recommandÃ©", "Ù…ØªÙˆØ§Ø²Ù† - Ù…ÙˆØµÙ‰ Ø¨Ù‡", "à¦­à¦¾à¦°à¦¸à¦¾à¦®à§à¦¯à¦ªà§‚à¦°à§à¦£ - à¦ªà§à¦°à¦¸à§à¦¤à¦¾à¦¬à¦¿à¦¤", "Equilibrado - recomendado", "Ğ¡Ğ±Ğ°Ğ»Ğ°Ğ½ÑĞ¸Ñ€Ğ¾Ğ²Ğ°Ğ½Ğ½Ğ¾Ğµ - Ñ€ĞµĞºĞ¾Ğ¼ĞµĞ½Ğ´ÑƒĞµÑ‚ÑÑ", "Ù…ØªÙˆØ§Ø²Ù† - ØªØ¬ÙˆÛŒØ² Ú©Ø±Ø¯Û", "VyvÃ¡Å¾enÃ¡ - doporuÄeno", "VyvÃ¡Å¾enÃ¡ - odporÃºÄanÃ©", "ZrÃ³wnowaÅ¼ona - zalecana"),
-    "strong": ("Strong - smallest file", "å¼ºåŠ› - æœ€å°æ–‡ä»¶", "à¤®à¤œà¤¼à¤¬à¥‚à¤¤ - à¤¸à¤¬à¤¸à¥‡ à¤›à¥‹à¤Ÿà¥€ à¤«à¤¼à¤¾à¤‡à¤²", "Fuerte - archivo mÃ­nimo", "Forte - fichier minimal", "Ù‚ÙˆÙŠ - Ø£ØµØºØ± Ù…Ù„Ù", "à¦¶à¦•à§à¦¤à¦¿à¦¶à¦¾à¦²à§€ - à¦•à§à¦·à§à¦¦à§à¦°à¦¤à¦® à¦«à¦¾à¦‡à¦²", "Forte - ficheiro mÃ­nimo", "Ğ¡Ğ¸Ğ»ÑŒĞ½Ğ¾Ğµ - Ğ¼Ğ¸Ğ½Ğ¸Ğ¼Ğ°Ğ»ÑŒĞ½Ñ‹Ğ¹ Ñ„Ğ°Ğ¹Ğ»", "Ø²ÛŒØ§Ø¯Û - Ø³Ø¨ Ø³Û’ Ú†Ú¾ÙˆÙ¹ÛŒ ÙØ§Ø¦Ù„", "SilnÃ¡ - nejmenÅ¡Ã­ soubor", "SilnÃ¡ - najmenÅ¡Ã­ sÃºbor", "Silna - najmniejszy plik"),
-    "compression_profile": ("Compression profile", "å‹ç¼©é…ç½®", "à¤¸à¤‚à¤ªà¥€à¤¡à¤¼à¤¨ à¤ªà¥à¤°à¥‹à¤«à¤¼à¤¾à¤‡à¤²", "Perfil de compresiÃ³n", "Profil de compression", "Ù…Ù„Ù Ø§Ù„Ø¶ØºØ·", "à¦¸à¦‚à¦•à§‹à¦šà¦¨ à¦ªà§à¦°à§‹à¦«à¦¾à¦‡à¦²", "Perfil de compressÃ£o", "ĞŸÑ€Ğ¾Ñ„Ğ¸Ğ»ÑŒ ÑĞ¶Ğ°Ñ‚Ğ¸Ñ", "Ú©Ù…Ù¾Ø±ÛŒØ´Ù† Ù¾Ø±ÙˆÙØ§Ø¦Ù„", "Profil komprese", "Profil kompresie", "Profil kompresji"),
-    "open_to_begin": ("Open a PDF or create a new one to begin", "æ‰“å¼€æˆ–æ–°å»º PDF ä»¥å¼€å§‹", "à¤¶à¥à¤°à¥‚ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ PDF à¤–à¥‹à¤²à¥‡à¤‚ à¤¯à¤¾ à¤¬à¤¨à¤¾à¤à¤", "Abra o cree un PDF para comenzar", "Ouvrez ou crÃ©ez un PDF pour commencer", "Ø§ÙØªØ­ Ù…Ù„Ù PDF Ø£Ùˆ Ø£Ù†Ø´Ø¦ ÙˆØ§Ø­Ø¯Ù‹Ø§ Ù„Ù„Ø¨Ø¯Ø¡", "à¦¶à§à¦°à§ à¦•à¦°à¦¤à§‡ PDF à¦–à§à¦²à§à¦¨ à¦¬à¦¾ à¦¤à§ˆà¦°à¦¿ à¦•à¦°à§à¦¨", "Abra ou crie um PDF para comeÃ§ar", "ĞÑ‚ĞºÑ€Ğ¾Ğ¹Ñ‚Ğµ Ğ¸Ğ»Ğ¸ ÑĞ¾Ğ·Ğ´Ğ°Ğ¹Ñ‚Ğµ PDF", "Ø´Ø±ÙˆØ¹ Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ PDF Ú©Ú¾ÙˆÙ„ÛŒÚº ÛŒØ§ Ø¨Ù†Ø§Ø¦ÛŒÚº", "ZaÄnÄ›te otevÅ™enÃ­m nebo vytvoÅ™enÃ­m PDF", "ZaÄnite otvorenÃ­m alebo vytvorenÃ­m PDF", "OtwÃ³rz lub utwÃ³rz PDF, aby rozpoczÄ…Ä‡"),
-    "print_failed": ("Printing failed", "æ‰“å°å¤±è´¥", "à¤®à¥à¤¦à¥à¤°à¤£ à¤µà¤¿à¤«à¤²", "Error de impresiÃ³n", "Ã‰chec de lâ€™impression", "ÙØ´Ù„Øª Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©", "à¦ªà§à¦°à¦¿à¦¨à§à¦Ÿ à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦¯à¦¼à§‡à¦›à§‡", "Falha na impressÃ£o", "Pencetakan gagal", "Ù¾Ø±Ù†Ù¹Ù†Ú¯ Ù†Ø§Ú©Ø§Ù…", "Tisk se nezdaÅ™il", "TlaÄ zlyhala", "Drukowanie nie powiodÅ‚o siÄ™"),
-    "print_complete": ("Print job sent: {count} page(s).", "æ‰“å°ä»»åŠ¡å·²å‘é€ï¼š{count} é¡µã€‚", "à¤ªà¥à¤°à¤¿à¤‚à¤Ÿ à¤•à¤¾à¤°à¥à¤¯ à¤­à¥‡à¤œà¤¾ à¤—à¤¯à¤¾: {count} à¤ªà¥ƒà¤·à¥à¤ à¥¤", "Trabajo de impresiÃ³n enviado: {count} pÃ¡gina(s).", "TÃ¢che dâ€™impression envoyÃ©e : {count} page(s).", "ØªÙ… Ø¥Ø±Ø³Ø§Ù„ Ù…Ù‡Ù…Ø© Ø§Ù„Ø·Ø¨Ø§Ø¹Ø©: {count} ØµÙØ­Ø©.", "à¦ªà§à¦°à¦¿à¦¨à§à¦Ÿ à¦•à¦¾à¦œ à¦ªà¦¾à¦ à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡: {count} à¦ªà§ƒà¦·à§à¦ à¦¾à¥¤", "Trabalho de impressÃ£o enviado: {count} pÃ¡gina(s).", "Pekerjaan cetak dikirim: {count} halaman.", "Ù¾Ø±Ù†Ù¹ Ú©Ø§Ù… Ø¨Ú¾ÛŒØ¬ Ø¯ÛŒØ§ Ú¯ÛŒØ§: {count} ØµÙØ­ÛÛ”", "TiskovÃ¡ Ãºloha byla odeslÃ¡na: {count} strÃ¡nek.", "TlaÄovÃ¡ Ãºloha bola odoslanÃ¡: {count} strÃ¡n.", "Zadanie drukowania wysÅ‚ano: {count} stron."),
-    "sidebar_pages": ("Pages", "é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤ ", "PÃ¡ginas", "Pages", "Ø§Ù„ØµÙØ­Ø§Øª", "à¦ªà§ƒà¦·à§à¦ à¦¾à¦¸à¦®à§‚à¦¹", "PÃ¡ginas", "Halaman", "ØµÙØ­Ø§Øª", "StrÃ¡nky", "Strany", "Strony"),
-    "sidebar_tree": ("Tree", "æ–‡æ¡£æ ‘", "à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤µà¥ƒà¤•à¥à¤·", "Ãrbol", "Arborescence", "Ø´Ø¬Ø±Ø© Ø§Ù„Ù…Ø³ØªÙ†Ø¯", "à¦¨à¦¥à¦¿à¦° à¦—à¦¾à¦›", "Ãrvore", "Struktur", "Ø¯Ø³ØªØ§ÙˆÛŒØ² Ú©Ø§ Ø¯Ø±Ø®Øª", "Strom", "Strom", "Drzewo"),
-    "no_document_tree": ("This PDF has no document tree.", "æ­¤ PDF æ²¡æœ‰æ–‡æ¡£æ ‘ã€‚", "à¤‡à¤¸ PDF à¤®à¥‡à¤‚ à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤µà¥ƒà¤•à¥à¤· à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆà¥¤", "Este PDF no contiene un Ã¡rbol de documento.", "Ce PDF ne contient aucune arborescence de document.", "Ù„Ø§ ÙŠØ­ØªÙˆÙŠ Ù…Ù„Ù PDF Ù‡Ø°Ø§ Ø¹Ù„Ù‰ Ø´Ø¬Ø±Ø© Ù…Ø³ØªÙ†Ø¯.", "à¦à¦‡ PDF-à¦ à¦•à§‹à¦¨à§‹ à¦¨à¦¥à¦¿à¦° à¦—à¦¾à¦› à¦¨à§‡à¦‡à¥¤", "Este PDF nÃ£o contÃ©m uma Ã¡rvore do documento.", "PDF ini tidak memiliki struktur dokumen.", "Ø§Ø³ PDF Ù…ÛŒÚº Ø¯Ø³ØªØ§ÙˆÛŒØ² Ú©Ø§ Ø¯Ø±Ø®Øª Ù†ÛÛŒÚº ÛÛ’Û”", "Toto PDF neobsahuje strom dokumentu.", "Toto PDF neobsahuje strom dokumentu.", "Ten plik PDF nie zawiera drzewa dokumentu."),
-}
-
-_ROWS.update({
-    "move_page_up": ("Move page earlier", "å‘å‰ç§»åŠ¨é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤  à¤•à¥‹ à¤ªà¤¹à¤²à¥‡ à¤²à¥‡ à¤œà¤¾à¤à¤", "Mover pÃ¡gina antes", "DÃ©placer la page plus tÃ´t", "Ù†Ù‚Ù„ Ø§Ù„ØµÙØ­Ø© Ø¥Ù„Ù‰ Ù…ÙˆØ¶Ø¹ Ø³Ø§Ø¨Ù‚", "à¦ªà§ƒà¦·à§à¦ à¦¾ à¦†à¦—à§‡ à¦¸à¦°à¦¾à¦¨", "Mover pÃ¡gina para antes", "Pindahkan halaman ke depan", "ØµÙØ­Û Ù¾ÛÙ„Û’ Ù…Ù†ØªÙ‚Ù„ Ú©Ø±ÛŒÚº", "PÅ™esunout strÃ¡nku vÃ½Å¡e", "PresunÃºÅ¥ stranu vyÅ¡Å¡ie", "PrzenieÅ› stronÄ™ wyÅ¼ej"),
-    "move_page_down": ("Move page later", "å‘åç§»åŠ¨é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤  à¤•à¥‹ à¤¬à¤¾à¤¦ à¤®à¥‡à¤‚ à¤²à¥‡ à¤œà¤¾à¤à¤", "Mover pÃ¡gina despuÃ©s", "DÃ©placer la page plus tard", "Ù†Ù‚Ù„ Ø§Ù„ØµÙØ­Ø© Ø¥Ù„Ù‰ Ù…ÙˆØ¶Ø¹ Ù„Ø§Ø­Ù‚", "à¦ªà§ƒà¦·à§à¦ à¦¾ à¦ªà¦°à§‡ à¦¸à¦°à¦¾à¦¨", "Mover pÃ¡gina para depois", "Pindahkan halaman ke belakang", "ØµÙØ­Û Ø¨Ø¹Ø¯ Ù…ÛŒÚº Ù…Ù†ØªÙ‚Ù„ Ú©Ø±ÛŒÚº", "PÅ™esunout strÃ¡nku nÃ­Å¾e", "PresunÃºÅ¥ stranu niÅ¾Å¡ie", "PrzenieÅ› stronÄ™ niÅ¼ej"),
-    "page_moved": ("Page moved to position {page}.", "é¡µé¢å·²ç§»åŠ¨åˆ°ä½ç½® {page}ã€‚", "à¤ªà¥ƒà¤·à¥à¤  à¤•à¥‹ à¤¸à¥à¤¥à¤¾à¤¨ {page} à¤ªà¤° à¤²à¥‡ à¤œà¤¾à¤¯à¤¾ à¤—à¤¯à¤¾à¥¤", "PÃ¡gina movida a la posiciÃ³n {page}.", "Page dÃ©placÃ©e Ã  la position {page}.", "ØªÙ… Ù†Ù‚Ù„ Ø§Ù„ØµÙØ­Ø© Ø¥Ù„Ù‰ Ø§Ù„Ù…ÙˆØ¶Ø¹ {page}.", "à¦ªà§ƒà¦·à§à¦ à¦¾ {page} à¦…à¦¬à¦¸à§à¦¥à¦¾à¦¨à§‡ à¦¸à¦°à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡à¥¤", "PÃ¡gina movida para a posiÃ§Ã£o {page}.", "Halaman dipindahkan ke posisi {page}.", "ØµÙØ­Û Ù…Ù‚Ø§Ù… {page} Ù¾Ø± Ù…Ù†ØªÙ‚Ù„ Ú©Ø± Ø¯ÛŒØ§ Ú¯ÛŒØ§Û”", "StrÃ¡nka byla pÅ™esunuta na pozici {page}.", "Strana bola presunutÃ¡ na pozÃ­ciu {page}.", "Strona zostaÅ‚a przeniesiona na pozycjÄ™ {page}."),
-    "rotate_page_left": ("Rotate page left", "å‘å·¦æ—‹è½¬é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤  à¤•à¥‹ à¤¬à¤¾à¤à¤ à¤˜à¥à¤®à¤¾à¤à¤", "Girar pÃ¡gina a la izquierda", "Faire pivoter la page Ã  gauche", "ØªØ¯ÙˆÙŠØ± Ø§Ù„ØµÙØ­Ø© Ø¥Ù„Ù‰ Ø§Ù„ÙŠØ³Ø§Ø±", "à¦ªà§ƒà¦·à§à¦ à¦¾ à¦¬à¦¾à¦®à§‡ à¦˜à§‹à¦°à¦¾à¦¨", "Rodar pÃ¡gina para a esquerda", "Putar halaman ke kiri", "ØµÙØ­Û Ø¨Ø§Ø¦ÛŒÚº Ú¯Ú¾Ù…Ø§Ø¦ÛŒÚº", "OtoÄit strÃ¡nku doleva", "OtoÄiÅ¥ stranu doÄ¾ava", "ObrÃ³Ä‡ stronÄ™ w lewo"),
-    "rotate_page_right": ("Rotate page right", "å‘å³æ—‹è½¬é¡µé¢", "à¤ªà¥ƒà¤·à¥à¤  à¤•à¥‹ à¤¦à¤¾à¤à¤ à¤˜à¥à¤®à¤¾à¤à¤", "Girar pÃ¡gina a la derecha", "Faire pivoter la page Ã  droite", "ØªØ¯ÙˆÙŠØ± Ø§Ù„ØµÙØ­Ø© Ø¥Ù„Ù‰ Ø§Ù„ÙŠÙ…ÙŠÙ†", "à¦ªà§ƒà¦·à§à¦ à¦¾ à¦¡à¦¾à¦¨à§‡ à¦˜à§‹à¦°à¦¾à¦¨", "Rodar pÃ¡gina para a direita", "Putar halaman ke kanan", "ØµÙØ­Û Ø¯Ø§Ø¦ÛŒÚº Ú¯Ú¾Ù…Ø§Ø¦ÛŒÚº", "OtoÄit strÃ¡nku doprava", "OtoÄiÅ¥ stranu doprava", "ObrÃ³Ä‡ stronÄ™ w prawo"),
-    "page_rotated": ("Page {page} rotated.", "é¡µé¢ {page} å·²æ—‹è½¬ã€‚", "à¤ªà¥ƒà¤·à¥à¤  {page} à¤˜à¥à¤®à¤¾à¤¯à¤¾ à¤—à¤¯à¤¾à¥¤", "PÃ¡gina {page} girada.", "Page {page} pivotÃ©e.", "ØªÙ… ØªØ¯ÙˆÙŠØ± Ø§Ù„ØµÙØ­Ø© {page}.", "à¦ªà§ƒà¦·à§à¦ à¦¾ {page} à¦˜à§‹à¦°à¦¾à¦¨à§‹ à¦¹à¦¯à¦¼à§‡à¦›à§‡à¥¤", "PÃ¡gina {page} rodada.", "Halaman {page} diputar.", "ØµÙØ­Û {page} Ú¯Ú¾Ù…Ø§ Ø¯ÛŒØ§ Ú¯ÛŒØ§Û”", "StrÃ¡nka {page} byla otoÄena.", "Strana {page} bola otoÄenÃ¡.", "Strona {page} zostaÅ‚a obrÃ³cona."),
-    "edit_original_image": ("Edit original image...", "ç¼–è¾‘åŸå§‹å›¾åƒ...", "à¤®à¥‚à¤² à¤›à¤µà¤¿ à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤•à¤°à¥‡à¤‚...", "Editar imagen original...", "Modifier lâ€™image dâ€™origine...", "ØªØ­Ø±ÙŠØ± Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø£ØµÙ„ÙŠØ©...", "à¦®à§‚à¦² à¦›à¦¬à¦¿ à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¨à¦¾ à¦•à¦°à§à¦¨...", "Editar imagem original...", "Edit gambar asli...", "Ø§ØµÙ„ ØªØµÙˆÛŒØ± Ù…ÛŒÚº ØªØ±Ù…ÛŒÙ… Ú©Ø±ÛŒÚº...", "Upravit pÅ¯vodnÃ­ obrÃ¡zek...", "UpraviÅ¥ pÃ´vodnÃ½ obrÃ¡zok...", "Edytuj oryginalny obraz..."),
-    "edit_original_image_hint": ("Click an original image to make it movable, resizable, and rotatable. Press Esc to cancel.", "å•å‡»åŸå§‹å›¾åƒï¼Œä½¿å…¶å¯ç§»åŠ¨ã€è°ƒæ•´å¤§å°å’Œæ—‹è½¬ã€‚æŒ‰ Esc å–æ¶ˆã€‚", "à¤®à¥‚à¤² à¤›à¤µà¤¿ à¤ªà¤° à¤•à¥à¤²à¤¿à¤• à¤•à¤°à¤•à¥‡ à¤‰à¤¸à¥‡ à¤šà¤²à¤¨à¥‡, à¤†à¤•à¤¾à¤° à¤¬à¤¦à¤²à¤¨à¥‡ à¤”à¤° à¤˜à¥à¤®à¤¾à¤¨à¥‡ à¤¯à¥‹à¤—à¥à¤¯ à¤¬à¤¨à¤¾à¤à¤à¥¤ à¤°à¤¦à¥à¤¦ à¤•à¤°à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ Esc à¤¦à¤¬à¤¾à¤à¤à¥¤", "Haga clic en una imagen original para poder moverla, redimensionarla y girarla. Pulse Esc para cancelar.", "Cliquez sur une image dâ€™origine pour pouvoir la dÃ©placer, la redimensionner et la faire pivoter. Appuyez sur Ã‰chap pour annuler.", "Ø§Ù†Ù‚Ø± Ø¹Ù„Ù‰ ØµÙˆØ±Ø© Ø£ØµÙ„ÙŠØ© Ù„Ø¬Ø¹Ù„Ù‡Ø§ Ù‚Ø§Ø¨Ù„Ø© Ù„Ù„Ù†Ù‚Ù„ ÙˆØªØºÙŠÙŠØ± Ø§Ù„Ø­Ø¬Ù… ÙˆØ§Ù„ØªØ¯ÙˆÙŠØ±. Ø§Ø¶ØºØ· Esc Ù„Ù„Ø¥Ù„ØºØ§Ø¡.", "à¦®à§‚à¦² à¦›à¦¬à¦¿à¦¤à§‡ à¦•à§à¦²à¦¿à¦• à¦•à¦°à§‡ à¦¸à§‡à¦Ÿà¦¿à¦•à§‡ à¦¸à¦°à¦¾à¦¨à§‹, à¦†à¦•à¦¾à¦° à¦¬à¦¦à¦²à¦¾à¦¨à§‹ à¦“ à¦˜à§‹à¦°à¦¾à¦¨à§‹à¦° à¦‰à¦ªà¦¯à§‹à¦—à§€ à¦•à¦°à§à¦¨à¥¤ à¦¬à¦¾à¦¤à¦¿à¦² à¦•à¦°à¦¤à§‡ Esc à¦šà¦¾à¦ªà§à¦¨à¥¤", "Clique numa imagem original para a tornar movÃ­vel, redimensionÃ¡vel e rotativa. Prima Esc para cancelar.", "Klik gambar asli agar dapat dipindahkan, diubah ukurannya, dan diputar. Tekan Esc untuk batal.", "Ø§ØµÙ„ ØªØµÙˆÛŒØ± Ú©Ùˆ Ù‚Ø§Ø¨Ù„Ù Ø­Ø±Ú©ØªØŒ Ù‚Ø§Ø¨Ù„Ù Ø³Ø§Ø¦Ø² ØªØ¨Ø¯ÛŒÙ„ÛŒ Ø§ÙˆØ± Ù‚Ø§Ø¨Ù„Ù Ú¯Ø±Ø¯Ø´ Ø¨Ù†Ø§Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ú©Ù„Ú© Ú©Ø±ÛŒÚºÛ” Ù…Ù†Ø³ÙˆØ® Ú©Ø±Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Esc Ø¯Ø¨Ø§Ø¦ÛŒÚºÛ”", "KliknÄ›te na pÅ¯vodnÃ­ obrÃ¡zek, kterÃ½ chcete pÅ™esouvat, mÄ›nit jeho velikost a otÃ¡Äet. Esc akci zruÅ¡Ã­.", "Kliknite na pÃ´vodnÃ½ obrÃ¡zok, ktorÃ½ chcete presÃºvaÅ¥, meniÅ¥ jeho veÄ¾kosÅ¥ a otÃ¡ÄaÅ¥. Esc akciu zruÅ¡Ã­.", "Kliknij oryginalny obraz, aby go przesuwaÄ‡, skalowaÄ‡ i obracaÄ‡. Esc anuluje operacjÄ™."),
-    "original_image": ("Original image", "åŸå§‹å›¾åƒ", "à¤®à¥‚à¤² à¤›à¤µà¤¿", "Imagen original", "Image dâ€™origine", "Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø£ØµÙ„ÙŠØ©", "à¦®à§‚à¦² à¦›à¦¬à¦¿", "Imagem original", "Gambar asli", "Ø§ØµÙ„ ØªØµÙˆÛŒØ±", "PÅ¯vodnÃ­ obrÃ¡zek", "PÃ´vodnÃ½ obrÃ¡zok", "Oryginalny obraz"),
-    "original_image_ready": ("The original image is now editable. Drag it or use the resize and rotation handles.", "åŸå§‹å›¾åƒç°åœ¨å¯ç¼–è¾‘ã€‚æ‹–åŠ¨å®ƒæˆ–ä½¿ç”¨å¤§å°å’Œæ—‹è½¬æ‰‹æŸ„ã€‚", "à¤®à¥‚à¤² à¤›à¤µà¤¿ à¤…à¤¬ à¤¸à¤‚à¤ªà¤¾à¤¦à¤¨ à¤¯à¥‹à¤—à¥à¤¯ à¤¹à¥ˆà¥¤ à¤‰à¤¸à¥‡ à¤–à¥€à¤‚à¤šà¥‡à¤‚ à¤¯à¤¾ à¤†à¤•à¤¾à¤° à¤”à¤° à¤˜à¥à¤®à¤¾à¤µ à¤¹à¥ˆà¤‚à¤¡à¤² à¤•à¤¾ à¤‰à¤ªà¤¯à¥‹à¤— à¤•à¤°à¥‡à¤‚à¥¤", "La imagen original ya se puede editar. ArrÃ¡strela o use los controles de tamaÃ±o y rotaciÃ³n.", "Lâ€™image dâ€™origine est maintenant modifiable. Faites-la glisser ou utilisez les poignÃ©es de taille et de rotation.", "Ø£ØµØ¨Ø­Øª Ø§Ù„ØµÙˆØ±Ø© Ø§Ù„Ø£ØµÙ„ÙŠØ© Ù‚Ø§Ø¨Ù„Ø© Ù„Ù„ØªØ­Ø±ÙŠØ±. Ø§Ø³Ø­Ø¨Ù‡Ø§ Ø£Ùˆ Ø§Ø³ØªØ®Ø¯Ù… Ù…Ù‚Ø§Ø¨Ø¶ Ø§Ù„Ø­Ø¬Ù… ÙˆØ§Ù„ØªØ¯ÙˆÙŠØ±.", "à¦®à§‚à¦² à¦›à¦¬à¦¿ à¦à¦–à¦¨ à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¨à¦¾à¦¯à§‹à¦—à§à¦¯à¥¤ à¦Ÿà§‡à¦¨à§‡ à¦¨à¦¿à¦¨ à¦¬à¦¾ à¦†à¦•à¦¾à¦° à¦“ à¦˜à§‚à¦°à§à¦£à¦¨ à¦¹à§à¦¯à¦¾à¦¨à§à¦¡à§‡à¦² à¦¬à§à¦¯à¦¬à¦¹à¦¾à¦° à¦•à¦°à§à¦¨à¥¤", "A imagem original estÃ¡ agora editÃ¡vel. Arraste-a ou use as alÃ§as de tamanho e rotaÃ§Ã£o.", "Gambar asli sekarang dapat diedit. Seret atau gunakan gagang ukuran dan rotasi.", "Ø§ØµÙ„ ØªØµÙˆÛŒØ± Ø§Ø¨ Ù‚Ø§Ø¨Ù„Ù ØªØ±Ù…ÛŒÙ… ÛÛ’Û” Ø§Ø³Û’ Ú©Ú¾ÛŒÙ†Ú†ÛŒÚº ÛŒØ§ Ø³Ø§Ø¦Ø² Ø§ÙˆØ± Ú¯Ø±Ø¯Ø´ Ú©Û’ ÛÛŒÙ†ÚˆÙ„ Ø§Ø³ØªØ¹Ù…Ø§Ù„ Ú©Ø±ÛŒÚºÛ”", "PÅ¯vodnÃ­ obrÃ¡zek je nynÃ­ upravitelnÃ½. PÅ™etÃ¡hnÄ›te jej nebo pouÅ¾ijte Ãºchyty velikosti a otoÄenÃ­.", "PÃ´vodnÃ½ obrÃ¡zok je teraz upraviteÄ¾nÃ½. PresuÅˆte ho alebo pouÅ¾ite Ãºchyty veÄ¾kosti a otoÄenia.", "Oryginalny obraz moÅ¼na teraz edytowaÄ‡. PrzeciÄ…gnij go lub uÅ¼yj uchwytÃ³w rozmiaru i obrotu."),
-    "save_copy": ("Save a Copy...", "ä¿å­˜å‰¯æœ¬...", "à¤à¤• à¤ªà¥à¤°à¤¤à¤¿ à¤¸à¤¹à¥‡à¤œà¥‡à¤‚...", "Guardar una copia...", "Enregistrer une copie...", "Ø­ÙØ¸ Ù†Ø³Ø®Ø©...", "à¦à¦•à¦Ÿà¦¿ à¦…à¦¨à§à¦²à¦¿à¦ªà¦¿ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à§à¦¨...", "Guardar uma cÃ³pia...", "Simpan salinan...", "Ø§ÛŒÚ© Ù†Ù‚Ù„ Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚº...", "UloÅ¾it kopii...", "UloÅ¾iÅ¥ kÃ³piu...", "Zapisz kopiÄ™..."),
-    "pdf_password_title": ("Protected PDF", "å—ä¿æŠ¤çš„ PDF", "à¤¸à¥à¤°à¤•à¥à¤·à¤¿à¤¤ PDF", "PDF protegido", "PDF protÃ©gÃ©", "Ù…Ù„Ù PDF Ù…Ø­Ù…ÙŠ", "à¦¸à§à¦°à¦•à§à¦·à¦¿à¦¤ PDF", "PDF protegido", "PDF terlindungi", "Ù…Ø­ÙÙˆØ¸ PDF", "ChrÃ¡nÄ›nÃ© PDF", "ChrÃ¡nenÃ© PDF", "Chroniony PDF"),
-    "pdf_password_prompt": ("Enter the password to open this PDF:", "è¯·è¾“å…¥å¯†ç ä»¥æ‰“å¼€æ­¤ PDFï¼š", "à¤‡à¤¸ PDF à¤•à¥‹ à¤–à¥‹à¤²à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤ªà¤¾à¤¸à¤µà¤°à¥à¤¡ à¤¦à¤°à¥à¤œ à¤•à¤°à¥‡à¤‚:", "Introduzca la contraseÃ±a para abrir este PDF:", "Saisissez le mot de passe pour ouvrir ce PDF :", "Ø£Ø¯Ø®Ù„ ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± Ù„ÙØªØ­ Ù…Ù„Ù PDF Ù‡Ø°Ø§:", "à¦à¦‡ PDF à¦–à§à¦²à¦¤à§‡ à¦ªà¦¾à¦¸à¦“à¦¯à¦¼à¦¾à¦°à§à¦¡ à¦²à¦¿à¦–à§à¦¨:", "Introduza a palavra-passe para abrir este PDF:", "Masukkan kata sandi untuk membuka PDF ini:", "Ø§Ø³ PDF Ú©Ùˆ Ú©Ú¾ÙˆÙ„Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ù¾Ø§Ø³ ÙˆØ±Úˆ Ø¯Ø±Ø¬ Ú©Ø±ÛŒÚº:", "Zadejte heslo pro otevÅ™enÃ­ tohoto PDF:", "Zadajte heslo na otvorenie tohto PDF:", "WprowadÅº hasÅ‚o, aby otworzyÄ‡ ten plik PDF:"),
-    "pdf_password_incorrect": ("Incorrect password. Try again:", "å¯†ç ä¸æ­£ç¡®ã€‚è¯·é‡è¯•ï¼š", "à¤ªà¤¾à¤¸à¤µà¤°à¥à¤¡ à¤—à¤²à¤¤ à¤¹à¥ˆà¥¤ à¤ªà¥à¤¨à¤ƒ à¤ªà¥à¤°à¤¯à¤¾à¤¸ à¤•à¤°à¥‡à¤‚:", "ContraseÃ±a incorrecta. IntÃ©ntelo de nuevo:", "Mot de passe incorrect. RÃ©essayez :", "ÙƒÙ„Ù…Ø© Ø§Ù„Ù…Ø±ÙˆØ± ØºÙŠØ± ØµØ­ÙŠØ­Ø©. Ø­Ø§ÙˆÙ„ Ù…Ø±Ø© Ø£Ø®Ø±Ù‰:", "à¦­à§à¦² à¦ªà¦¾à¦¸à¦“à¦¯à¦¼à¦¾à¦°à§à¦¡à¥¤ à¦†à¦¬à¦¾à¦° à¦šà§‡à¦·à§à¦Ÿà¦¾ à¦•à¦°à§à¦¨:", "Palavra-passe incorreta. Tente novamente:", "Kata sandi salah. Coba lagi:", "Ù¾Ø§Ø³ ÙˆØ±Úˆ ØºÙ„Ø· ÛÛ’Û” Ø¯ÙˆØ¨Ø§Ø±Û Ú©ÙˆØ´Ø´ Ú©Ø±ÛŒÚº:", "NesprÃ¡vnÃ© heslo. Zkuste to znovu:", "NesprÃ¡vne heslo. SkÃºste to znova:", "NieprawidÅ‚owe hasÅ‚o. SprÃ³buj ponownie:"),
-    "pdf_password_removed_notice": ("The PDF was unlocked. Edited copies will be saved without password protection.", "PDF å·²è§£é”ã€‚ç¼–è¾‘åçš„å‰¯æœ¬å°†ä¸å¸¦å¯†ç ä¿æŠ¤ä¿å­˜ã€‚", "PDF à¤…à¤¨à¤²à¥‰à¤• à¤¹à¥‹ à¤—à¤¯à¤¾ à¤¹à¥ˆà¥¤ à¤¸à¤‚à¤ªà¤¾à¤¦à¤¿à¤¤ à¤ªà¥à¤°à¤¤à¤¿à¤¯à¤¾à¤ à¤ªà¤¾à¤¸à¤µà¤°à¥à¤¡ à¤¸à¥à¤°à¤•à¥à¤·à¤¾ à¤•à¥‡ à¤¬à¤¿à¤¨à¤¾ à¤¸à¤¹à¥‡à¤œà¥€ à¤œà¤¾à¤à¤à¤—à¥€à¥¤", "El PDF se ha desbloqueado. Las copias editadas se guardarÃ¡n sin protecciÃ³n por contraseÃ±a.", "Le PDF a Ã©tÃ© dÃ©verrouillÃ©. Les copies modifiÃ©es seront enregistrÃ©es sans protection par mot de passe.", "ØªÙ… ÙØªØ­ Ù…Ù„Ù PDF. Ø³ÙŠØªÙ… Ø­ÙØ¸ Ø§Ù„Ù†Ø³Ø® Ø§Ù„Ù…Ø¹Ø¯Ù„Ø© Ù…Ù† Ø¯ÙˆÙ† Ø­Ù…Ø§ÙŠØ© Ø¨ÙƒÙ„Ù…Ø© Ù…Ø±ÙˆØ±.", "PDF à¦†à¦¨à¦²à¦• à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡à¥¤ à¦¸à¦®à§à¦ªà¦¾à¦¦à¦¿à¦¤ à¦•à¦ªà¦¿ à¦ªà¦¾à¦¸à¦“à¦¯à¦¼à¦¾à¦°à§à¦¡ à¦¸à§à¦°à¦•à§à¦·à¦¾ à¦›à¦¾à¦¡à¦¼à¦¾à¦‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦¿à¦¤ à¦¹à¦¬à§‡à¥¤", "O PDF foi desbloqueado. As cÃ³pias editadas serÃ£o guardadas sem proteÃ§Ã£o por palavra-passe.", "PDF telah dibuka. Salinan yang diedit akan disimpan tanpa perlindungan kata sandi.", "PDF Ú©Ú¾ÙˆÙ„ Ø¯ÛŒØ§ Ú¯ÛŒØ§ ÛÛ’Û” ØªØ±Ù…ÛŒÙ… Ø´Ø¯Û Ù†Ù‚ÙˆÙ„ Ù¾Ø§Ø³ ÙˆØ±Úˆ Ú©Û’ ØªØ­ÙØ¸ Ú©Û’ Ø¨ØºÛŒØ± Ù…Ø­ÙÙˆØ¸ ÛÙˆÚº Ú¯ÛŒÛ”", "PDF bylo odemÄeno. UpravenÃ© kopie budou uloÅ¾eny bez ochrany heslem.", "PDF bolo odomknutÃ©. UpravenÃ© kÃ³pie sa uloÅ¾ia bez ochrany heslom.", "Plik PDF zostaÅ‚ odblokowany. Edytowane kopie zostanÄ… zapisane bez ochrony hasÅ‚em."),
-    "recent_files": ("Recent files", "æœ€è¿‘ä½¿ç”¨çš„æ–‡ä»¶", "à¤¹à¤¾à¤² à¤•à¥€ à¤«à¤¼à¤¾à¤‡à¤²à¥‡à¤‚", "Archivos recientes", "Fichiers rÃ©cents", "Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø®ÙŠØ±Ø©", "à¦¸à¦¾à¦®à§à¦ªà§à¦°à¦¤à¦¿à¦• à¦«à¦¾à¦‡à¦²", "Ficheiros recentes", "Berkas terbaru", "Ø­Ø§Ù„ÛŒÛ ÙØ§Ø¦Ù„ÛŒÚº", "NedÃ¡vnÃ© soubory", "NedÃ¡vne sÃºbory", "Ostatnie pliki"),
-    "no_recent_files": ("No recent files", "æ²¡æœ‰æœ€è¿‘ä½¿ç”¨çš„æ–‡ä»¶", "à¤•à¥‹à¤ˆ à¤¹à¤¾à¤² à¤•à¥€ à¤«à¤¼à¤¾à¤‡à¤² à¤¨à¤¹à¥€à¤‚", "No hay archivos recientes", "Aucun fichier rÃ©cent", "Ù„Ø§ ØªÙˆØ¬Ø¯ Ù…Ù„ÙØ§Øª Ø£Ø®ÙŠØ±Ø©", "à¦•à§‹à¦¨à§‹ à¦¸à¦¾à¦®à§à¦ªà§à¦°à¦¤à¦¿à¦• à¦«à¦¾à¦‡à¦² à¦¨à§‡à¦‡", "Sem ficheiros recentes", "Tidak ada berkas terbaru", "Ú©ÙˆØ¦ÛŒ Ø­Ø§Ù„ÛŒÛ ÙØ§Ø¦Ù„ Ù†ÛÛŒÚº", "Å½Ã¡dnÃ© nedÃ¡vnÃ© soubory", "Å½iadne nedÃ¡vne sÃºbory", "Brak ostatnich plikÃ³w"),
-    "clear_recent_files": ("Clear recent files", "æ¸…é™¤æœ€è¿‘ä½¿ç”¨çš„æ–‡ä»¶", "à¤¹à¤¾à¤² à¤•à¥€ à¤«à¤¼à¤¾à¤‡à¤²à¥‡à¤‚ à¤¸à¤¾à¤«à¤¼ à¤•à¤°à¥‡à¤‚", "Borrar archivos recientes", "Effacer les fichiers rÃ©cents", "Ù…Ø³Ø­ Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ø£Ø®ÙŠØ±Ø©", "à¦¸à¦¾à¦®à§à¦ªà§à¦°à¦¤à¦¿à¦• à¦«à¦¾à¦‡à¦² à¦®à§à¦›à§à¦¨", "Limpar ficheiros recentes", "Hapus daftar berkas terbaru", "Ø­Ø§Ù„ÛŒÛ ÙØ§Ø¦Ù„ÙˆÚº Ú©ÛŒ ÙÛØ±Ø³Øª ØµØ§Ù Ú©Ø±ÛŒÚº", "Vymazat seznam nedÃ¡vnÃ½ch souborÅ¯", "VymazaÅ¥ zoznam nedÃ¡vnych sÃºborov", "WyczyÅ›Ä‡ listÄ™ ostatnich plikÃ³w"),
-    "recent_file_missing": ("The file is no longer available:\n{path}", "è¯¥æ–‡ä»¶å·²ä¸å¯ç”¨ï¼š\n{path}", "à¤«à¤¼à¤¾à¤‡à¤² à¤…à¤¬ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆ:\n{path}", "El archivo ya no estÃ¡ disponible:\n{path}", "Le fichier nâ€™est plus disponible :\n{path}", "Ù„Ù… ÙŠØ¹Ø¯ Ø§Ù„Ù…Ù„Ù Ù…ØªØ§Ø­Ù‹Ø§:\n{path}", "à¦«à¦¾à¦‡à¦²à¦Ÿà¦¿ à¦†à¦° à¦ªà¦¾à¦“à¦¯à¦¼à¦¾ à¦¯à¦¾à¦šà§à¦›à§‡ à¦¨à¦¾:\n{path}", "O ficheiro jÃ¡ nÃ£o estÃ¡ disponÃ­vel:\n{path}", "Berkas tidak lagi tersedia:\n{path}", "ÙØ§Ø¦Ù„ Ø§Ø¨ Ø¯Ø³ØªÛŒØ§Ø¨ Ù†ÛÛŒÚº ÛÛ’:\n{path}", "Soubor jiÅ¾ nenÃ­ dostupnÃ½:\n{path}", "SÃºbor uÅ¾ nie je dostupnÃ½:\n{path}", "Plik nie jest juÅ¼ dostÄ™pny:\n{path}"),
-    "recovery_title": ("Recover unsaved work", "æ¢å¤æœªä¿å­˜çš„å·¥ä½œ", "à¤¸à¤¹à¥‡à¤œà¥‡ à¤¨ à¤—à¤ à¤•à¤¾à¤® à¤•à¥‹ à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤•à¤°à¥‡à¤‚", "Recuperar trabajo no guardado", "RÃ©cupÃ©rer le travail non enregistrÃ©", "Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„ ØºÙŠØ± Ø§Ù„Ù…Ø­ÙÙˆØ¸", "à¦…à¦¸à¦‚à¦°à¦•à§à¦·à¦¿à¦¤ à¦•à¦¾à¦œ à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦•à¦°à§à¦¨", "Recuperar trabalho nÃ£o guardado", "Pulihkan pekerjaan yang belum disimpan", "ØºÛŒØ± Ù…Ø­ÙÙˆØ¸ Ú©Ø§Ù… Ø¨Ø­Ø§Ù„ Ú©Ø±ÛŒÚº", "Obnovit neuloÅ¾enou prÃ¡ci", "ObnoviÅ¥ neuloÅ¾enÃº prÃ¡cu", "Odzyskaj niezapisanÄ… pracÄ™"),
-    "recovery_question": ("Nettongia PDF Editor found automatically saved unsaved work for {name}. Restore it?", "Nettongia PDF Editor æ‰¾åˆ°äº†ä¸º {name} è‡ªåŠ¨ä¿å­˜çš„æœªä¿å­˜å·¥ä½œã€‚æ˜¯å¦æ¢å¤ï¼Ÿ", "Nettongia PDF Editor à¤•à¥‹ {name} à¤•à¥‡ à¤²à¤¿à¤ à¤¸à¥à¤µà¤¤à¤ƒ à¤¸à¤¹à¥‡à¤œà¤¾ à¤—à¤¯à¤¾ à¤•à¤¾à¤® à¤®à¤¿à¤²à¤¾à¥¤ à¤•à¥à¤¯à¤¾ à¤‡à¤¸à¥‡ à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤•à¤°à¥‡à¤‚?", "Nettongia PDF Editor encontrÃ³ trabajo no guardado automÃ¡ticamente para {name}. Â¿Desea recuperarlo?", "Nettongia PDF Editor a trouvÃ© un travail non enregistrÃ© sauvegardÃ© automatiquement pour {name}. Le restaurer ?", "Ø¹Ø«Ø± Nettongia PDF Editor Ø¹Ù„Ù‰ Ø¹Ù…Ù„ ØºÙŠØ± Ù…Ø­ÙÙˆØ¸ ØªÙ… Ø­ÙØ¸Ù‡ ØªÙ„Ù‚Ø§Ø¦ÙŠÙ‹Ø§ Ù„Ù„Ù…Ù„Ù {name}. Ù‡Ù„ ØªØ±ÙŠØ¯ Ø§Ø³ØªØ¹Ø§Ø¯ØªÙ‡ØŸ", "Nettongia PDF Editor {name}-à¦à¦° à¦œà¦¨à§à¦¯ à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼à¦­à¦¾à¦¬à§‡ à¦¸à¦‚à¦°à¦•à§à¦·à¦¿à¦¤ à¦•à¦¾à¦œ à¦–à§à¦à¦œà§‡ à¦ªà§‡à¦¯à¦¼à§‡à¦›à§‡à¥¤ à¦à¦Ÿà¦¿ à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦•à¦°à¦¬à§‡à¦¨?", "O Nettongia PDF Editor encontrou trabalho nÃ£o guardado automaticamente para {name}. Pretende recuperÃ¡-lo?", "Nettongia PDF Editor menemukan pekerjaan yang disimpan otomatis untuk {name}. Pulihkan?", "Nettongia PDF Editor Ú©Ùˆ {name} Ú©Û’ Ù„ÛŒÛ’ Ø®ÙˆØ¯Ú©Ø§Ø± Ø·ÙˆØ± Ù¾Ø± Ù…Ø­ÙÙˆØ¸ Ú©ÛŒØ§ Ú¯ÛŒØ§ Ú©Ø§Ù… Ù…Ù„Ø§ ÛÛ’Û” Ú©ÛŒØ§ Ø§Ø³Û’ Ø¨Ø­Ø§Ù„ Ú©Ø±ÛŒÚºØŸ", "Nettongia PDF Editor naÅ¡el automaticky uloÅ¾enou neuloÅ¾enou prÃ¡ci pro dokument {name}. Chcete ji obnovit?", "Nettongia PDF Editor naÅ¡iel automaticky uloÅ¾enÃº neuloÅ¾enÃº prÃ¡cu pre dokument {name}. Chcete ju obnoviÅ¥?", "Nettongia PDF Editor znalazÅ‚ automatycznie zapisanÄ… pracÄ™ dla dokumentu {name}. Czy jÄ… odzyskaÄ‡?"),
-    "restore": ("Restore", "æ¢å¤", "à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤•à¤°à¥‡à¤‚", "Restaurar", "Restaurer", "Ø§Ø³ØªØ¹Ø§Ø¯Ø©", "à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦°", "Restaurar", "Pulihkan", "Ø¨Ø­Ø§Ù„ Ú©Ø±ÛŒÚº", "Obnovit", "ObnoviÅ¥", "Odzyskaj"),
-    "recovery_unavailable": ("Automatic recovery is currently unavailable: {error}", "è‡ªåŠ¨æ¢å¤å½“å‰ä¸å¯ç”¨ï¼š{error}", "à¤¸à¥à¤µà¤šà¤¾à¤²à¤¿à¤¤ à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤à¤¿ à¤…à¤­à¥€ à¤‰à¤ªà¤²à¤¬à¥à¤§ à¤¨à¤¹à¥€à¤‚ à¤¹à¥ˆ: {error}", "La recuperaciÃ³n automÃ¡tica no estÃ¡ disponible: {error}", "La rÃ©cupÃ©ration automatique est actuellement indisponible : {error}", "Ø§Ù„Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠØ© ØºÙŠØ± Ù…ØªØ§Ø­Ø© Ø­Ø§Ù„ÙŠÙ‹Ø§: {error}", "à¦¸à§à¦¬à¦¯à¦¼à¦‚à¦•à§à¦°à¦¿à¦¯à¦¼ à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦¬à¦°à§à¦¤à¦®à¦¾à¦¨à§‡ à¦…à¦¨à§à¦ªà¦²à¦¬à§à¦§: {error}", "A recuperaÃ§Ã£o automÃ¡tica nÃ£o estÃ¡ disponÃ­vel: {error}", "Pemulihan otomatis saat ini tidak tersedia: {error}", "Ø®ÙˆØ¯Ú©Ø§Ø± Ø¨Ø­Ø§Ù„ÛŒ ÙÛŒ Ø§Ù„Ø­Ø§Ù„ Ø¯Ø³ØªÛŒØ§Ø¨ Ù†ÛÛŒÚº ÛÛ’: {error}", "AutomatickÃ© obnovenÃ­ nynÃ­ nenÃ­ dostupnÃ©: {error}", "AutomatickÃ© obnovenie teraz nie je dostupnÃ©: {error}", "Automatyczne odzyskiwanie jest obecnie niedostÄ™pne: {error}"),
-    "recovery_failed_title": ("Recovery failed", "æ¢å¤å¤±è´¥", "à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤à¤¿ à¤µà¤¿à¤«à¤²", "Error de recuperaciÃ³n", "Ã‰chec de la rÃ©cupÃ©ration", "ÙØ´Ù„Øª Ø§Ù„Ø§Ø³ØªØ¹Ø§Ø¯Ø©", "à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦¯à¦¼à§‡à¦›à§‡", "Falha na recuperaÃ§Ã£o", "Pemulihan gagal", "Ø¨Ø­Ø§Ù„ÛŒ Ù†Ø§Ú©Ø§Ù… ÛÙˆ Ú¯Ø¦ÛŒ", "ObnovenÃ­ se nezdaÅ™ilo", "Obnovenie zlyhalo", "Odzyskiwanie nie powiodÅ‚o siÄ™"),
+YªçŠx-®éÜj×¢ëiºÚ+Š§j[h‘éÜ¢éíçNzÙ:-jZ.¶›­–)Ş³Vg&öÒõögWGW&Uõò–×÷'Bææ÷FF–öç0 ¦–×÷'BÖF€¦g&öÒFF6Æ76W2–×÷'BFF6Æ70 ¦g&öÒ•6–FSbåD6÷&R–×÷'Bö–çDbÂ&V7DbÂ@¦g&öÒ•6–FSbåDwV’–×÷'B6öÆ÷"Â–6öâÂ–çFW"ÂVâÂ—†ÖÂöÇ–vöä` ¦g&öÒæWW&÷Vå÷G&ç6ÆF–öç2–×÷'BUU$õTåôÄäuTtUô4ôDU2ÂUU$õTåõ$õu0  ¤FF6Æ72†g&÷¦VãÕG'VR¦6Æ72ÆæwVvS ¢6öFS¢7G ¢æF—fUöæÖS¢7G ¢VævÆ—6…öæÖS¢7G   ¤ÄäuTtU2Ò€¢ÆæwVvR‚&Vâ"Â$VævÆ—6‚"Â$VævÆ—6‚"’À¢ÆæwVvR‚'¦‚"Â.KŠŞihr"Â$6†–æW6R"’À¢ÆæwVvR‚&†’"Â.
+K
+Kş
+J
+XŞ
+Jn
+X"Â$†–æF’"’À¢ÆæwVvR‚&W2"Â$W7;öÂ"Â%7æ—6‚"’À¢ÆæwVvR‚&""Â-Š}˜M‹‹Š˜­Š’"Â$&&–2"’À¢ÆæwVvR‚&g""Â$g&ì:v—2"Â$g&Væ6‚"’À¢ÆæwVvR‚&&â"Â.
+jÎ
+kî
+h.
+k.
+kâ"Â$&VævÆ’"’À¢ÆæwVvR‚'B"Â%÷'GVw\:§2"Â%÷'GVwVW6R"’À¢ÆæwVvR‚&–B"Â$&†6–æFöæW6–"Â$–æFöæW6–â"’À¢ÆæwVvR‚'W""Â-Š}‹Šı˜‚"Â%W&GR"’À¢ÆæwVvR‚&FR"Â$FWWG66‚"Â$vW&Öâ"’À¢ÆæwVvR‚''R"Â-
+=­’"Â%'W76–â"’À¢ÆæwVvR‚'G""Â%L;Ç&¼:vR"Â%GW&¶—6‚"’À¢ÆæwVvR‚&—B"Â$—FÆ–æò"Â$—FÆ–â"’À¢ÆæwVvR‚&æÂ"Â$æVFW&ÆæG2"Â$GWF6‚"’À¢ÆæwVvR‚'&ò"Â%&öÜ:&ìH2"Â%&öÖæ–â"’À¢ÆæwVvR‚&‡R"Â$Öw–""Â$‡Væv&–â"’À¢ÆæwVvR‚'V²"Â-
+=­}İÍ­"Â%V·&–æ–â"’À¢ÆæwVvR‚&72"Â,HÆ\ZF–æ"Â$7¦V6‚"’À¢ÆæwVvR‚'6²"Â%6Æ÷fVìHÖ–æ"Â%6Æ÷f²"’À¢ÆæwVvR‚'Â"Â%öÇ6¶’"Â%öÆ—6‚"’À¢¤ÄäuTtUô4ôDU2Ò¶ÆæwVvRæ6öFRf÷"ÆæwVvR–âÄäuTtU7Ğ¥$”t…EõDõôÄTeBÒ²&""Â'W"'Ğ¥õ$õuôÄäuTtUô4ôDU2Ò‚&Vâ"Â'¦‚"Â&†’"Â&W2"Â&g""Â&""Â&&â"Â'B"Â&–B"Â'W""Â&72"Â'6²"Â'Â"  ¤$4RÒ°¢&ÖVçUöf–ÆR#¢$f–ÆR"À¢&ÖVçUöVF—B#¢$VF—B"À¢&ÖVçUö–ç6W'B#¢$–ç6W'B"À¢&ÖVçU÷vR#¢%vR"À¢&ÖVçUö–ÖvR#¢$–ÖvR"À¢&ÖVçU÷f–Wr#¢%f–Wr"À¢&ÖVçUöV&æ6R#¢$V&æ6R"À¢&ÖVçUöÆæwVvR#¢$ÆæwVvR"À¢&ÖVçUö†VÇ#¢$†VÇ"À¢&æWu÷Fb#¢$æWrDbâââ"À¢&÷Vâ#¢$÷Vââââ"À¢'&V6VçEöf–ÆW2#¢%&V6VçBf–ÆW2"À¢&æõ÷&V6VçEöf–ÆW2#¢$æò&V6VçBf–ÆW2"À¢&6ÆV%÷&V6VçEöf–ÆW2#¢$6ÆV"&V6VçBf–ÆW2"À¢'&V6VçEöf–ÆUöÖ—76–ær#¢%F†Rf–ÆR—2æòÆöævW"f–Æ&ÆS¥Æç·F‡Ò"À¢&6Æ÷6UöFö7VÖVçB#¢$6Æ÷6RFö7VÖVçB"À¢'6fUö2#¢%6fR2âââ"À¢'6fUö6÷’#¢%6fR6÷’âââ"À¢'&–çB#¢%&–çBâââ"À¢'&–çE÷&Wf–Wr#¢%&–çB&Wf–Wr"À¢&6ö×&W72#¢$6ö×&W72Dbâââ"À¢&W†—B#¢$W†—B"À¢'VæFò#¢%VæFò"À¢'&VFò#¢%&VFò"À¢&f–æB#¢$f–æBâââ"À¢&f–æEöÆ&VÂ#¢$f–æC¢"À¢&f–æE÷Æ6V†öÆFW"#¢$f–æB–âFö7VÖVçBâââ"À¢&f–æE÷&Wf–÷W2#¢%&Wf–÷W2ÖF6‚"À¢&f–æEöæW‡B#¢$æW‡BÖF6‚"À¢&6Æ÷6U÷6V&6‚#¢$6Æ÷6R6V&6‚"À¢&f–æEöæõ÷&W7VÇG2#¢$æòÖF6†W2f÷VæB"À¢&Fö7VÖVçEö6Æ÷6VB#¢$Fö7VÖVçB6Æ÷6VB"À¢&FE÷FW‡B#¢$FBFW‡B&÷‚"À¢&FVÆWFU÷FW‡B#¢$FVÆWFR6VÆV7FVBFW‡B"À¢&VF—E÷FW‡B#¢$VF—BFW‡B"À¢'¦ööÕö–â#¢%¦ööÒ–â"À¢'¦ööÕö÷WB#¢%¦ööÒ÷WB"À¢&f—E÷v–GF‚#¢$f—Bv–GF‚"À¢'F†VÖUöWFò#¢$WFöÖF–2‡7—7FVÒ’"À¢'F†VÖUöF&²#¢$F&²"À¢'F†VÖUöÆ–v‡B#¢$Æ–v‡B"À¢&FEö&Ææµ÷vR#¢$FB&Ææ²vR"À¢&–ç6W'E÷vW2#¢$–ç6W'BvW2g&öÒDbâââ"À¢&FVÆWFU÷vR#¢$FVÆWFR7W'&VçBvR"À¢&Ö÷fU÷vU÷W#¢$Ö÷fRvRV&Æ–W""À¢&Ö÷fU÷vUöF÷vâ#¢$Ö÷fRvRÆFW""À¢'vUöÖ÷fVB#¢%vRÖ÷fVBFò÷6—F–öâ·vWÒâ"À¢'&÷FFU÷vUöÆVgB#¢%&÷FFRvRÆVgB"À¢'&÷FFU÷vU÷&–v‡B#¢%&÷FFRvR&–v‡B"À¢'vU÷&÷FFVB#¢%vR·vWÒ&÷FFVBâ"À¢&–ç6W'Eö–ÖvR#¢$–ç6W'B–ÖvRâââ"À¢&VF—Eö÷&–v–æÅö–ÖvR#¢$VF—B÷&–v–æÂ–ÖvRâââ"À¢&VF—Eö÷&–v–æÅö–ÖvUö†–çB#¢$6Æ–6²â÷&–v–æÂ–ÖvRFòÖ¶R—BÖ÷f&ÆRÂ&W6—¦&ÆRÂæB&÷FF&ÆRâ&W72W62Fò6æ6VÂâ"À¢&÷&–v–æÅö–ÖvR#¢$÷&–v–æÂ–ÖvR"À¢&÷&–v–æÅö–ÖvU÷&VG’#¢%F†R÷&–v–æÂ–ÖvR—2æ÷rVF—F&ÆRâG&r—B÷"W6RF†R&W6—¦RæB&÷FF–öâ†æFÆW2â"À¢&FVÆWFUö–ÖvR#¢$FVÆWFR–ÖvR"À¢&FE÷6–væGW&R#¢$FBf—7VÂ6–væGW&Râââ"À¢&W‡÷'EöF–væ÷7F–72#¢$W‡÷'Bæöç–Ö—¦VBF–væ÷7F–72âââ"À¢&F–væ÷7F–75÷F—FÆR#¢$æöç–Ö—¦VBF–væ÷7F–72"À¢&F–væ÷7F–75÷&Wf–Wr#¢$&Vf÷&RW‡÷'BÂ&Wf–WrF†R6ö×ÆWFR6öçFVçG2åÆåÆä–æ6ÇVFVC¥Æî(
+"'VæFÆRvVæW&F–öâF–ÖRæBÆ–6F–öâöF–væ÷7F–72fW'6–öç5Æî(
+"g&÷¦VâÖ'V–ÆBfÆrÂ÷W&F–ær×7—7FVÒfÖ–Ç’Â&VÆV6RæB&6†—FV7GW&UÆî(
+"—F†öâÂBÂ•6–FSbæB”×UDbfW'6–öç5Æî(
+"–çFW&f6RÆæwVvRæBV&æ6RÖöFUÆî(
+"vR6÷VçBÂ7W'&VçBvRæB6ö'6RDb6—¦R'V6¶WEÆî(
+"Vç6fVB×7FFRfÆræB6÷VçG2öbVæF–ærö&¦V7G5Æî(
+"F–ÆRÖ66†R6÷VçFW'5Æî(
+"&÷VæFVB÷W&F–öâF–ÖW7F×2Â&æFöÒW"×7F'B6W76–öâ”G2ÂæÖW2æB÷WF6öÖW5Æî(
+"&W6Væ6Röb7W'&VçB÷&Wf–÷W27&6‚Æöw2æBF†V—"6ö'6R6—¦UÆåÆäW†6ÇVFVC¥Æî(
+"Dbf–ÆW2æB&VæFW&VBvW5Æî(
+"Fö7VÖVçBFW‡BÂ–ÖvW2Âææ÷FF–öç2æBÖWFFFÆî(
+"f–ÆRæÖW2ÂföÆFW"F‡2æB&V6VçBÖf–ÆR†—7F÷'•Æî(
+"W6W"æÖRÂ6ö×WFW"æÖRÂ•æB†&Gv&R–FVçF–f–W'5Æî(
+"&rW†6WF–öâÖW76vW2æB&r7&6‚ÖÆör6öçFVçG5ÆåÆä7&VFRF†R¤•ò"À¢&F–væ÷7F–75öf–ÇFW"#¢%¤•&6†—fW2‚¢ç¦—’"À¢&F–væ÷7F–75÷6fVB#¢$æöç–Ö—¦VBF–væ÷7F–726fVB‡·&V6÷&G7Ò÷W&F–öâ&V6÷&G2“¥Æç·F‡Ò"À¢&F–væ÷7F–75öf–ÆVB#¢%Væ&ÆRFò7&VFRF–væ÷7F–73¢¶W'&÷'Ò"À¢&&÷WB#¢$&÷WB"À¢&6†V6µöf÷%÷WFFW2#¢$6†V6²f÷"WFFW2âââ"À¢&WFöÖF–5÷WFFW2#¢$WFöÖF–6ÆÇ’6†V6²f÷"WFFW2„v—D‡V"’"À¢'WFFUö6†V6µ÷F—FÆR#¢$æWGFöæv–DbVF—F÷"WFFW2"À¢'WFFUöf–Æ&ÆR#¢$æWvW"fW'6–öâ—2f–Æ&ÆS¢·fW'6–öçÕÆåÆä7W'&VçBfW'6–öã¢¶7W'&VçGÕÆåÆä÷VâF†R&VÆV6RvRFòF÷væÆöB—Cò"À¢&æõ÷WFFUöf–Æ&ÆR#¢%–÷R&RW6–ærF†RÆFW7Bf–Æ&ÆRfW'6–öâ‡·fW'6–öçÒ’â"À¢'WFFUö6†V6µöf–ÆVB#¢%F†RWFFR6†V6²—27W'&VçFÇ’Væf–Æ&ÆRâæWGFöæv–6â6öçF–çVRv÷&¶–æröffÆ–æRâ"À¢&÷Vå÷&VÆV6U÷vR#¢$÷Vâ&VÆV6RvR"À¢&Fö7VÖVçEö6ö×F–&–Æ—G’#¢$Fö7VÖVçB6ö×F–&–Æ—G’âââ"À¢&ö7%÷vR#¢$ô5"7W'&VçBvRâââ"À¢&ö7%öFö7VÖVçB#¢$ô5"Fö7VÖVçBâââ"À¢&ö7%÷F—FÆR#¢%FW‡B&V6övæ—F–öâ„ô5"’"À¢&ö7%öÆæwVvU÷&ö×B#¢%&V6övæ—F–öâÆæwVvS¢"À¢&ö7%÷Væf–Æ&ÆR#¢%F†R'VæFÆVBöffÆ–æRô5"ÆæwVvRFF—2Væf–Æ&ÆRâ&V–ç7FÆÂF†R6ö×ÆWFRæWGFöæv–DbVF—F÷"6¶vRâ"À¢&ö7%÷v÷&¶–ær#¢%&V6övæ—¦–ærFW‡B–â6W&FR&ö6W72âââ"À¢&ö7%ö6ö×ÆWFR#¢$ô5"6ö×ÆWFVC¢·vW7ÒvR‡2’Â·v÷&G7Ò&V6övæ—¦VBv÷&B‡2’â"À¢&ö7%öæ÷F†–ær#¢$ô5"f÷VæBæò–ÖvRÖöæÇ’vRv—F‚&V6övæ—¦&ÆRFW‡BâvW2F†BÇ&VG’6öçF–âFW‡BvW&RÆVgBVæ6†ævVBâ"À¢&ö7%öF—66&FVB#¢%F†Rô5"&W7VÇBv2F—66&FVB&V6W6RF†RFö7VÖVçB6†ævVBâ"À¢&6ö×F–&–Æ—G•ö6†V6¶–ær#¢$6†V6¶–ærFö7VÖVçB6ö×F–&–Æ—G’–ââ—6öÆFVB&ö6W72âââ"À¢&6ö×F–&–Æ—G•öö²#¢$æò&—6·’DbfVGW&W2vW&RFWFV7FVBâ"À¢&6ö×F–&–Æ—G•÷v&æ–æw2#¢$6ö×F–&–Æ—G’6†V6²f÷VæB¶6÷VçGÒ—FVÒ‡2’Fò&Wf–Wrâ"À¢&6ö×F–&–Æ—G•öf–ÆVB#¢%F†R—6öÆFVB6ö×F–&–Æ—G’6†V6²f–ÆVC¢¶W'&÷'Ò"À¢&6ö×F–&–Æ—G•÷6–væGW&U÷&—6²#¢$VF—F–æræB6f–ærv–ÆÂ–çfÆ–FFRW†—7F–ærF–v—FÂ6–væGW&W2â"À¢&6ö×F–&–Æ—G•öfVGW&W2#¢$fVGW&W2Fò&Wf–Ws¢¶fVGW&W7Ò"À¢&6ö×F–&–Æ—G•öÆWfVÅ÷6fR#¢%6fR"À¢&6ö×F–&–Æ—G•öÆWfVÅ÷÷76–&ÆUö6†ævW2#¢%÷76–&ÆR6†ævW2"À¢&6ö×F–&–Æ—G•öÆWfVÅö†–v…÷&—6²#¢$†–v‚&—6²"À¢'&W&W6VçFF—fU÷&VæFW%öö²#¢%&W&W6VçFF—fRvW2&VæFW&VB6fVÇ“¢¶6÷VçGÒ"À¢&föçB#¢$föçB"À¢&föçE÷6—¦R#¢$föçB6—¦R"À¢&&öÆB#¢$&öÆB"À¢&—FÆ–2#¢$—FÆ–2"À¢'VæFW&Æ–æR#¢%VæFW&Æ–æR"À¢'FW‡Eö6öÆ÷"#¢%FW‡B6öÆ÷""À¢&7W'&VçE÷¦ööÒ#¢$7W'&VçB¦ööÒ"À¢&7&VFR#¢$7&VFR"À¢&6æ6VÂ#¢$6æ6VÂ"À¢'6fR#¢%6fR"À¢&F—66&B#¢$F—66&B"À¢'–W2#¢%–W2"À¢&æò#¢$æò"À¢&æWu÷F—FÆR#¢$7&VFRæWrDb"À¢&7W7FöÕ÷6—¦R#¢$7W7FöÒ6—¦R"À¢'÷'G&—B#¢%÷'G&—B"À¢&ÆæG66R#¢$ÆæG66R"À¢'vU÷6—¦R#¢%vR6—¦R"À¢&÷&–VçFF–öâ#¢$÷&–VçFF–öâ"À¢'v–GF‚#¢%v–GF‚"À¢&†V–v‡B#¢$†V–v‡B"À¢'vUö6÷VçB#¢$çVÖ&W"öbvW2"À¢'&W7VÇB#¢%&W7VÇB"À¢&&Ææµ÷Feö–çG&ò#¢$7&VFR&Ææ²DbFö7VÖVçC¢"À¢'vW5ö6÷VçB#¢'¶6÷VçGÒvR‡2’"À¢'6–væGW&U÷F—FÆR#¢$–ç6W'Bf—7VÂ6–væGW&R"À¢'6–væGW&U÷v&æ–ær#¢%F†—2–ç6W'G2f—6–&ÆR6–væGW&R–çFòF†RvRâ—B—2æ÷B6W'F–f–6FRÖ&6VBF–v—FÂ6–væGW&Râ"À¢&G&u÷6–væGW&R#¢$G&r6–væGW&R"À¢'G—U÷6–væGW&R#¢%G—R6–væGW&R"À¢&6ÆV%öG&v–ær#¢$6ÆV"G&v–ær"À¢&G&uö†–çB#¢$G&r–ç6–FRF†R&÷‚W6–ærF†RÖ÷W6R÷"Vã¢"À¢'–÷W%öæÖR#¢%–÷W"æÖR"À¢'6–væGW&U÷FW‡B#¢%6–væGW&RFW‡B"À¢'6—¦R#¢%6—¦R"À¢'7G–ÆR#¢%7G–ÆR"À¢'v–GF…ööå÷vR#¢%v–GF‚öâvR"À¢'&÷FF–öâ#¢%&÷FF–öâ"À¢&V×G•÷6–væGW&R#¢$V×G’6–væGW&R"À¢&V×G•öG&r#¢$G&r6–væGW&R÷"7v—F6‚FòG—R6–væGW&Râ"À¢&V×G•÷G—R#¢$VçFW"F†R6–væGW&RFW‡Bâ"À¢&G&vå÷6–væGW&UöFW62#¢$G&vâf—7VÂ6–væGW&R"À¢'G—VE÷6–væGW&UöFW62#¢%G—VBf—7VÂ6–væGW&S¢·FW‡GÒ"À¢&6ö×&W75÷F—FÆR#¢$6ö×&W72Db"À¢&Æ÷76ÆW72#¢$Æ÷76ÆW72÷F–Ö—¦F–öâ"À¢&&Ææ6VB#¢$&Ææ6VBÒ&V6öÖÖVæFVB"À¢'7G&öær#¢%7G&öærÒ6ÖÆÆW7Bf–ÆR"À¢&6ö×&W76–öå÷&öf–ÆR#¢$6ö×&W76–öâ&öf–ÆR"À¢&Æ÷76ÆW75öFW62#¢$÷F–Ö—¦W2Dbö&¦V7G2æB7G&V×2v—F†÷WBÆ÷vW&–ær–ÖvRVÆ—G’â"À¢&&Ææ6VEöFW62#¢$F÷vç6×ÆW2÷fW'6—¦VB–ÖvW2Fò&÷WBSG’æBW6W2ÖVF—VÒ¥Tr6ö×&W76–öââ"À¢'7G&öæuöFW62#¢$F÷vç6×ÆW2÷fW'6—¦VB–ÖvW2Fò&÷WBRG’æBW6W27G&öævW"¥Tr6ö×&W76–öââ"À¢&6ö×&W76–öåöæ÷FR#¢$Æ÷77’&öf–ÆW2&RÖ÷7BVffV7F—fRf÷"66ç2æB†÷Föw&‡2âfV7F÷"FW‡BæBw&†–72&VÖ–â6†'â"À¢&÷Vå÷Fõö&Vv–â#¢$÷VâDb÷"7&VFRæWröæRFò&Vv–â"À¢'6–FV&%÷vW2#¢%vW2"À¢'6–FV&%÷G&VR#¢%G&VR"À¢&6öÖÖVçG2#¢$6öÖÖVçG2"À¢&FEö6öÖÖVçB#¢$FB6öÖÖVçBâââ"À¢&VF—Eö6öÖÖVçB#¢$VF—B6VÆV7FVB6öÖÖVçBâââ"À¢&FVÆWFUöææ÷FF–öâ#¢$FVÆWFR6VÆV7FVBææ÷FF–öâ"À¢&†–v†Æ–v‡E÷FW‡B#¢$†–v†Æ–v‡BFW‡B"À¢&6öÖÖVçE÷Æ6Uö†–çB#¢$6Æ–6²F†RvRv†W&RF†R6öÖÖVçB–6öâ6†÷VÆB&RÆ6VBâ&W72W62Fò6æ6VÂâ"À¢&6öÖÖVçE÷FW‡E÷&ö×B#¢$6öÖÖVçBFW‡C¢"À¢&6öÖÖVçEöV×G’#¢$VçFW"6öÖÖVçBFW‡B&Vf÷&RÆ6–ærF†Rææ÷FF–öââ"À¢&6öÖÖVçEöFFVB#¢$6öÖÖVçBFFVBâW6RVæFòFò&VÖ÷fR—Bâ"À¢&†–v†Æ–v‡EöFFVB#¢%FW‡B†–v†Æ–v‡FVBâW6RVæFòFò&VÖ÷fRF†R†–v†Æ–v‡Bâ"À¢&6öÖÖVçE÷WFFVB#¢$6öÖÖVçBWFFVBâW6RVæFòFò&W7F÷&RF†R&Wf–÷W2FW‡Bâ"À¢&FVÆWFUöææ÷FF–öå÷VW7F–öâ#¢$FVÆWFRF†R6VÆV7FVBææ÷FF–öãò"À¢&ææ÷FF–öåöFVÆWFVB#¢$ææ÷FF–öâFVÆWFVBâW6RVæFòFò&W7F÷&R—Bâ"À¢&ææ÷FF–öå÷v—F†÷WEö6öÖÖVçB#¢$æò6öÖÖVçBFW‡B"À¢&f÷&×2#¢$f÷&×2"À¢&VF—Eöf÷&Õöf–VÆB#¢$VF—B6VÆV7FVBf÷&Òf–VÆBâââ"À¢&æõöf÷&Õöf–VÆG2#¢%F†—2Db†2æò7W÷'FVB7&ôf÷&Òf–VÆG2â"À¢'VææÖVEöf÷&Õöf–VÆB#¢%VææÖVBf–VÆB"À¢&f÷&Õö6†V6¶VB#¢$6†V6¶VB"À¢&f÷&Õ÷Væ6†V6¶VB#¢%Væ6†V6¶VB"À¢&f÷&ÕöV×G’#¢$V×G’"À¢&f÷&Õ÷&VEööæÇ’#¢%&VBÖöæÇ’"À¢&f÷&Õ÷&VEööæÇ•öÖW76vR#¢%F†—2f÷&Òf–VÆB—2&VBÖöæÇ’æB6ææ÷B&R6†ævVBâ"À¢&f÷&Õ÷fÇVR#¢%fÇVS¢"À¢&f÷&Õöæõö6†ö–6W2#¢%F†—26†ö–6Rf–VÆB†2æòf–Æ&ÆRfÇVW2â"À¢&f÷&Õ÷Vç7W÷'FVB#¢%F†—2f÷&Òf–VÆBG—R—2æ÷B7W÷'FVBf÷"VF—F–ærâ"À¢&f÷&Õ÷WFFVB#¢$f÷&Òf–VÆBWFFVBâW6RVæFòFò&W7F÷&RF†R&Wf–÷W2fÇVRâ"À¢&æõöFö7VÖVçE÷G&VR#¢%F†—2Db†2æòFö7VÖVçBG&VRâ"À¢'VçF—FÆVB#¢%VçF—FÆVBçFb"À¢'vU÷v÷&B#¢%vR"À¢&VF—F&ÆU÷FW‡B#¢&VF—F&ÆRFW‡B"À¢&ö7%÷&WV—&VB#¢&–ÖvRÖöæÇ’vRÒô5"&WV—&VB"À¢&–ÖvW2#¢&–ÖvW2"À¢'6–væGW&W2#¢'6–væGW&W2"À¢'FW‡Eö&÷†W2#¢'FW‡Bö&¦V7G2"À¢'Vç6fVE÷F—FÆR#¢%Vç6fVB6†ævW2"À¢'Vç6fVE÷VW7F–öâ#¢%6fR6†ævW2Fò¶æÖWÒ&Vf÷&R6öçF–çV–æsò"À¢'&V6÷fW'•÷F—FÆR#¢%&V6÷fW"Vç6fVBv÷&²"À¢'&V6÷fW'•÷VW7F–öâ#¢$æWGFöæv–DbVF—F÷"f÷VæBWFöÖF–6ÆÇ’6fVBVç6fVBv÷&²f÷"¶æÖWÒâ&W7F÷&R—Cò"À¢'&W7F÷&R#¢%&W7F÷&R"À¢'&V6÷fW'•÷Væf–Æ&ÆR#¢$WFöÖF–2&V6÷fW'’—27W'&VçFÇ’Væf–Æ&ÆS¢¶W'&÷'Ò"À¢'&V6÷fW'•öf–ÆVE÷F—FÆR#¢%&V6÷fW'’f–ÆVB"À¢'&V6÷fW'•öf–ÆVEöÖW76vR#¢%F†R&V6÷fW'’FF6÷VÆBæ÷B&R÷VæVBâ—Bv2&W6W'fVBf÷"F–væ÷7F–72C¥Æç·F‡ÕÆåÆç¶W'&÷'Ò"À¢'&V6÷fW'•÷&W7F÷&VB#¢%Vç6fVBv÷&²v2&W7F÷&VBâ6fRF†RFö7VÖVçBFò¶VW—Bâ"À¢&6†ö÷6U÷FW‡Eö6öÆ÷"#¢$6†ö÷6RFW‡B6öÆ÷""À¢&FE÷FW‡Eö†–çB#¢$G&rFW‡B&÷‚öâF†RvRÂ÷"6Æ–6²öæ6Rf÷"7FæF&B&÷‚â&W72W62Fò6æ6VÂâ"À¢'G—U÷FW‡Eö†–çB#¢%G—RF†RæWrFW‡Bâ&W727G&Â´VçFW"Fòf–æ—6‚÷"W62Fò6æ6VÂâ"À¢&F—&V7EöVF—Eö†–çB#¢$VF—BF—&V7FÇ’öâF†RvRâ7G&Â´VçFW"6öæf—&×3²W626æ6VÇ2â"À¢'FW‡Eö–ç6W'FVB#¢%FW‡B–ç6W'FVBâ—B&VÖ–ç26VÆV7F&ÆRÂÖ÷f&ÆRÂæBVF—F&ÆRâ"À¢'FW‡E÷WFFVB#¢%FW‡BWFFVBâW6RVæFòFò&W7F÷&RF†R&Wf–÷W2fW'6–öââ"À¢'FW‡Eö6æ6VÆÆVB#¢%FW‡BVF—F–ær6æ6VÆÆVBâ"À¢'FW‡E÷&VÖ÷fVB#¢%FW‡B&VÖ÷fVBâW6RVæFòFò&W7F÷&R—Bâ"À¢'FW‡Eög&ÖU÷WFFVB#¢%FW‡Bg&ÖRWFFVBâW6RVæFòFò&W7F÷&R—G2&Wf–÷W2vVöÖWG'’â"À¢'6VÆV7E÷FW‡Eö†–çB#¢$F÷V&ÆRÖ6Æ–6²FòG—RF—&V7FÇ’âG&rF†Rg&ÖRFòÖ÷fR—B÷"—G2Æ÷vW"×&–v‡B†æFÆRFò&W6—¦R—Bâ"À¢&&÷WE÷F—FÆR#¢$&÷WBæWGFöæv–DbVF—F÷""À¢'Feöf–ÇFW"#¢%DbFö7VÖVçG2‚¢çFb’"À¢&–ÖvUöf–ÇFW"#¢$–ÖvW2‚¢çær¢æ§r¢æ§Vr¢æ&×¢çF–b¢çF–fb¢çvV'’"À¢&æWuö7&VFVB#¢$æWrDb7&VFVC¢¶6÷VçGÒvR‡2’Â·v–GFƒ¢ãgÒ‚¶†V–v‡C¢ãgÒBâ6fR—BFò6†ö÷6Rf–ÆVæÖRâ"À¢'Væ&ÆUö7&VFU÷F—FÆR#¢%Væ&ÆRFò7&VFRDb"À¢&÷Vå÷Fe÷F—FÆR#¢$÷VâDb"À¢'Væ&ÆUö÷Vå÷F—FÆR#¢%Væ&ÆRFò÷VâDb"À¢'Fe÷77v÷&E÷F—FÆR#¢%&÷FV7FVBDb"À¢'Fe÷77v÷&E÷&ö×B#¢$VçFW"F†R77v÷&BFò÷VâF†—2Dc¢"À¢'Fe÷77v÷&Eö–æ6÷'&V7B#¢$–æ6÷'&V7B77v÷&BâG'’v–ã¢"À¢'Fe÷77v÷&E÷&VÖ÷fVEöæ÷F–6R#¢%F†RDbv2VæÆö6¶VBâVF—FVB6÷–W2v–ÆÂ&R6fVBv—F†÷WB77v÷&B&÷FV7F–öââ"À¢'&VæFW%öW'&÷%÷F—FÆR#¢%&VæFW&–ærW'&÷""À¢&6ææ÷EöFVÆWFU÷vR#¢$Db×W7B6öçF–âBÆV7BöæRvRâ"À¢&FVÆWFU÷vU÷VW7F–öâ#¢$FVÆWFRvR·vWÓò"À¢&–çfÆ–Eö–ÖvUöf÷&ÖB#¢%F†R6VÆV7FVB–ÖvRf÷&ÖB6÷VÆBæ÷B&R&VBâ"À¢&–ÖvU÷v–GF…÷&ö×B#¢%v–GF‚öâvR‡ö–çG2“¢"À¢'Væ&ÆUö÷Våö–ÖvR#¢%Væ&ÆRFò÷Vâ–ÖvR"À¢'Væ&ÆUö7&VFU÷6–væGW&R#¢%Væ&ÆRFò7&VFR6–væGW&R"À¢'f—7VÅ÷Æ6Uö†–çB#¢$6Æ–6²öâF†RvRv†W&RF†R¶¶–æGÒ6†÷VÆB&RÆ6VBâ&W72W62Fò6æ6VÂâ"À¢'Væ&ÆU÷Æ6Uö–ÖvR#¢%Væ&ÆRFòÆ6R–ÖvR"À¢&–çfÆ–Eö–ÖvUöFF#¢%F†R–ÖvRFF—2–çfÆ–Bâ"À¢'6–væGW&Uö–ç6W'FVB#¢%6–væGW&R–ç6W'FVBâ6Æ–6²—BFòÖ÷fRÂ&W6—¦RÂ÷"&÷FFR—Bâ"À¢&–ÖvUö–ç6W'FVB#¢$–ÖvR–ç6W'FVBâW6RVæFòFò&VÖ÷fR—Bâ"À¢&–ÖvU÷WFFVB#¢$–ÖvRWFFVBâW6RVæFòFò&W7F÷&R—G2&Wf–÷W2÷6—F–öââ"À¢'6–væGW&U÷WFFVB#¢%6–væGW&RWFFVBâW6RVæFòFò&W7F÷&R—G2&Wf–÷W2÷6—F–öââ"À¢'6–væGW&U÷6VÆV7Eö†–çB#¢$G&rF†R6–væGW&RFòÖ÷fR—C²W6RF†RÆ÷vW"†æFÆRFò&W6—¦RæBF†RWW"†æFÆRFò&÷FFRâ"À¢&æõö–ÖvR#¢$æò–ÖvR"À¢&æõö–ÖvUöÖW76vR#¢%F†W&R—2æò–ÖvR÷"f—7VÂ6–væGW&RöâF†—2vRâ"À¢&FVÆWFU÷f—7VÅö†–çB#¢$6Æ–6²F†R–ÖvR÷"f—7VÂ6–væGW&RFò&VÖ÷fRâ&W72W62Fò6æ6VÂâ"À¢&–ÖvU÷&VÖ÷fVB#¢$–ÖvR&VÖ÷fVBâW6RVæFòFò&W7F÷&R—Bâ"À¢'6fU÷Fe÷F—FÆR#¢%6fRVF—FVBDb"À¢'Fe÷6fVB#¢%Db6fVB"À¢'Fe÷6fVEöÖW76vR#¢%F†RVF—FVBFö7VÖVçBv26fVBFó¥Æç·F‡Ò"À¢'6fVE÷7FGW2#¢%6fVC¢·F‡Ò"À¢'Væ&ÆU÷6fR#¢%Væ&ÆRFò6fRDb"À¢'&–çEöf–ÆVB#¢%&–çF–ærf–ÆVB"À¢'&–çEö6ö×ÆWFR#¢%&–çB¦ö"6VçC¢¶6÷VçGÒvR‡2’â"À¢'6fUö6ö×&W76VE÷F—FÆR#¢%6fR6ö×&W76VBDb"À¢&6ö×&W76–öåöf–ÆVB#¢$6ö×&W76–öâf–ÆVB"À¢&6ö×&W76–öåö6ö×ÆWFR#¢$6ö×&W76–öâ6ö×ÆWFR"À¢'&VGV7F–öâ#¢%&VGV7F–öã¢·fÇVS¢ãgÒR"À¢&–æ7&V6R#¢$–æ7&V6S¢·fÇVS¢ãgÒR‡F†R6÷W&6Rv2Ç&VG’Vff–6–VçFÇ’6ö×&W76VB’"À¢&÷&–v–æÅ÷v÷&¶–ær#¢$÷&–v–æÂv÷&¶–ærFö7VÖVçB"À¢&6ö×&W76VEö6÷’#¢$6ö×&W76VB6÷’"À¢'&V6ö×&W76VEö–ÖvW2#¢%&V6ö×&W76VB–ÖvW2"À¢&&÷WEö&öG’#¢$æWGFöæv–DbVF—F÷"ãrãÆåÆäVF—BW†—7F–ærFW‡BF—&V7FÇ’öâF†RvRæBFBÖ÷f&ÆRÂ&W6—¦&ÆRFW‡B&÷†W2â7&VFR&Ææ²Dg3²–ç6W'B÷"&VÖ÷fR–ÖvW3²ÖævRvW3²FB&÷FF&ÆRf—7VÂ6–væGW&W3²7v—F6‚V&æ6RæB–çFW&f6RÆæwVvS²&Wf–WræB&–çBFö7VÖVçG3²æB6fR6ö×&W76VB6÷–W2åÆåÆä÷&–v–æÂ6VÆV7FVBFW‡BæBFVÆWFVB–ÖvW2&R&VÖ÷fVBg&öÒvR6öçFVçB&Vf÷&R6f–æråÆåÆåVç6fVBv÷&²—2Ö&¶VBv—F‚â7FW&—6²Â&÷FV7FVB'’6fRòF—66&Bò6æ6VÂ&ö×BÂæB6GW&VB'’WFöÖF–27&6‚&V6÷fW'’â&V6VçFÇ’÷VæVBDg2&Rf–Æ&ÆRg&öÒF†Rf–ÆRÖVçRåÆåÆåf—7VÂ6–væGW&W2&Ræ÷B6W'F–f–6FRÖ&6VBF–v—FÂ6–væGW&W2â–ÖvRÖöæÇ’FW‡B7F–ÆÂ&WV—&W2ô5"â"À§Ğ  ¢2V6‚&÷rföÆÆ÷w2õ$õuôÄäuTtUô4ôDU2âF†Rf—'7BfÇVR—2VævÆ—6‚æB—0¢2–çFVçF–öæÆÇ’&WVFVB6òF†RF&ÆR6â&RfÆ–FFVBæB–ç7V7FVBV6–Ç’à¥õ$õu2Ò°¢&WFöÖF–5÷WFFW2#¢‚$WFöÖF–6ÆÇ’6†V6²f÷"WFFW2„v—D‡V"’"Â.ˆz®Xªj8iú^i»Nik„v—D‡V"’"Â.
+K
+XŞ
+K^
+I®
+Kî
+K.
+Kş
+JB
+H^
+J®
+J
+X~
+Iò
+IÎ
+Kî
+H
+I¢„v—D‡V"’"Â$'W66"7GVÆ—¦6–öæW2WFöÜ:F–6ÖVçFR„v—D‡V"’"Â%l:—&–f–W"WFöÖF—VVÖVçBÆW2Ö—6W2:¦÷W"„v—D‡V"’"Â-Š}˜MŠ­Šİ˜-˜"Š­˜M˜-Š}Šm˜­˜½Šr˜]˜bŠ}˜MŠ­ŠİŠı˜­Š½Š}Š¢„v—D‡V"’"Â.
+k
+xŞ
+jÎ
+jş
+kÎ
+h.
+i^
+xŞ
+k
+kş
+jş
+kÎ
+jŞ
+kî
+jÎ
+xr
+hn
+j®
+j
+x~
+iò
+j®
+k
+x
+i^
+xŞ
+k~
+kâ
+i^
+k
+x
+j‚„v—D‡V"’"Â%fW&–f–6"GVÆ—¦:|;VW2WFöÖF–6ÖVçFR„v—D‡V"’"Â%W&–·6VÖ&'Vâ÷FöÖF—2„v—D‡V"’"Â-Š}›â¨¸Í›‹2Ší˜ŠıªŠ}‹‹}˜‹›í‹¨m¸Íª’ª‹¸Í«¢„v—D‡V"’"Â$WFöÖF–6·’¶öçG&öÆ÷fB·GVÆ—¦6R„v—D‡V"’"Â$WFöÖF–6·’¶öçG&öÆ÷fZR·GVÆ—¬:6–R„v—D‡V"’"Â$WFöÖG–7¦æ–R7&vG¦¢·GVÆ—¦6¦R„v—D‡V"’"’À¢&ÖVçUöf–ÆR#¢‚$f–ÆR"Â.ih~K»b"Â.
+J¾
+KÎ
+Kî
+H~
+K""Â$&6†—fò"Â$f–6†–W""Â-˜]˜M˜"Â.
+j¾
+kî
+h~
+k""Â$f–6†V—&ò"Â-
+M²"Â-˜Š}Šm˜B"Â%6÷V&÷""Â%<;¦&÷""Â%Æ–²"’À¢&ÖVçUöVF—B#¢‚$VF—B"Â.{Én‹é"Â.
+K
+H.
+J®
+Kî
+Jn
+J‚"Â$VF—F""Â,8–F—F–öâ"Â-Š­Šİ‹˜­‹"Â.
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kâ"Â$VF—F""Â-	ı-­"Â-Š­‹˜]¸Í˜R"Â,9§&g’"Â%W&fœZR"Â$VG–6¦"’À¢&ÖVçUö–ç6W'B#¢‚$–ç6W'B"Â.hù.XZR"Â.
+K
+Jî
+XŞ
+Jî
+Kş
+K.
+Kş
+JB
+I^
+K
+X~
+H""Â$–ç6W'F""Â$–ç6W'F–öâ"Â-Š]Šı‹Š}ŠÂ"Â.
+k
+j
+xŞ
+j
+kş
+jÎ
+x~
+kb"Â$–ç6W&—""Â-	---­"Â-ŠıŠ}Ší˜Bª‹¸Í«¢"Â%fÆü[æ—B"Â%fÆü[æœZR"Â%w7Fr"’À¢&ÖVçU÷vR#¢‚%vR"Â.š^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J"Â%:v–æ"Â%vR"Â-‹]˜ŠİŠ’"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ"Â%:v–æ"Â-
+-İm"Â-‹]˜Šİ¸"Â%7G,:æ¶"Â%7G&æ"Â%7G&öæ"’À¢&ÖVçUö–ÖvR#¢‚$–ÖvR"Â.Y»îX8ò"Â.
+I¾
+K^
+Kò"Â$–ÖvVâ"Â$–ÖvR"Â-‹]˜‹Š’"Â.
+i¾
+jÎ
+kò"Â$–ÖvVÒ"Â-	}ím]İR"Â-Š­‹]˜¸Í‹"Â$ö',:¦V²"Â$ö',:¦ö²"Â$ö'&¢"’À¢&ÖVçU÷f–Wr#¢‚%f–Wr"Â.ŠxnY»â"Â.
+Jn
+X>
+Kn
+XŞ
+Jò"Â%fW""Â$ff–6†vR"Â-‹‹‹b"Â.
+jn
+x>
+kn
+xŞ
+jò"Â%fW""Â-	-B"Â-˜]˜m‹‹"Â%¦ö'&¦Vì:Ò"Â%¦ö'&¦Væ–R"Â%v–Fö²"’À¢&ÖVçUöV&æ6R#¢‚$V&æ6R"Â.ZInŠx""Â.
+K
+X.
+J¢"Â$&–Væ6–"Â$&Væ6R"Â-Š}˜M˜]‹˜}‹"Â.
+i®
+x~
+k
+kî
+k
+kâ"Â$7WFò"Â-	íMíÍ½]İR"Â-‹Š}¸‹¸Â‹Mª˜B"Â%g¦†ÆVB"Â%g¦ŒKæB"Â%w–vÌHVB"’À¢&ÖVçUöÆæwVvR#¢‚$ÆæwVvR"Â.ŠúŞŠˆ"Â.
+JŞ
+Kî
+K~
+Kâ"Â$–F–öÖ"Â$ÆæwVR"Â-Š}˜M˜M‹­Š’"Â.
+jŞ
+kî
+k~
+kâ"Â$–F–öÖ"Â-
+ı}½¢"Â-‹-ŠŠ}˜b"Â$¦§–²"Â$¦§–²"Â$¬I—§–²"’À¢&ÖVçUö†VÇ#¢‚$†VÇ"Â.[ŠîXª’"Â.
+K
+K
+Kî
+Jş
+JN
+Kâ"Â$—VF"Â$–FR"Â-˜]‹=Š}‹ŠıŠ’"Â.
+k
+k
+kî
+jş
+kÎ
+jN
+kâ"Â$§VF"Â-
+ı-­"Â-˜]ŠıŠò"Â$ì:÷lI¶F"Â%öÖö6ì:Ö²"Â%öÖö2"’À¢&æWu÷Fb#¢‚$æWrDbâââ"Â.ik[»¢Dbâââ"Â.
+J
+Jş
+KâDbâââ"Â$çVWfòDbâââ"Â$æ÷WfVRDbâââ"Â%DbŠÍŠı˜­Šòâââ"Â.
+j
+jN
+x
+j‚Dbâââ"Â$æ÷fòDbâââ"Â-	İí-½’Dbâââ"Â-˜mŠm¸ÂDbâââ"Â$æ÷l:’Dbâââ"Â$æ÷l:’Dbâââ"Â$æ÷w’Dbâââ"’À¢&÷Vâ#¢‚$÷Vââââ"Â.h™>[Èâââ"Â.
+In
+X¾
+K.
+X~
+H"âââ"Â$'&—"âââ"Â$÷Wg&—"âââ"Â-˜Š­ŠÒâââ"Â.
+in
+x
+k.
+x
+j‚âââ"Â$'&—"âââ"Â-	í-­½-Ââââ"Â-ª«í˜˜M¸Í«¢âââ"Â$÷FWlYœ:×Bâââ"Â$÷Gf÷&œZRâââ"Â$÷G|;7'¢âââ"’À¢&6Æ÷6UöFö7VÖVçB#¢‚$6Æ÷6RFö7VÖVçB"Â.X[>™zŞih~j2"Â.
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+JÎ
+H.
+Jb
+I^
+K
+X~
+H""Â$6W'&"Fö7VÖVçFò"Â$fW&ÖW"ÆRFö7VÖVçB"Â-Š]‹­˜MŠ}˜"Š}˜M˜]‹=Š­˜mŠò"Â.
+j
+j^
+kò
+jÎ
+j
+xŞ
+jr
+i^
+k
+x
+j‚"Â$fV6†"Fö7VÖVçFò"Â%GWGWFö·VÖVâ"Â-Šı‹=Š­Š}˜¸Í‹"Š˜mŠòª‹¸Í«¢"Â%¦lYœ:×BFö·VÖVçB"Â%¦g&–\ZRFö·VÖVçB"Â%¦Ö¶æ–¢Fö·VÖVçB"’À¢'6fUö2#¢‚%6fR2âââ"Â.XúnZÙK‹¢âââ"Â.
+H~
+K‚
+K
+X.
+J¢
+Jî
+X~
+H"
+K
+K
+X~
+IÎ
+X~
+H"âââ"Â$wV&F"6öÖòâââ"Â$Vç&Vv—7G&W"6÷W2âââ"Â-Šİ˜‹‚ŠŠ}‹=˜Râââ"Â.
+j
+kî
+jî
+xr
+k
+h.
+k
+i^
+xŞ
+k~
+j2âââ"Â$wV&F"6öÖòâââ"Â-
+í]İ-Â­¢âââ"Â-˜]Šİ˜˜‹‚ª‹¸Í«¢Š‹}˜‹âââ"Â%VÆü[æ—B¦¶òâââ"Â%VÆü[æœZR¶òâââ"Â%¦—7¢¦¶òâââ"’À¢'&–çB#¢‚%&–çBâââ"Â.h™>XÛâââ"Â.
+J®
+XŞ
+K
+Kş
+H.
+Iò
+I^
+K
+X~
+H"âââ"Â$–×&–Ö—"âââ"Â$–×&–ÖW"âââ"Â-‹}ŠŠ}‹Š’âââ"Â.
+j®
+xŞ
+k
+kş
+j
+xŞ
+iòâââ"Â$–×&–Ö—"âââ"Â$6WF²âââ"Â-›í‹˜m›’âââ"Â%F—6²âââ"Â%FÆHÖœZRâââ"Â$G'V·V¢âââ"’À¢'&–çE÷&Wf–Wr#¢‚%&–çB&Wf–Wr"Â.h™>XÛš(NŠx‚"Â.
+J®
+XŞ
+K
+Kş
+H.
+Iò
+J®
+X.
+K
+XŞ
+K^
+Kî
+K^
+K.
+X¾
+I^
+J‚"Â%f—7F&Wf–FR–×&W6œ;6â"Â$W,:wRfçB–×&W76–öâ"Â-˜]‹Š}˜­˜mŠ’Š}˜M‹}ŠŠ}‹Š’"Â.
+j®
+xŞ
+k
+kş
+j
+xŞ
+iò
+j®
+xŞ
+k
+kş
+jŞ
+kş
+h’"Â%,:’×f—7VÆ—¦:|:6òF–×&W7<:6ò"Â%&F–æ¦R6WF²"Â-›í‹˜m›’›í¸Í‹B˜]˜m‹‹"Â$ì:†ÆVBF—6·R"Â%V¼:[æ¶&VBFÆHÖ÷R"Â%öFvÌHVBw–G'V·R"’À¢&6ö×&W72#¢‚$6ö×&W72Dbâââ"Â.Xè¾{Ê’Dbâââ"Â%Db
+K
+H.
+J®
+X
+J
+KÎ
+Kş
+JB
+I^
+K
+X~
+H"âââ"Â$6ö×&–Ö—"Dbâââ"Â$6ö×&W76W"ÆRDbâââ"Â-‹m‹­‹rDbâââ"Â%Db
+k
+h.
+i^
+x
+i®
+kş
+jB
+i^
+k
+x
+j‚âââ"Â$6ö×&–Ö—"Dbâââ"Â-
+m-ÂDbâââ"Â%Db‹=ª¸Í©¸Í«¢âââ"Â$¶ö×&–Ö÷fBDbâââ"Â$¶ö×&–Ö÷fZRDbâââ"Â$¶ö×&W7V¢Dbâââ"’À¢&W†—B#¢‚$W†—B"Â.˜X{¢"Â.
+JÎ
+Kî
+K
+K
+J
+Kş
+I^
+K.
+X~
+H""Â%6Æ—""Â%V—GFW""Â-Ší‹˜ŠÂ"Â.
+j®
+xŞ
+k
+k
+xŞ
+j^
+kî
+j‚"Â%6—""Â-	-½]íB"Â-ŠŠ}¸‹˜mª˜M¸Í«¢"Â%V¶öìHÖ—B"Â%V¶öìHÖœZR"Â%¦¶üXF7¢"’À¢'VæFò#¢‚%VæFò"Â.i*N™H"Â.
+J®
+X.
+K
+XŞ
+K^
+K^
+JB
+I^
+K
+X~
+H""Â$FW6†6W""Â$æçVÆW""Â-Š­‹Š}ŠÍ‹’"Â.
+j®
+x.
+k
+xŞ
+jÎ
+kî
+jÎ
+k
+xŞ
+j^
+kî
+jş
+kÂ"Â$FW6f¦W""Â-	í-Í]İ-Â"Â-˜Š}›í‹2"Â%§I·B"Â%7:LZR"Â$6öfæ–¢"’À¢'&VFò#¢‚%&VFò"Â.˜xŞX¢"Â.
+J¾
+Kş
+K
+K
+Xr
+I^
+K
+X~
+H""Â%&V†6W""Â%,:—F&Æ—""Â-Š]‹Š}ŠıŠ’"Â.
+j®
+x
+j
+k
+kî
+jş
+kÂ"Â%&Vf¦W""Â-	ıí--í-Â"Â-Šı˜ŠŠ}‹¸"Â%¦æ÷gR"Â%¦æ÷f"Â%öì;7r"’À¢&f–æB#¢‚$f–æBâââ"Â.iú^h›ââââ"Â.
+In
+X¾
+IÎ
+X~
+H"âââ"Â$'W66"âââ"Â%&V6†W&6†W"âââ"Â-ŠŠİŠ²âââ"Â.
+in
+x
+h
+iÎ
+x
+j‚âââ"Â$Æö6Æ—¦"âââ"Â$6&’âââ"Â-Š­˜MŠ}‹Bª‹¸Í«¢âââ"Â$æ¬:×Bâââ"Â$ì:§<ZRâââ"Â%¦æ¦L[¢âââ"’À¢&f–æEöÆ&VÂ#¢‚$f–æC¢"Â.iú^h›îûÉ¢"Â.
+In
+X¾
+IÎ
+X~
+H#¢"Â$'W66#¢"Â%&V6†W&6†W"¢"Â-ŠŠİŠ³¢"Â.
+in
+x
+h
+iÎ
+x
+jƒ¢"Â$Æö6Æ—¦#¢"Â$6&“¢"Â-Š­˜MŠ}‹C¢"Â$æ¬:×C¢"Â$ì:§<ZS¢"Â%¦æ¦L[£¢"’À¢&f–æE÷Æ6V†öÆFW"#¢‚$f–æB–âFö7VÖVçBâââ"Â.YÊih~j>KŠŞiú^h›ââââ"Â.
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+Jî
+X~
+H"
+In
+X¾
+IÎ
+X~
+H"âââ"Â$'W66"VâVÂFö7VÖVçFòâââ"Â%&V6†W&6†W"Fç2ÆRFö7VÖVçBâââ"Â-Š}˜MŠŠİŠ²˜˜¢Š}˜M˜]‹=Š­˜mŠòâââ"Â.
+j
+j^
+kş
+jN
+xr
+in
+x
+h
+iÎ
+x
+j‚âââ"Â$Æö6Æ—¦"æòFö7VÖVçFòâââ"Â$6&’FÆÒFö·VÖVââââ"Â-Šı‹=Š­Š}˜¸Í‹"˜]¸Í«¢Š­˜MŠ}‹Bª‹¸Í«¢âââ"Â$†ÆVFBbFö·VÖVçGRâââ"Â$ŒKæFZRbFö·VÖVçFRâââ"Â%7§V¶¢rFö·VÖVæ6–Râââ"’À¢&f–æE÷&Wf–÷W2#¢‚%&Wf–÷W2ÖF6‚"Â.Kˆ®KˆKŠ®XË˜XŞš’"Â.
+J®
+Kş
+I¾
+K.
+Kâ
+Jî
+Kş
+K.
+Kî
+J‚"Â$6ö–æ6–FVæ6–çFW&–÷""Â%,:—7VÇFB,:–<:–FVçB"Â-Š}˜M˜mŠ­˜­ŠÍŠ’Š}˜M‹=Š}Š˜-Š’"Â.
+hn
+i~
+x~
+k
+jî
+kş
+k""Â$6÷'&W7öæL:¦æ6–çFW&–÷""Â$†6–Â6V&VÇVÖç–"Â-›í¨m«í˜MŠr˜mŠ­¸ÍŠÍ¸"Â%Y–VF6†÷¬:Òl;×6ÆVFV²"Â%&VF6Œ:G¦¬;¦6’l;×6ÆVFö²"Â%÷'¦VFæ’w–æ–²"’À¢&f–æEöæW‡B#¢‚$æW‡BÖF6‚"Â.Kˆ¾KˆKŠ®XË˜XŞš’"Â.
+H^
+I~
+K.
+Kâ
+Jî
+Kş
+K.
+Kî
+J‚"Â$6ö–æ6–FVæ6–6–wV–VçFR"Â%,:—7VÇFB7V—fçB"Â-Š}˜M˜mŠ­˜­ŠÍŠ’Š}˜MŠ­Š}˜M˜­Š’"Â.
+j®
+k
+x~
+k
+jî
+kş
+k""Â$6÷'&W7öæL:¦æ6–6VwV–çFR"Â$†6–Â&W&–·WFç–"Â-Š}ªı˜MŠr˜mŠ­¸ÍŠÍ¸"Â$FÌZ:Òl;×6ÆVFV²"Â$æ6ÆVGV¬;¦6’l;×6ÆVFö²"Â$æ7LI—ç’w–æ–²"’À¢&6Æ÷6U÷6V&6‚#¢‚$6Æ÷6R6V&6‚"Â.X[>™zŞiú^h›â"Â.
+In
+X¾
+IÂ
+JÎ
+H.
+Jb
+I^
+K
+X~
+H""Â$6W'&",;§7VVF"Â$fW&ÖW"Æ&V6†W&6†R"Â-Š]‹­˜MŠ}˜"Š}˜MŠŠİŠ²"Â.
+in
+x¾
+h
+iÂ
+jÎ
+j
+xŞ
+jr
+i^
+k
+x
+j‚"Â$fV6†"W7V—6"Â%GWGWVæ6&–â"Â-Š­˜MŠ}‹BŠ˜mŠòª‹¸Í«¢"Â%¦lYœ:×Bg–†ÆVL:l:ì:Ò"Â%¦g&–\ZRg–ŒKæL:fæ–R"Â%¦Ö¶æ–¢w—7§V¶—væ–R"’À¢&f–æEöæõ÷&W7VÇG2#¢‚$æòÖF6†W2f÷VæB"Â.iÊ®h›îX‹XË˜XŞš’"Â.
+I^
+X¾
+H‚
+Jî
+Kş
+K.
+Kî
+J‚
+J
+K
+X
+H"
+Jî
+Kş
+K.
+Kâ"Â$æò6RVæ6öçG&&öâ6ö–æ6–FVæ6–2"Â$V7Vâ,:—7VÇFBG&÷Wl:’"Â-˜M˜R˜­Š­˜RŠ}˜M‹Š½˜‹‹˜M˜’˜mŠ­Š}ŠmŠÂ"Â.
+i^
+x¾
+j
+x²
+jî
+kş
+k"
+j®
+kî
+i>
+jş
+kÎ
+kâ
+jş
+kî
+jş
+kÎ
+j
+kò"Â$æVæ‡VÖ6÷'&W7öæL:¦æ6–Væ6öçG&F"Â%F–F²F†6–Â"Â-ª˜Šm¸Â˜mŠ­¸ÍŠÍ¸˜m¸¸Í«¢˜]˜MŠr"Â$æVæÆW¦Vâ[ì:Fì;Òl;×6ÆVFV²"Â$æVæZ–VÂ6[æ–Fç’l;×6ÆVFö²"Â$æ–R¦æÆW¦–öæòw–æ–¼;7r"’À¢&Fö7VÖVçEö6Æ÷6VB#¢‚$Fö7VÖVçB6Æ÷6VB"Â.ih~j>[{.X[>™zÒ"Â.
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+JÎ
+H.
+Jb
+I^
+Kş
+Jş
+Kâ
+I~
+Jş
+Kâ"Â$Fö7VÖVçFò6W'&Fò"Â$Fö7VÖVçBfW&Ü:’"Â-Š­˜RŠ]‹­˜MŠ}˜"Š}˜M˜]‹=Š­˜mŠò"Â.
+j
+j^
+kò
+jÎ
+j
+xŞ
+jr
+k
+jş
+kÎ
+x~
+i¾
+xr"Â$Fö7VÖVçFòfV6†Fò"Â$Fö·VÖVâF—GWGW"Â-Šı‹=Š­Š}˜¸Í‹"Š˜mŠò¸˜‚ªıŠm¸Â"Â$Fö·VÖVçB'–Â¦lY–Vâ"Â$Fö·VÖVçB&öÂ¦Gf÷&Vì;Ò"Â$Fö·VÖVçB¦÷7FX"¦Ö¶æœI—G’"’À¢&FE÷FW‡B#¢‚$FBFW‡B&÷‚"Â.k{¾Xªih~iÊÎjb"Â.
+Iş
+X~
+I^
+XŞ
+K
+XŞ
+Iò
+JÎ
+X
+I^
+XŞ
+K‚
+IÎ
+X¾
+J
+KÎ
+X~
+H""Â$;F—"7VG&òFRFW‡Fò"Â$¦÷WFW"VæR¦öæRFRFW‡FR"Â-Š]‹mŠ}˜Š’˜]‹Š‹’˜m‹R"Â.
+iş
+x~
+i^
+xŞ
+k
+iò
+jÎ
+i^
+xŞ
+k‚
+jş
+x¾
+ir
+i^
+k
+x
+j‚"Â$F–6–öæ"6—†FRFW‡Fò"Â-	Mí--Â-]­-í-íRıí½R"Â-˜]Š­˜bŠíŠ}˜m¸‹MŠ}˜]˜Bª‹¸Í«¢"Â%Y––FBFW‡F÷l:’öÆR"Â%&–FZRFW‡F÷l:’öÆR"Â$FöF¢öÆRFV·7F÷vR"’À¢&FVÆWFU÷FW‡B#¢‚$FVÆWFR6VÆV7FVBFW‡B"Â.XŠ™šNh˜˜ih~iÊÂ"Â.
+I®
+Jş
+J
+Kş
+JB
+J®
+Kî
+J
+K
+Iş
+Kî
+Hş
+H"Â$VÆ–Ö–æ"FW‡Fò6VÆV66–öæFò"Â%7W&–ÖW"ÆRFW‡FR<:–ÆV7F–öæì:’"Â-Šİ‹˜Š}˜M˜m‹RŠ}˜M˜]ŠİŠıŠò"Â.
+j
+kş
+k
+xŞ
+jÎ
+kî
+i®
+kş
+jB
+k.
+x~
+in
+kâ
+jî
+x
+i¾
+x
+j‚"Â$VÆ–Ö–æ"FW‡Fò6VÆV6–öæFò"Â-
+=M½-Â-½İİ½’-]­""Â-˜]˜mŠ­ŠíŠ‚˜]Š­˜bŠİ‹˜ª‹¸Í«¢"Â$öG7G&æ—Bg–'&ì;ÒFW‡B"Â$öG7G,:æœZRg–'&ì;ÒFW‡B"Â%W7\XB¦¦æ7¦öç’FV·7B"’À¢&VF—E÷FW‡B#¢‚$VF—BFW‡B"Â.{Én‹éih~iÊÂ"Â.
+J®
+Kî
+J
+K
+H.
+J®
+Kî
+Jn
+Kş
+JB
+I^
+K
+X~
+H""Â$VF—F"FW‡Fò"Â$ÖöF–f–W"ÆRFW‡FR"Â-Š­Šİ‹˜­‹Š}˜M˜m‹R"Â.
+j®
+kî
+j
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kâ
+i^
+k
+x
+j‚"Â$VF—F"FW‡Fò"Â-
+]M­-í--Â-]­""Â-˜]Š­˜b˜]¸Í«¢Š­‹˜]¸Í˜Rª‹¸Í«¢"Â%W&f—BFW‡B"Â%W&fœZRFW‡B"Â$VG—GV¢FV·7B"’À¢'¦ööÕö–â#¢‚%¦ööÒ–â"Â.iKîZJr"Â.
+IÎ
+KÎ
+X.
+Jâ
+H~
+J‚"Â$6W&6""Â%¦ööÒfçB"Â-Š­˜=Š˜­‹"Â.
+jÎ
+j
+kÂ
+i^
+k
+x
+j‚"Â$×Æ–""Â-
+=-]½}-Â"Â-Š©Šrª‹¸Í«¢"Â%Y––&Ì:Ü[æ—B"Â%&–&Ì:Ü[æœZR"Â%÷vœI–·7¢"’À¢'¦ööÕö÷WB#¢‚%¦ööÒ÷WB"Â.{Ê[ò"Â.
+IÎ
+KÎ
+X.
+Jâ
+Hn
+H
+Iò"Â$ÆV¦""Â%¦ööÒ'&œ:‡&R"Â-Š­‹]‹­˜­‹"Â.
+i¾
+x¾
+iò
+i^
+k
+x
+j‚"Â%&VGW¦—""Â-
+=Í]İÍ-Â"Â-¨m«í˜›Šrª‹¸Í«¢"Â$öFL:Æ—B"Â$öFF–ÆœZR"Â%öÖæ–V§7¢"’À¢&f—E÷v–GF‚#¢‚$f—Bv–GF‚"Â.˜.YZëŞ[ªb"Â.
+I®
+XÎ
+J
+KÎ
+Kî
+H‚
+Jî
+X~
+H"
+J¾
+Kş
+Iò"Â$§W7F"Âæ6†ò"Â$§W7FW":ÆÆ&vWW""Â-˜]˜MŠ}Š˜]Š’Š}˜M‹‹‹b"Â.
+j®
+xŞ
+k
+k
+xŞ
+j^
+xr
+jî
+kî
+j
+kî
+j‚"Â$§W7F":Æ&wW&"Â-	ıâİR"Â-¨m˜©Š}Šm¸Âª¹"˜]‹}Š}Š˜""Â%Y–—§Z÷6ö&—BZ:ÜY–6R"Â%&—7;G6ö&œZRZ:×&¶R"Â$F÷7V¢Fò7¦W&ö¶üY¶6’"’À¢'F†VÖUöWFò#¢‚$WFöÖF–2‡7—7FVÒ’"Â.ˆz®XªûÈ{;¾{¹şûÈ’"Â.
+K
+XŞ
+K^
+I®
+Kî
+K.
+Kş
+JB
+K
+Kş
+K
+XŞ
+Iş
+Jâ’"Â$WFöÜ:F–6ò‡6—7FVÖ’"Â$WFöÖF—VR‡7—7L:†ÖR’"Â-Š­˜M˜-Š}Šm˜¢Š}˜M˜m‹Š}˜R’"Â.
+k
+xŞ
+jÎ
+jş
+kÎ
+h.
+i^
+xŞ
+k
+kş
+jş
+kÂ
+k
+kş
+k
+xŞ
+iş
+x~
+jâ’"Â$WFöÜ:F–6ò‡6—7FVÖ’"Â-	--íÍ-}]­‚-]Í’"Â-Ší˜ŠıªŠ}‹˜m‹Š}˜R’"Â$WFöÖF–6·’‡7—7L:–Ò’"Â$WFöÖF–6·’‡7—7L:–Ò’"Â$WFöÖG–7¦ç’‡7—7FVÒ’"’À¢'F†VÖUöF&²#¢‚$F&²"Â.k{ˆ›""Â.
+I~
+K
+K
+Kâ"Â$÷67W&ò"Â%6öÖ'&R"Â-ŠıŠ}˜=˜b"Â.
+i~
+kî
+j.
+kÂ"Â$W67W&ò"Â-
+-Íİò"Â-ªı¸‹Šr"Â%FÖl;Ò"Â%FÖl;Ò"Â$6–VÖç’"’À¢'F†VÖUöÆ–v‡B#¢‚$Æ–v‡B"Â.kX^ˆ›""Â.
+K
+K.
+XŞ
+I^
+Kâ"Â$6Æ&ò"Â$6Æ—""Â-˜Š}Š­ŠÒ"Â.
+k
+kî
+k.
+i^
+kâ"Â$6Æ&ò"Â-
+-]-½ò"Â-¸˜MªŠr"Â%7lI·FÌ;Ò"Â%7fWFÌ;Ò"Â$¦6ç’"’À¢&FEö&Ææµ÷vR#¢‚$FB&Ææ²vR"Â.k{¾Xªz›®y›ŞšR"Â.
+In
+Kî
+K.
+X
+J®
+X>
+K~
+XŞ
+J
+IÎ
+X¾
+J
+KÎ
+X~
+H""Â$;F—":v–æVâ&Ææ6ò"Â$¦÷WFW"VæRvRf–W&vR"Â-Š]‹mŠ}˜Š’‹]˜ŠİŠ’˜Š}‹‹­Š’"Â.
+j¾
+kî
+h
+i^
+kâ
+j®
+x>
+k~
+xŞ
+j
+kâ
+jş
+x¾
+ir
+i^
+k
+x
+j‚"Â$F–6–öæ":v–æVÒ'&æ6ò"Â-	Mí--Âı=-=â-İm2"Â-ŠíŠ}˜M¸Â‹]˜Šİ¸‹MŠ}˜]˜Bª‹¸Í«¢"Â%Y––FB,:¦Fæ÷R7G,:æ·R"Â%&–FZR,:¦FçR7G&çR"Â$FöF¢W7LHR7G&öìI’"’À¢&–ç6W'E÷vW2#¢‚$–ç6W'BvW2g&öÒDbâââ"Â.K¸âDbhù.XZ^š^™Ú"âââ"Â%Db
+K
+Xr
+J®
+X>
+K~
+XŞ
+J
+J
+Kî
+K.
+X~
+H"âââ"Â$–ç6W'F":v–æ2FW6FRDbâââ"Â$–ç<:—&W"FW2vW2FWV—2VâDbâââ"Â-Š]Šı‹Š}ŠÂ‹]˜ŠİŠ}Š¢˜]˜bDbâââ"Â%Db
+j^
+x~
+i^
+xr
+j®
+x>
+k~
+xŞ
+j
+kâ
+jş
+x¾
+ir
+i^
+k
+x
+j‚âââ"Â$–ç6W&—":v–æ2FRDbâââ"Â-	----Â-İm²rDbâââ"Â%Db‹=¹"‹]˜ŠİŠ}Š¢‹MŠ}˜]˜Bª‹¸Í«¢âââ"Â%fÆü[æ—B7G,:æ·’¢Dbâââ"Â%fÆü[æœZR7G&ç’¢Dbâââ"Â%w7Fr7G&öç’¢Dbâââ"’À¢&FVÆWFU÷vR#¢‚$FVÆWFR7W'&VçBvR"Â.XŠ™šN[Ù>X˜ŞšR"Â.
+K^
+K
+XŞ
+JN
+Jî
+Kî
+J‚
+J®
+X>
+K~
+XŞ
+J
+K
+Iş
+Kî
+Hş
+H"Â$VÆ–Ö–æ":v–æ7GVÂ"Â%7W&–ÖW"ÆvR7GVVÆÆR"Â-Šİ‹˜Š}˜M‹]˜ŠİŠ’Š}˜MŠİŠ}˜M˜­Š’"Â.
+jÎ
+k
+xŞ
+jN
+jî
+kî
+j‚
+j®
+x>
+k~
+xŞ
+j
+kâ
+jî
+x
+i¾
+x
+j‚"Â$VÆ–Ö–æ":v–æGVÂ"Â-
+=M½-Â-]­==â-İm2"Â-˜]˜ŠÍ˜Šı¸‹]˜Šİ¸Šİ‹˜ª‹¸Í«¢"Â$öG7G&æ—B·G\:Æì:Ò7G,:æ·R"Â$öG7G,:æœZR·G\:ÆçR7G&çR"Â%W7\XB&–\[ÌHV<HR7G&öìI’"’À¢&–ç6W'Eö–ÖvR#¢‚$–ç6W'B–ÖvRâââ"Â.hù.XZ^Y»îX8òâââ"Â.
+I¾
+K^
+Kò
+J
+Kî
+K.
+X~
+H"âââ"Â$–ç6W'F"–ÖvVââââ"Â$–ç<:—&W"VæR–ÖvRâââ"Â-Š]Šı‹Š}ŠÂ‹]˜‹Š’âââ"Â.
+i¾
+jÎ
+kò
+jş
+x¾
+ir
+i^
+k
+x
+j‚âââ"Â$–ç6W&—"–ÖvVÒâââ"Â-	----Â}ím]İRâââ"Â-Š­‹]˜¸Í‹‹MŠ}˜]˜Bª‹¸Í«¢âââ"Â%fÆü[æ—Bö',:¦V²âââ"Â%fÆü[æœZRö',:¦ö²âââ"Â%w7Frö'&¢âââ"’À¢&FVÆWFUö–ÖvR#¢‚$FVÆWFR–ÖvR"Â.XŠ™šNY»îX8ò"Â.
+I¾
+K^
+Kò
+K
+Iş
+Kî
+Hş
+H"Â$VÆ–Ö–æ"–ÖvVâ"Â%7W&–ÖW"Î(	––ÖvR"Â-Šİ‹˜Š}˜M‹]˜‹Š’"Â.
+i¾
+jÎ
+kò
+jî
+x
+i¾
+x
+j‚"Â$VÆ–Ö–æ"–ÖvVÒ"Â-
+=M½-Â}ím]İR"Â-Š­‹]˜¸Í‹Šİ‹˜ª‹¸Í«¢"Â$öG7G&æ—Bö',:¦V²"Â$öG7G,:æœZRö',:¦ö²"Â%W7\XBö'&¢"’À¢&FE÷6–væGW&R#¢‚$FBf—7VÂ6–væGW&Râââ"Â.k{¾XªXúşŠxnzÛîYÒâââ"Â.
+Jn
+X>
+Kn
+XŞ
+Jò
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+IÎ
+X¾
+J
+KÎ
+X~
+H"âââ"Â$;F—"f—&Öf—7VÂâââ"Â$¦÷WFW"VæR6–væGW&Rf—7VVÆÆRâââ"Â-Š]‹mŠ}˜Š’Š­˜˜-˜­‹’˜]‹Šm˜¢âââ"Â.
+jn
+x>
+kn
+xŞ
+jş
+jî
+kî
+j‚
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+jş
+x¾
+ir
+i^
+k
+x
+j‚âââ"Â$F–6–öæ"76–æGW&f—7VÂâââ"Â-	Mí--Â-}=½Íİ=âıíMıÂâââ"Â-‹Š}¸‹¸ÂŠı‹=Š­Ší‹r‹MŠ}˜]˜Bª‹¸Í«¢âââ"Â%Y––FBf—§\:Æì:ÒöG—2âââ"Â%&–FZRf—§\:Æç’öG—2âââ"Â$FöF¢öG—2v—§VÆç’âââ"’À¢&&÷WB#¢‚$&÷WB"Â.X[>K¨â"Â.
+J®
+K
+Kş
+I®
+Jò"Â$6W&6FR"Â,8&÷÷2"Â-Šİ˜˜B"Â.
+k
+jî
+xŞ
+j®
+k
+xŞ
+i^
+xr"Â$6W&6FR"Â-	âıí=ÍÍR"Â-˜]Š­‹˜M˜""Â$ò&öw&×R"Â$ò&öw&ÖR"Â$ò&öw&Ö–R"’À¢&6†V6µöf÷%÷WFFW2#¢‚$6†V6²f÷"WFFW2âââ"Â.j8iú^i»Nikâââ"Â.
+H^
+J®
+J
+X~
+Iò
+I^
+X
+IÎ
+Kî
+H
+I¢
+I^
+K
+X~
+H"âââ"Â$'W66"7GVÆ—¦6–öæW2âââ"Â%&V6†W&6†W"FW2Ö—6W2:¦÷W"âââ"Â-Š}˜MŠ­Šİ˜-˜"˜]˜b˜ŠÍ˜ŠòŠ­ŠİŠı˜­Š½Š}Š¢âââ"Â.
+hn
+j®
+j
+x~
+iş
+x~
+k
+iÎ
+j
+xŞ
+jò
+j®
+k
+x
+i^
+xŞ
+k~
+kâ
+i^
+k
+x
+j‚âââ"Â%fW&–f–6"GVÆ—¦:|;VW2âââ"Â%W&–·6VÖ&'Vââââ"Â-Š}›â¨¸Í›‹2ª¸ÂŠÍŠ}˜m¨bª‹¸Í«¢âââ"Â$¶öçG&öÆ·GVÆ—¦<:Òâââ"Â%6¶öçG&öÆ÷fZR·GVÆ—¬:6–Râââ"Â%7&vL[¢·GVÆ—¦6¦Râââ"’À¢'WFFUö6†V6µ÷F—FÆR#¢‚$æWGFöæv–DbVF—F÷"WFFW2"Â$æWGFöæv–DbVF—F÷"i»Nik"Â$æWGFöæv–DbVF—F÷"
+H^
+J®
+J
+X~
+Iò"Â$7GVÆ—¦6–öæW2FRæWGFöæv–DbVF—F÷""Â$Ö—6W2:¦÷W"FRæWGFöæv–DbVF—F÷""Â-Š­ŠİŠı˜­Š½Š}Š¢æWGFöæv–DbVF—F÷""Â$æWGFöæv–DbVF—F÷"
+hn
+j®
+j
+x~
+iò"Â$GVÆ—¦:|;VW2FòæWGFöæv–DbVF—F÷""Â%VÖ&'VâæWGFöæv–DbVF—F÷""Â-Š­Š}‹-¸ªŠ}‹¸Î(Í˜}Š}¸ÂæWGFöæv–DbVF—F÷""Â$·GVÆ—¦6RæWGFöæv–DbVF—F÷""Â$·GVÆ—¬:6–RæWGFöæv–DbVF—F÷""Â$·GVÆ—¦6¦RæWGFöæv–DbVF—F÷""’À¢'WFFUöf–Æ&ÆR#¢‚$æWvW"fW'6–öâ—2f–Æ&ÆS¢·fW'6–öçÕÆåÆä7W'&VçBfW'6–öã¢¶7W'&VçGÕÆåÆä÷VâF†R&VÆV6RvRFòF÷væÆöB—Cò"Â.iÈXúşyJy¨Nikx˜iÊÎûÉ§·fW'6–öçÕÆåÆî[Ù>X˜Şx˜iÊÎûÉ§¶7W'&VçGÕÆåÆîh™>[ÈXù[ˆ>š^™Ú.Kˆ¾‹ÛŞY	~ûÉò"Â.
+Hş
+IR
+J
+Jş
+Kâ
+K
+H.
+K
+XŞ
+I^
+K
+J2
+H
+J®
+K.
+JÎ
+XŞ
+Jr
+K
+Xƒ¢·fW'6–öçÕÆåÆî
+K^
+K
+XŞ
+JN
+Jî
+Kî
+J‚
+K
+H.
+K
+XŞ
+I^
+K
+J3¢¶7W'&VçGÕÆåÆî
+J
+Kî
+H
+J
+K.
+X¾
+J
+I^
+K
+J
+Xr
+I^
+Xr
+K.
+Kş
+Hò
+K
+Kş
+K.
+X
+IÎ
+KÂ
+J®
+X>
+K~
+XŞ
+J
+In
+X¾
+K.
+X~
+H#ò"Â$†’VæfW'6œ;6âÜ:2&V6–VçFRF—7öæ–&ÆS¢·fW'6–öçÕÆåÆåfW'6œ;6â7GVÃ¢¶7W'&VçGÕÆåÆì+ô'&—"Æ:v–æFRV&Æ–66œ;6â&FW66&v&Æò"Â%VæRæ÷WfVÆÆRfW'6–öâW7BF—7öæ–&ÆR¢·fW'6–öçÕÆåÆåfW'6–öâ7GVVÆÆR¢¶7W'&VçGÕÆåÆä÷Wg&—"ÆvRFRV&Æ–6F–öâ÷W"ÆL:–Ì:–6†&vW"ò"Â-˜­Š­˜˜‹Š]‹]ŠıŠ}‹Š=ŠİŠıŠ³¢·fW'6–öçÕÆåÆíŠ}˜MŠ]‹]ŠıŠ}‹Š}˜MŠİŠ}˜M˜£¢¶7W'&VçGÕÆåÆí˜}˜BŠ­‹˜­Šò˜Š­ŠÒ‹]˜ŠİŠ’Š}˜MŠ]‹]ŠıŠ}‹˜MŠ­˜m‹-˜­˜M˜}‰ò"Â.
+hş
+i^
+iş
+kò
+j
+jN
+x
+j‚
+k
+h.
+k
+xŞ
+i^
+k
+j2
+h
+j®
+k.
+jÎ
+xŞ
+js¢·fW'6–öçÕÆåÆî
+jÎ
+k
+xŞ
+jN
+jî
+kî
+j‚
+k
+h.
+k
+xŞ
+i^
+k
+j3¢¶7W'&VçGÕÆåÆî
+j
+kî
+h
+j
+k.
+x¾
+j
+i^
+k
+jN
+xr
+k
+kş
+k.
+kş
+iÂ
+j®
+x>
+k~
+xŞ
+j
+kâ
+in
+x
+k.
+jÎ
+x~
+jƒò"Â$W7L:F—7öì:×fVÂVÖfW'<:6òÖ—2&V6VçFS¢·fW'6–öçÕÆåÆåfW'<:6òGVÃ¢¶7W'&VçGÕÆåÆä'&—":v–æFfW'<:6ò&FW66'&Vv#ò"Â%fW'6’FW&&'RFW'6VF–¢·fW'6–öçÕÆåÆåfW'6’6B–æ“¢¶7W'&VçGÕÆåÆä'V¶†ÆÖâ&–Æ—2VçGV²ÖVæwVæGV†ç–ò"Â-Š}¸Íª’˜m¸ÍŠr˜‹©˜bŠı‹=Š­¸ÍŠ}Š‚¸¹#¢·fW'6–öçÕÆåÆí˜]˜ŠÍ˜Šı¸˜‹©˜c¢¶7W'&VçGÕÆåÆí¨Š}ŠM˜b˜M˜¨‚ª‹˜m¹"ª¹"˜M¸Í¹"‹¸Í˜M¸Í‹"‹]˜Šİ¸ª«í˜˜M¸Í«­‰ò"Â$¦R²F—7÷¦–6’æ÷lI¶¬Z:ÒfW'¦S¢·fW'6–öçÕÆåÆä·G\:Æì:ÒfW'¦S¢¶7W'&VçGÕÆåÆä÷FWlYœ:×B7G,:æ·Rg–L:ì:Ò7L:†æ÷WB¦“ò"Â$¦R²F—7÷¬:Ö6–’æ÷lZ–fW'¦–¢·fW'6–öçÕÆåÆä·G\:ÆæfW'¦–¢¶7W'&VçGÕÆåÆä÷Gf÷&œZR7G,:æ·Rg–Fæ–7F–†ç\ZR§Sò"Â$F÷7LI—æ¦W7Bæ÷w7¦vW'6¦¢·fW'6–öçÕÆåÆä&–\[ÌHV6vW'6¦¢¶7W'&VçGÕÆåÆä÷Gv÷'§œHr7G&öìI’w–Fæ–Â'’¬HRö'&Hsò"’À¢&æõ÷WFFUöf–Æ&ÆR#¢‚%–÷R&RW6–ærF†RÆFW7Bf–Æ&ÆRfW'6–öâ‡·fW'6–öçÒ’â"Â.h*KÛşyJy¨NiŠşiÈikXúşyJx˜iÊÎûÈ‡·fW'6–öçŞûÈ8""Â.
+Hn
+J¢
+J
+K^
+X
+J
+JN
+Jâ
+H
+J®
+K.
+JÎ
+XŞ
+Jr
+K
+H.
+K
+XŞ
+I^
+K
+J2‡·fW'6–öçÒ’
+I^
+Kâ
+H
+J®
+Jş
+X¾
+Ir
+I^
+K
+K
+K
+Xr
+K
+X
+H.
+ZB"Â$W7L:WF–Æ—¦æFòÆfW'6œ;6âF—7öæ–&ÆRÜ:2&V6–VçFR‡·fW'6–öçÒ’â"Â%f÷W2WF–Æ—6W¢ÆFW&æœ:‡&RfW'6–öâF—7öæ–&ÆR‡·fW'6–öçÒ’â"Â-Š=˜mŠ¢Š­‹=Š­ŠíŠı˜RŠ=ŠİŠıŠ²Š]‹]ŠıŠ}‹˜]Š­Š}ŠÒ‡·fW'6–öçÒ’â"Â.
+hn
+j®
+j
+kò
+k
+k
+xŞ
+jÎ
+kn
+x~
+kr
+h
+j®
+k.
+jÎ
+xŞ
+jr
+k
+h.
+k
+xŞ
+i^
+k
+j2‡·fW'6–öçÒ’
+jÎ
+xŞ
+jş
+jÎ
+k
+kî
+k
+i^
+k
+i¾
+x~
+j
+ZB"Â$W7L:WF–Æ—¦"fW'<:6òÖ—2&V6VçFRF—7öì:×fVÂ‡·fW'6–öçÒ’â"Â$æFÖVævwVæ¶âfW'6’FW&&'R–ærFW'6VF–‡·fW'6–öçÒ’â"Â-Š-›âŠı‹=Š­¸ÍŠ}Š‚Š­Š}‹-¸Š­‹¸Í˜b˜‹©˜b‡·fW'6–öçÒ’Š}‹=Š­‹˜]Š}˜Bª‹‹¸¹"¸¸Í«­¹B"Â%÷\[ì:×l:FRæV¦æ÷lI¶¬Z:ÒF÷7GWæ÷RfW'¦’‡·fW'6–öçÒ’â"Â%÷\[ì:×fFRæ¦æ÷lZ—RF÷7GWì;¢fW'¦—R‡·fW'6–öçÒ’â"Â%\[Ç—v7¢æ¦æ÷w7¦V¢F÷7LI—æV¢vW'6¦’‡·fW'6–öçÒ’â"’À¢'WFFUö6†V6µöf–ÆVB#¢‚%F†RWFFR6†V6²—27W'&VçFÇ’Væf–Æ&ÆRâæWGFöæv–6â6öçF–çVRv÷&¶–æröffÆ–æRâ"Â.i»Nikj8iú^yºîX˜ŞKˆŞXúşyJ8$æWGFöæv–XúşKº^{º~{ºŞzk¾{«ş[z^KÙÎ8""Â.
+H^
+J®
+J
+X~
+Iò
+IÎ
+Kî
+H
+I¢
+H^
+JŞ
+X
+H
+J®
+K.
+JÎ
+XŞ
+Jr
+J
+K
+X
+H"
+K
+X
+ZBæWGFöæv–
+I
+J¾
+KÎ
+K.
+Kî
+H~
+J‚
+I^
+Kî
+Jâ
+IÎ
+Kî
+K
+X
+K
+Ib
+K
+I^
+JN
+Kâ
+K
+X
+ZB"Â$Æ6ö×&ö&6œ;6âFR7GVÆ—¦6–öæW2æòW7L:F—7öæ–&ÆRâæWGFöæv–VVFR6VwV—"gVæ6–öææFò6–â6öæW†œ;6ââ"Â$Æ&V6†W&6†RFRÖ—6W2:¦÷W"W7B–æF—7öæ–&ÆRâæWGFöæv–WWB6öçF–çVW":föæ7F–öææW"†÷'2Æ–væRâ"Â-Š}˜MŠ­Šİ˜-˜"˜]˜bŠ}˜MŠ­ŠİŠı˜­Š½Š}Š¢‹­˜­‹˜]Š­Š}ŠÒŠİŠ}˜M˜­˜½Šrâ˜­˜]˜=˜b˜M˜æWGFöæv–˜]Š­Š}Š‹Š’Š}˜M‹˜]˜BŠı˜˜bŠ}Š­‹]Š}˜Bâ"Â.
+hn
+j®
+j
+x~
+iò
+j®
+k
+x
+i^
+xŞ
+k~
+kâ
+jÎ
+k
+xŞ
+jN
+jî
+kî
+j
+xr
+h
+j®
+k.
+jÎ
+xŞ
+jr
+j
+jş
+kÎ
+ZBæWGFöæv–
+h^
+j¾
+k.
+kî
+h~
+j
+xr
+i^
+kî
+iÂ
+i®
+kî
+k.
+kş
+jş
+kÎ
+xr
+jş
+x~
+jN
+xr
+j®
+kî
+k
+x~
+ZB"Â$fW&–f–6:|:6òFRGVÆ—¦:|;VW2ì:6òW7L:F—7öì:×fVÂâòæWGFöæv–öFR6öçF–çV"gVæ6–öæ"öffÆ–æRâ"Â%VÖW&–·6âVÖ&'Vâ6B–æ’F–F²FW'6VF–âæWGFöæv–FWFFB&V¶W&¦6V6&öffÆ–æRâ"Â-Š}›â¨¸Í›’ª¸ÂŠÍŠ}˜m¨b˜¸ÂŠ}˜MŠİŠ}˜BŠı‹=Š­¸ÍŠ}Š‚˜m¸¸Í«­¹BæWGFöæv–Š-˜˜MŠ}Šm˜bªŠ}˜RŠÍŠ}‹¸Â‹ª«â‹=ªŠ­Šr¸¹-¹B"Â$¶öçG&öÆ·GVÆ—¦<:ÒæVì:Òç–ì:ÒF÷7GWì:âæWGFöæv–ÜZü[æRL:Â&6÷fBöffÆ–æRâ"Â$¶öçG&öÆ·GVÆ—¬:6œ:ÒÖöÖVçL:ÆæRæ–R¦RF÷7GWì:âæWGFöæv–Ü;L[æRHöÆV¢&6÷fZRöffÆ–æRâ"Â%7&vG¦æ–R·GVÆ—¦6¦’¦W7Bö&V6æ–Ræ–VF÷7LI—æRâæWGFöæv–Öü[ÆRæFÂG¦–X&HröffÆ–æRâ"’À¢&÷Vå÷&VÆV6U÷vR#¢‚$÷Vâ&VÆV6RvR"Â.h™>[ÈXù[ˆ>š^™Ú""Â.
+K
+Kş
+K.
+X
+IÎ
+KÂ
+J®
+X>
+K~
+XŞ
+J
+In
+X¾
+K.
+X~
+H""Â$'&—":v–æFRV&Æ–66œ;6â"Â$÷Wg&—"ÆvRFRV&Æ–6F–öâ"Â-˜Š­ŠÒ‹]˜ŠİŠ’Š}˜MŠ]‹]ŠıŠ}‹"Â.
+k
+kş
+k.
+kş
+iÂ
+j®
+x>
+k~
+xŞ
+j
+kâ
+in
+x
+k.
+x
+j‚"Â$'&—":v–æFfW'<:6ò"Â$'V¶†ÆÖâ&–Æ—2"Â-‹¸Í˜M¸Í‹"‹]˜Šİ¸ª«í˜˜M¸Í«¢"Â$÷FWlYœ:×B7G,:æ·Rg–L:ì:Ò"Â$÷Gf÷&œZR7G,:æ·Rg–Fæ–"Â$÷G|;7'¢7G&öìI’w–Fæ–"’À¢&föçB#¢‚$föçB"Â.ZÙ~KÙ2"Â.
+J¾
+KÎ
+X
+J
+XŞ
+Iò"Â$gVVçFR"Â%öÆ–6R"Â-Š}˜MŠí‹r"Â.
+j¾
+j
+xŞ
+iò"Â%F—òFRÆWG&"Â-
+M""Â-˜˜˜m›’"Â%:×6Öò"Â%:×6Öò"Â$7¦6–öæ¶"’À¢&föçE÷6—¦R#¢‚$föçB6—¦R"Â.ZÙ~Xûr"Â.
+J¾
+KÎ
+X
+J
+XŞ
+Iò
+Hn
+I^
+Kî
+K"Â%FÖ;òFRgVVçFR"Â%F–ÆÆRFRöÆ–6R"Â-ŠİŠÍ˜RŠ}˜MŠí‹r"Â.
+j¾
+j
+xŞ
+iş
+x~
+k
+hn
+i^
+kî
+k"Â%FÖæ†òFÆWG&"Â-
+}Í]M-"Â-˜˜˜m›’‹=Š}Šm‹""Â%fVÆ–¶÷7B:×6Ö"Â%f\Kæ¶÷<ZR:×6Ö"Â%&÷¦Ö–"7¦6–öæ¶’"’À¢&&öÆB#¢‚$&öÆB"Â.{)~KÙ2"Â.
+JÎ
+X¾
+K.
+XŞ
+J"Â$æVw&—F"Â$w&2"Â-‹‹˜­‹b"Â.
+i~
+kî
+j.
+kÂ"Â$æVw&—Fò"Â-	ıí½=mİ½’"Â-˜]˜›Šr"Â%G\HÖì:’"Â%G\HÖì:’"Â%öw'V&–Væ–R"’À¢&—FÆ–2#¢‚$—FÆ–2"Â.iiÎKÙ2"Â.
+H~
+Iş
+X
+K.
+Kş
+IR"Â$7W'6—f"Â$—FÆ—VR"Â-˜]Š}Šm˜B"Â.
+jN
+kş
+k
+xŞ
+jş
+iR"Â$—L:Æ–6ò"Â-	­=""Â-Š­‹¨m«íŠr"Â$·W'¬:×f"Â$·W'¬:×f"Â$·W'7—v"’À¢'VæFW&Æ–æR#¢‚%VæFW&Æ–æR"Â.Kˆ¾X‰.{«ò"Â.
+K
+X~
+In
+Kî
+H.
+I^
+Kş
+JB"Â%7V'&–Fò"Â%6÷VÆ–vì:’"Â-Š­‹=‹}˜­‹"Â.
+j
+kş
+jî
+xŞ
+j
+k
+x~
+in
+kâ"Â%7V&Æ–æ†Fò"Â-	ıíM}­-İR"Â-Ší‹rª‹M¸ÍŠı¸"Â%öGG,[æVì:Ò"Â%öLHÖ–&¶çWF–R"Â%öF·&\Y¶ÆVæ–R"’À¢'FW‡Eö6öÆ÷"#¢‚%FW‡B6öÆ÷""Â.ih~iÊÎš)Îˆ›""Â.
+J®
+Kî
+J
+K
+H.
+Ir"Â$6öÆ÷"FVÂFW‡Fò"Â$6÷VÆWW"GRFW‡FR"Â-˜M˜˜bŠ}˜M˜m‹R"Â.
+k.
+x~
+in
+kî
+k
+k
+h""Â$6÷"FòFW‡Fò"Â-
+m-]"-]­-"Â-˜]Š­˜bªŠr‹˜mªò"Â$&'fFW‡GR"Â$f&&FW‡GR"Â$¶öÆ÷"FV·7GR"’À¢&7W'&VçE÷¦ööÒ#¢‚$7W'&VçB¦ööÒ"Â.[Ù>X˜Ş{ÊiKâ"Â.
+K^
+K
+XŞ
+JN
+Jî
+Kî
+J‚
+IÎ
+KÎ
+X.
+Jâ"Â%¦ööÒ7GVÂ"Â%¦ööÒ7GVVÂ"Â-Š}˜MŠ­˜=Š˜­‹Š}˜MŠİŠ}˜M˜¢"Â.
+jÎ
+k
+xŞ
+jN
+jî
+kî
+j‚
+iÎ
+x
+jâ"Â%¦ööÒGVÂ"Â-
+-]­=’Í-"Â-˜]˜ŠÍ˜Šı¸‹-˜˜R"Â$·G\:Æì:ÒY––&Ì:Ü[æVì:Ò"Â$·G\:ÆæR&–&Ì:Ü[æVæ–R"Â$&–\[ÌHV6R÷vœI–·7¦Væ–R"’À¢&7&VFR#¢‚$7&VFR"Â.X‰¾[»¢"Â.
+JÎ
+J
+Kî
+Hş
+H"Â$7&V""Â$7,:–W""Â-Š]˜m‹MŠ}Š"Â.
+jN
+x
+k
+kò
+i^
+k
+x
+j‚"Â$7&–""Â-
+í}M-Â"Â-Š˜mŠ}Šm¸Í«¢"Â%g—GfüY–—B"Â%g—Gf÷&œZR"Â%WG|;7'¢"’À¢&6æ6VÂ#¢‚$6æ6VÂ"Â.Xùnkh‚"Â.
+K
+Jn
+XŞ
+Jb
+I^
+K
+X~
+H""Â$6æ6VÆ""Â$æçVÆW""Â-Š]˜M‹­Š}Š"Â.
+jÎ
+kî
+jN
+kş
+k""Â$6æ6VÆ""Â-	í-Í]İ"Â-˜]˜m‹=˜Šâ"Â%§'\Z—B"Â%§'\ZœZR"Â$çVÇV¢"’À¢'6fR#¢‚%6fR"Â.KùŞZÙ‚"Â.
+K
+K
+X~
+IÎ
+X~
+H""Â$wV&F""Â$Vç&Vv—7G&W""Â-Šİ˜‹‚"Â.
+k
+h.
+k
+i^
+xŞ
+k~
+j2"Â$wV&F""Â-
+í]İ-Â"Â-˜]Šİ˜˜‹‚ª‹¸Í«¢"Â%VÆü[æ—B"Â%VÆü[æœZR"Â%¦—7¢"’À¢&F—66&B#¢‚$F—66&B"Â.iKî[È2"Â.
+I¾
+X¾
+J
+KÎ
+X~
+H""Â$FW66'F""Â$–væ÷&W""Â-Š­ŠÍŠ}˜}˜B"Â.
+jÎ
+kî
+jN
+kş
+k"
+i^
+k
+x
+j‚"Â$FW66'F""Â-	İRí]İı-Â"Â-‹Šòª‹¸Í«¢"Â%¦†öF—B"Â%¦†öFœZR"Â$öG'§\Hr"’À¢'–W2#¢‚%–W2"Â.iŠò"Â.
+K
+Kî
+H"Â%<:Ò"Â$÷V’"Â-˜m‹˜R"Â.
+k
+xŞ
+jş
+kî
+h"Â%6–Ò"Â-	M"Â-¸Š}«¢"Â$æò"Â,8æò"Â%F²"’À¢&æò#¢‚$æò"Â.Y
+b"Â.
+J
+K
+X
+H""Â$æò"Â$æöâ"Â-˜MŠr"Â.
+j
+kâ"Â$ì:6ò"Â-	İ]""Â-˜m¸¸Í«¢"Â$æR"Â$æ–R"Â$æ–R"’À¢&æWu÷F—FÆR#¢‚$7&VFRæWrDb"Â.X‰¾[»®ikDb"Â.
+J
+Jş
+KâDb
+JÎ
+J
+Kî
+Hş
+H"Â$7&V"çVWfòDb"Â$7,:–W"Vâæ÷WfVRDb"Â-Š]˜m‹MŠ}ŠDbŠÍŠı˜­Šò"Â.
+j
+jN
+x
+j‚Db
+jN
+x
+k
+kò
+i^
+k
+x
+j‚"Â$7&–"æ÷fòDb"Â-
+í}M-Âİí-½’Db"Â-˜mŠm¸ÂDbŠ˜mŠ}Šm¸Í«¢"Â%g—GfüY–—Bæ÷l:’Db"Â%g—Gf÷&œZRæ÷l:’Db"Â%WG|;7'¢æ÷w’Db"’À¢&7W7FöÕ÷6—¦R#¢‚$7W7FöÒ6—¦R"Â.ˆz®Zé®K˜[®Zû‚"Â.
+I^
+K
+XŞ
+Iş
+Jâ
+Hn
+I^
+Kî
+K"Â%FÖ;òW'6öæÆ—¦Fò"Â$f÷&ÖBW'6öææÆ—<:’"Â-ŠİŠÍ˜R˜]Ší‹]‹R"Â.
+j
+kş
+iÎ
+k
+xŞ
+jÂ
+hn
+i^
+kî
+k"Â%FÖæ†òW'6öæÆ—¦Fò"Â-	M==í’}Í]"Â-˜]Ší‹]˜‹R‹=Š}Šm‹""Â%fÆ7Fì:ÒfVÆ–¶÷7B"Â%fÆ7Fì:f\Kæ¶÷<ZR"Â%&÷¦Ö–"æ–W7FæF&F÷w’"’À¢'÷'G&—B#¢‚%÷'G&—B"Â.{«^Y	"Â.
+J®
+X¾
+K
+XŞ
+Iş
+XŞ
+K
+X~
+Iò"Â%fW'F–6Â"Â%÷'G&—B"Â-‹˜]˜Šı˜¢"Â.
+k.
+jî
+xŞ
+jÎ
+kî
+k.
+jî
+xŞ
+jÎ
+kò"Â%fW'F–6Â"Â-	­İmİò"Â-‹˜]˜Šı¸Â"Â$æl;ÜZ·R"Â$æl;ÜZ·R"Â%–öæ÷v"’À¢&ÆæG66R#¢‚$ÆæG66R"Â.jŠ®Y	"Â.
+K.
+X
+H.
+J
+K
+XŞ
+I^
+X~
+J¢"Â$†÷&—¦öçFÂ"Â%—6vR"Â-Š=˜˜-˜¢"Â.
+hn
+j
+kÎ
+kî
+hn
+j
+kÎ
+kò"Â$†÷&—¦öçFÂ"Â-	½ÍíÍİò"Â-Š}˜˜-¸Â"Â$æZ:ÜY–·R"Â$æZ:×&·R"Â%÷¦–öÖ"’À¢'vU÷6—¦R#¢‚%vR6—¦R"Â.š^™Ú.ZJ~[ò"Â.
+J®
+X>
+K~
+XŞ
+J
+Hn
+I^
+Kî
+K"Â%FÖ;òFR:v–æ"Â$f÷&ÖBFRvR"Â-ŠİŠÍ˜RŠ}˜M‹]˜ŠİŠ’"Â.
+j®
+x>
+k~
+xŞ
+j
+kî
+k
+hn
+i^
+kî
+k"Â%FÖæ†òF:v–æ"Â-
+}Í]-İm²"Â-‹]˜Šİ¹"ªŠr‹=Š}Šm‹""Â%fVÆ–¶÷7B7G,:æ·’"Â%f\Kæ¶÷<ZR7G&ç’"Â%&÷¦Ö–"7G&öç’"’À¢&÷&–VçFF–öâ#¢‚$÷&–VçFF–öâ"Â.ikY	"Â.
+H^
+JŞ
+Kş
+K^
+Kş
+J
+XŞ
+Jş
+Kî
+K‚"Â$÷&–VçF6œ;6â"Â$÷&–VçFF–öâ"Â-Š}˜MŠ}Š­ŠÍŠ}˜r"Â.
+h^
+jŞ
+kş
+jî
+x
+ib"Â$÷&–VçF:|:6ò"Â-	í]İ-mò"Â-‹=˜]Š¢"Â$÷&–VçF6R"Â$÷&–VçL:6–"Â$÷&–VçF6¦"’À¢'v–GF‚#¢‚%v–GF‚"Â.ZëŞ[ªb"Â.
+I®
+XÎ
+J
+KÎ
+Kî
+H‚"Â$æ6†ò"Â$Æ&vWW""Â-Š}˜M‹‹‹b"Â.
+j®
+xŞ
+k
+k
+xŞ
+jR"Â$Æ&wW&"Â-
+İ"Â-¨m˜©Š}Šm¸Â"Â,Z:ÜY–¶"Â,Z:×&¶"Â%7¦W&ö¶üY¼Hr"’À¢&†V–v‡B#¢‚$†V–v‡B"Â.š¹[ªb"Â.
+H®
+H
+I®
+Kî
+H‚"Â$ÇFò"Â$†WFWW""Â-Š}˜MŠ}‹Š­˜Š}‹’"Â.
+h
+i®
+xŞ
+i®
+jN
+kâ"Â$ÇGW&"Â-	-½í-"Â-Š}˜˜m¨mŠ}Šm¸Â"Â%l;ÜZ¶"Â%l;ÜZ¶"Â%w—6ö¶üY¼Hr"’À¢'vUö6÷VçB#¢‚$çVÖ&W"öbvW2"Â.š^i["Â.
+J®
+X>
+K~
+XŞ
+J
+X¾
+H"
+I^
+X
+K
+H.
+In
+XŞ
+Jş
+Kâ"Â$ì;¦ÖW&òFR:v–æ2"Â$æöÖ'&RFRvW2"Â-‹ŠıŠòŠ}˜M‹]˜ŠİŠ}Š¢"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ
+k
+h.
+in
+xŞ
+jş
+kâ"Â$ì;¦ÖW&òFR:v–æ2"Â-	­í½}]--â-İb"Â-‹]˜ŠİŠ}Š¢ª¸ÂŠ­‹ŠıŠ}Šò"Â%üHÖWB7G,:æV²"Â%üHÖWB7G,:â"Â$Æ–7¦&7G&öâ"’À¢'&W7VÇB#¢‚%&W7VÇB"Â.{¹>iéÂ"Â.
+J®
+K
+Kş
+J>
+Kî
+Jâ"Â%&W7VÇFFò"Â%,:—7VÇFB"Â-Š}˜M˜mŠ­˜­ŠÍŠ’"Â.
+j¾
+k.
+kî
+j¾
+k""Â%&W7VÇFFò"Â-
+]}=½Í-""Â-˜mŠ­¸ÍŠÍ¸"Â%l;×6ÆVFV²"Â%l;×6ÆVFö²"Â%w–æ–²"’À¢&&Ææµ÷Feö–çG&ò#¢‚$7&VFR&Ææ²DbFö7VÖVçC¢"Â.X‰¾[»®z›®y›ÒDbih~j>ûÉ¢"Â.
+Hş
+IR
+In
+Kî
+K.
+XDb
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+JÎ
+J
+Kî
+Hş
+H¢"Â$7&V"VâFö7VÖVçFòDbVâ&Ææ6ó¢"Â$7,:–W"VâFö7VÖVçBDbf–W&vR¢"Â-Š]˜m‹MŠ}Š˜]‹=Š­˜mŠòDb˜Š}‹‹£¢"Â.
+hş
+i^
+iş
+kò
+j¾
+kî
+h
+i^
+kâDb
+jN
+x
+k
+kò
+i^
+k
+x
+jƒ¢"Â$7&–"VÒFö7VÖVçFòDbVÒ'&æ6ó¢"Â-
+í}M-Âı=-í’DbİMí­=Í]İ#¢"Â-ŠíŠ}˜M¸ÂDbŠı‹=Š­Š}˜¸Í‹"Š˜mŠ}Šm¸Í«£¢"Â%g—GfüY–—B,:¦Fì;ÒFö·VÖVçBDc¢"Â%g—Gf÷&œZR,:¦Fç’Fö·VÖVçBDc¢"Â%WG|;7'¢W7G’Fö·VÖVçBDc¢"’À¢'6–væGW&U÷F—FÆR#¢‚$–ç6W'Bf—7VÂ6–væGW&R"Â.hù.XZ^XúşŠxnzÛîYÒ"Â.
+Jn
+X>
+Kn
+XŞ
+Jò
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+J
+Kî
+K.
+X~
+H""Â$–ç6W'F"f—&Öf—7VÂ"Â$–ç<:—&W"VæR6–væGW&Rf—7VVÆÆR"Â-Š]Šı‹Š}ŠÂŠ­˜˜-˜­‹’˜]‹Šm˜¢"Â.
+jn
+x>
+kn
+xŞ
+jş
+jî
+kî
+j‚
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+jş
+x¾
+ir
+i^
+k
+x
+j‚"Â$–ç6W&—"76–æGW&f—7VÂ"Â-	----Â-}=½Íİ=âıíMıÂ"Â-‹Š}¸‹¸ÂŠı‹=Š­Ší‹r‹MŠ}˜]˜Bª‹¸Í«¢"Â%fÆü[æ—Bf—§\:Æì:ÒöG—2"Â%fÆü[æœZRf—§\:Æç’öG—2"Â%w7FröG—2v—§VÆç’"’À¢'6–væGW&U÷v&æ–ær#¢‚%F†—2–ç6W'G2f—6–&ÆR6–væGW&R–çFòF†RvRâ—B—2æ÷B6W'F–f–6FRÖ&6VBF–v—FÂ6–væGW&Râ"Â.‹ùKÉ®YÊš^™Ú.KŠŞhù.XZ^XúşŠxzÛîYŞûÈÎ[›n™ÙîYû®K¨îŠøKšny¨Ni[ZÙ~zÛîYŞ8""Â.
+Jş
+K’
+J®
+X>
+K~
+XŞ
+J
+J®
+K
+Jn
+Kş
+In
+Kî
+H‚
+Jn
+X~
+J
+Xr
+K^
+Kî
+K.
+Kâ
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+IÎ
+X¾
+J
+KÎ
+JN
+Kâ
+K
+X
+ZB
+Jş
+K’
+J®
+XŞ
+K
+Jî
+Kî
+J>
+J®
+JN
+XŞ
+KŞ
+Hn
+J~
+Kî
+K
+Kş
+JB
+J
+Kş
+IÎ
+Kş
+Iş
+K"
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+J
+K
+X
+H"
+K
+X
+ZB"Â$W7Fò–ç6W'FVæf—&Öf—6–&ÆRVâÆ:v–æâæòW2Væf—&ÖF–v—FÂ&6FVâ6W'F–f–6Fòâ"Â$6V6’–ç<:‡&RVæR6–væGW&Rf—6–&ÆRFç2ÆvRâ6Rî(	–W7B2VæR6–væGW&RçVÜ:—&—VR6W'F–fœ:–Râ"Â-˜­˜ıŠı‹ŠÂ˜}‹ŠrŠ­˜˜-˜­‹˜½Šr˜]‹Šm˜­˜½Šr˜˜¢Š}˜M‹]˜ŠİŠˆÂ˜˜M˜­‹2Š­˜˜-˜­‹˜½Šr‹˜-˜]˜­˜½Šr˜-Š}Šm˜]˜½Šr‹˜M˜’‹M˜}Š}ŠıŠ’â"Â.
+hş
+iş
+kò
+j®
+x>
+k~
+xŞ
+j
+kî
+jş
+kÂ
+jn
+x>
+kn
+xŞ
+jş
+jî
+kî
+j‚
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+jş
+x¾
+ir
+i^
+k
+xs²
+hş
+iş
+kò
+k
+kî
+k
+xŞ
+iş
+kş
+j¾
+kş
+i^
+x~
+iş
+jŞ
+kş
+jN
+xŞ
+jN
+kş
+iR
+j
+kş
+iÎ
+kş
+iş
+kî
+k"
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+j
+jş
+kÎ
+ZB"Â$—7Fò–ç6W&RVÖ76–æGW&f—<:×fVÂæ:v–æâì:6ò:’VÖ76–æGW&F–v—FÂ&6VFVÒ6W'F–f–6Fòâ"Â-
+İ-âMí-½ı]"-MÍ=âıíMıÂİ-İm2ÂİRmMí-=âıíMıÂİíİí-R]-M­-â"Â-¸Í¸‹]˜Šİ¹"›í‹˜m‹‹Š-˜m¹"˜Š}˜MŠrŠı‹=Š­Ší‹r‹MŠ}˜]˜Bª‹Š­Šr¸¹-‰²¸Í¸‹=‹›¸Í˜ª¸Í›’›í‹˜]Š˜m¸Â¨¸ÍŠÍ¸Í›˜BŠı‹=Š­Ší‹r˜m¸¸Í«¢¸¹-¹B"Â%L:Ö×FòfÆü[ì:×FRæ7G,:æ·Rf–F—FVÆì;ÒöG—2âæV¦FRòF–v—L:Æì:ÒöG—2¦Æü[æVì;Òæ6W'F–f–¼:GRâ"Â%L;Ö×FòfÆü[ì:×FRæ7G&çRf–F—F\Kæì;ÒöG—2âæV¦FRòF–v—L:Æç’öG—2¦Æü[æVì;Òæ6W'F–f–¼:FRâ"Â%7÷vöGV¦RFòw7Fv–Væ–Rv–Fö7¦æVvòöG—7Ræ7G&öæ–Râæ–R¦W7BFòöG—27–g&÷w’÷'G’æ6W'G–f–¶6–Râ"’À¢&G&u÷6–væGW&R#¢‚$G&r6–væGW&R"Â.{¹X‹nzÛîYÒ"Â.
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+JÎ
+J
+Kî
+Hş
+H"Â$F–'V¦"f—&Ö"Â$FW76–æW"Æ6–væGW&R"Â-‹‹=˜RŠ}˜MŠ­˜˜-˜­‹’"Â.
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+hn
+h
+i^
+x
+j‚"Â$FW6Væ†"76–æGW&"Â-	İí--ÂıíMıÂ"Â-Šı‹=Š­Ší‹rŠ˜mŠ}Šm¸Í«¢"Â$æ·&W6Æ—BöG—2"Â$æ·&W6ÆœZRöG—2"Â$æ'—7V¢öG—2"’À¢'G—U÷6–væGW&R#¢‚%G—R6–væGW&R"Â.‹é>XZ^zÛîYÒ"Â.
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+K.
+Kş
+In
+X~
+H""Â$W67&–&—"f—&Ö"Â%6—6—"Æ6–væGW&R"Â-˜=Š­Š}ŠŠ’Š}˜MŠ­˜˜-˜­‹’"Â.
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+k.
+kş
+in
+x
+j‚"Â$W67&WfW"76–æGW&"Â-	İı]}--ÂıíMıÂ"Â-Šı‹=Š­Ší‹r˜Mª«í¸Í«¢"Â$æ6BöG—2"Â$æ:×6ZRöG—2"Â%w—7¢öG—2"’À¢&6ÆV%öG&v–ær#¢‚$6ÆV"G&v–ær"Â.kˆ^™šN{¹Y»â"Â.
+I®
+Kş
+JN
+XŞ
+K
+K
+Kî
+J¾
+KÂ
+I^
+K
+X~
+H""Â$&÷'&"F–'V¦ò"Â$Vff6W"ÆRFW76–â"Â-˜]‹=ŠÒŠ}˜M‹‹=˜R"Â.
+h^
+i
+xŞ
+i^
+j‚
+jî
+x
+i¾
+x
+j‚"Â$Æ–×"FW6Væ†ò"Â-	í}--Â=İí¢"Â-¨‹Š}Šm˜mªò‹]Š}˜ª‹¸Í«¢"Â%g–Ö¦B·&W6'R"Â%g–Ö¦ZR·&W6'R"Â%w–7§œY¼Hr'—7VæV²"’À¢&G&uö†–çB#¢‚$G&r–ç6–FRF†R&÷‚W6–ærF†RÖ÷W6R÷"Vã¢"Â.KÛşyJ›Êj~h‰nh˜¾XizÉNYÊjnXh^{¹X‹nûÉ¢"Â.
+Jî
+Kî
+H
+K‚
+Jş
+Kâ
+J®
+X~
+J‚
+K
+Xr
+JÎ
+X
+I^
+XŞ
+K‚
+Jî
+X~
+H"
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+JÎ
+J
+Kî
+Hş
+H¢"Â$F–'V¦RFVçG&òFVÂ7VG&ò6öâVÂ&L;6âòVâÌ:—£¢"Â$FW76–æW¢Fç2ÆR6G&RfV2Æ6÷W&—2÷RVâ7G–ÆWB¢"Â-Š}‹‹=˜RŠıŠ}Ší˜BŠ}˜M˜]‹Š‹’ŠŠ}‹=Š­ŠíŠıŠ}˜RŠ}˜M˜Š=‹Š’Š=˜‚Š}˜M˜-˜M˜S¢"Â.
+jî
+kî
+h
+k‚
+jÎ
+kâ
+i^
+k.
+jâ
+jn
+kş
+jş
+kÎ
+xr
+jÎ
+kî
+i^
+xŞ
+k
+x~
+k
+jî
+j~
+xŞ
+jş
+xr
+hn
+h
+i^
+x
+jƒ¢"Â$FW6Væ†RFVçG&òF6—†6öÒò&Fò÷RVÖ6æWF¢"Â-
+=-R"Í­RÍ½Íâ½‚ı]íÃ¢"Â-˜]Š}ŠM‹2¸ÍŠr˜-˜M˜R‹=¹"ŠíŠ}˜m¹"ª¹"Š}˜mŠı‹Š˜mŠ}Šm¸Í«£¢"Â$·&W6ÆWFRFò,:Ö\HÖ·R×œZ:ÒæV&òW&VÓ¢"Â$·&W6Æ—FRFò,:ÜHÖV¶×œZ÷RÆV&òW&öÓ¢"Â%'—7V¢röÇR¦öÖö<HR×—7§’ÇV"œ;7&¢"’À¢'–÷W%öæÖR#¢‚%–÷W"æÖR"Â.h*y¨NZy>YÒ"Â.
+Hn
+J®
+I^
+Kâ
+J
+Kî
+Jâ"Â%7RæöÖ'&R"Â%f÷G&RæöÒ"Â-Š}‹=˜]˜2"Â.
+hn
+j®
+j
+kî
+k
+j
+kî
+jâ"Â$ò6WRæöÖR"Â-	-RÍò"Â-Š-›âªŠr˜mŠ}˜R"Â%fZR¦Ü:–æò"Â%fZRÖVæò"Â%Gvö¦R–ÖœI’’æ§v—6¶ò"’À¢'6–væGW&U÷FW‡B#¢‚%6–væGW&RFW‡B"Â.zÛîYŞih~iÊÂ"Â.
+K
+K
+XŞ
+JN
+Kî
+I^
+XŞ
+K~
+K
+J®
+Kî
+J"Â%FW‡FòFRf—&Ö"Â%FW‡FRFRÆ6–væGW&R"Â-˜m‹RŠ}˜MŠ­˜˜-˜­‹’"Â.
+k
+xŞ
+jÎ
+kî
+i^
+xŞ
+k~
+k
+x~
+k
+k.
+x~
+in
+kâ"Â%FW‡FòF76–æGW&"Â-
+-]­"ıíMı‚"Â-Šı‹=Š­Ší‹rªŠr˜]Š­˜b"Â%FW‡BöG—7R"Â%FW‡BöG—7R"Â%FV·7BöG—7R"’À¢'6—¦R#¢‚%6—¦R"Â.ZJ~[ò"Â.
+Hn
+I^
+Kî
+K"Â%FÖ;ò"Â%F–ÆÆR"Â-Š}˜MŠİŠÍ˜R"Â.
+hn
+i^
+kî
+k"Â%FÖæ†ò"Â-
+}Í]"Â-‹=Š}Šm‹""Â%fVÆ–¶÷7B"Â%f\Kæ¶÷<ZR"Â%&÷¦Ö–""’À¢'7G–ÆR#¢‚%7G–ÆR"Â.j~[Èò"Â.
+Kn
+X
+K.
+X"Â$W7F–Æò"Â%7G–ÆR"Â-Š}˜M˜m˜]‹r"Â.
+kn
+x
+k.
+x"Â$W7F–Æò"Â-
+-½Â"Â-Š}˜mŠıŠ}‹""Â%7G–Â"Â,ZL;ÖÂ"Â%7G–Â"’À¢'v–GF…ööå÷vR#¢‚%v–GF‚öâvR"Â.š^™Ú.ZëŞ[ªb"Â.
+J®
+X>
+K~
+XŞ
+J
+J®
+K
+I®
+XÎ
+J
+KÎ
+Kî
+H‚"Â$æ6†òVâÆ:v–æ"Â$Æ&vWW"7W"ÆvR"Â-Š}˜M‹‹‹b‹˜M˜’Š}˜M‹]˜ŠİŠ’"Â.
+j®
+x>
+k~
+xŞ
+j
+kî
+jş
+kÂ
+j®
+xŞ
+k
+k
+xŞ
+jR"Â$Æ&wW&æ:v–æ"Â-
+İİ-İmR"Â-‹]˜Šİ¹"›í‹¨m˜©Š}Šm¸Â"Â,Z:ÜY–¶æ7G,:æ6R"Â,Z:×&¶æ7G&æR"Â%7¦W&ö¶üY¼Hræ7G&öæ–R"’À¢'&÷FF–öâ#¢‚%&÷FF–öâ"Â.ix¾‹ÚÂ"Â.
+I
+X
+Jî
+Kî
+KR"Â%&÷F6œ;6â"Â%&÷FF–öâ"Â-Š}˜MŠ­Šı˜˜­‹"Â.
+i
+x.
+k
+xŞ
+j>
+j‚"Â%&÷F:|:6ò"Â-	ıí-íí""Â-ªı‹Šı‹B"Â$æFüHÖVì:Ò"Â$÷FüHÖVæ–R"Â$ö',;7B"’À¢&6ö×&W75÷F—FÆR#¢‚$6ö×&W72Db"Â.Xè¾{Ê’Db"Â%Db
+K
+H.
+J®
+X
+J
+KÎ
+Kş
+JB
+I^
+K
+X~
+H""Â$6ö×&–Ö—"Db"Â$6ö×&W76W"ÆRDb"Â-‹m‹­‹rDb"Â%Db
+k
+h.
+i^
+x
+i®
+kş
+jB
+i^
+k
+x
+j‚"Â$6ö×&–Ö—"Db"Â-
+m-ÂDb"Â%Db‹=ª¸Í©¸Í«¢"Â$¶ö×&–Ö÷fBDb"Â$¶ö×&–Ö÷fZRDb"Â$¶ö×&W7V¢Db"’À¢&Æ÷76ÆW72#¢‚$Æ÷76ÆW72÷F–Ö—¦F–öâ"Â.izhÙşKÉXÉb"Â.
+Jn
+X¾
+K~
+K
+K
+Kş
+JB
+H^
+J
+X
+I^
+X.
+K.
+J‚"Â$÷F–Ö—¦6œ;6â6–â:—&F–F"Â$÷F–Ö—6F–öâ6ç2W'FR"Â-Š­Šİ‹=˜­˜bŠı˜˜b˜˜-Šò"Â.
+i^
+xŞ
+k~
+jN
+kş
+k
+x
+j‚
+h^
+j®
+xŞ
+iş
+kş
+jî
+kî
+h~
+iÎ
+x~
+kn
+j‚"Â$÷F–Ö—¦:|:6ò6VÒW&F2"Â-	íı-Í}mò]rıí-]Â"Â-Š¹"‹m‹‹Š}‹]˜MŠ}ŠÒ"Â$&W¦W§G,:F÷l:÷F–ÖÆ—¦6R"Â$&W§7G&F÷l:÷F–ÖÆ—¬:6–"Â$÷G–ÖÆ—¦6¦&W§7G&Fæ"’À¢&&Ææ6VB#¢‚$&Ææ6VBÒ&V6öÖÖVæFVB"Â.[›>ŠÒhêˆÙ"Â.
+K
+H.
+JN
+X
+K.
+Kş
+JBÒ
+H^
+J
+X
+Kn
+H.
+K
+Kş
+JB"Â$WV–Æ–'&FòÒ&V6öÖVæFFò"Â,8—V–Æ–',:’Ò&V6öÖÖæL:’"Â-˜]Š­˜Š}‹-˜bÒ˜]˜‹]˜’Š˜r"Â.
+jŞ
+kî
+k
+k
+kî
+jî
+xŞ
+jş
+j®
+x.
+k
+xŞ
+j2Ò
+j®
+xŞ
+k
+k
+xŞ
+jN
+kî
+jÎ
+kş
+jB"Â$WV–Æ–'&FòÒ&V6öÖVæFFò"Â-
+½İí-İİíRÒ]­íÍ]İM=]-ò"Â-˜]Š­˜Š}‹-˜bÒŠ­ŠÍ˜¸Í‹"ª‹Šı¸"Â%g—l:[æVì:ÒF÷÷'\HÖVæò"Â%g—l:[æVì:ÒöG÷,;¬HÖì:’"Â%§,;7væ÷v[ÆöæÒ¦ÆV6æ"’À¢'7G&öær#¢‚%7G&öærÒ6ÖÆÆW7Bf–ÆR"Â.[Ë®X©²ÒiÈ[şih~K»b"Â.
+Jî
+IÎ
+KÎ
+JÎ
+X.
+JBÒ
+K
+JÎ
+K
+Xr
+I¾
+X¾
+Iş
+X
+J¾
+KÎ
+Kî
+H~
+K""Â$gVW'FRÒ&6†—fòÜ:Öæ–Öò"Â$f÷'FRÒf–6†–W"Ö–æ–ÖÂ"Â-˜-˜˜¢ÒŠ=‹]‹­‹˜]˜M˜"Â.
+kn
+i^
+xŞ
+jN
+kş
+kn
+kî
+k.
+xÒ
+i^
+xŞ
+k~
+x
+jn
+xŞ
+k
+jN
+jâ
+j¾
+kî
+h~
+k""Â$f÷'FRÒf–6†V—&òÜ:Öæ–Öò"Â-
+½ÍİíRÒÍİÍ½Íİ½’M²"Â-‹-¸ÍŠ}Šı¸Ò‹=Š‚‹=¹"¨m«í˜›¸Â˜Š}Šm˜B"Â%6–Æì:ÒæV¦ÖVìZ:Ò6÷V&÷""Â%6–Æì:Òæ¦ÖVìZ:Ò<;¦&÷""Â%6–ÆæÒæ¦Öæ–V§7§’Æ–²"’À¢&6ö×&W76–öå÷&öf–ÆR#¢‚$6ö×&W76–öâ&öf–ÆR"Â.Xè¾{Ê˜XŞ{Úâ"Â.
+K
+H.
+J®
+X
+J
+KÎ
+J‚
+J®
+XŞ
+K
+X¾
+J¾
+KÎ
+Kî
+H~
+K""Â%W&f–ÂFR6ö×&W6œ;6â"Â%&öf–ÂFR6ö×&W76–öâ"Â-˜]˜M˜Š}˜M‹m‹­‹r"Â.
+k
+h.
+i^
+x¾
+i®
+j‚
+j®
+xŞ
+k
+x¾
+j¾
+kî
+h~
+k""Â%W&f–ÂFR6ö×&W7<:6ò"Â-	ıíM½Âm-ò"Â-ª˜]›í‹¸Í‹M˜b›í‹˜˜Š}Šm˜B"Â%&öf–Â¶ö×&W6R"Â%&öf–Â¶ö×&W6–R"Â%&öf–Â¶ö×&W6¦’"’À¢&÷Vå÷Fõö&Vv–â#¢‚$÷VâDb÷"7&VFRæWröæRFò&Vv–â"Â.h™>[Èh‰nik[»¢DbKº^[ÈZx²"Â.
+Kn
+X
+K
+X"
+I^
+K
+J
+Xr
+I^
+Xr
+K.
+Kş
+HòDb
+In
+X¾
+K.
+X~
+H"
+Jş
+Kâ
+JÎ
+J
+Kî
+Hş
+H"Â$'&ò7&VRVâDb&6öÖVç¦""Â$÷Wg&W¢÷R7,:–W¢VâDb÷W"6öÖÖVæ6W""Â-Š}˜Š­ŠÒ˜]˜M˜DbŠ=˜‚Š=˜m‹MŠb˜Š}ŠİŠı˜½Šr˜M˜MŠŠıŠ"Â.
+kn
+x
+k
+x
+i^
+k
+jN
+xrDb
+in
+x
+k.
+x
+j‚
+jÎ
+kâ
+jN
+x
+k
+kò
+i^
+k
+x
+j‚"Â$'&÷R7&–RVÒDb&6öÖ\:v""Â-	í-­í-R½‚í}M-RDb"Â-‹M‹˜‹’ª‹˜m¹"ª¹"˜M¸Í¹"Dbª«í˜˜M¸Í«¢¸ÍŠrŠ˜mŠ}Šm¸Í«¢"Â%¦HÖìI·FR÷FWlY–Vì:ÖÒæV&òg—GfüY–Vì:ÖÒDb"Â%¦HÖæ—FR÷Gf÷&Vì:ÖÒÆV&òg—Gf÷&Vì:ÖÒDb"Â$÷G|;7'¢ÇV"WG|;7'¢DbÂ'’&÷§ö7¬H\Hr"’À¢'&–çEöf–ÆVB#¢‚%&–çF–ærf–ÆVB"Â.h™>XÛZK‹JR"Â.
+Jî
+X
+Jn
+XŞ
+K
+J2
+K^
+Kş
+J¾
+K""Â$W'&÷"FR–×&W6œ;6â"Â,8–6†V2FRÎ(	––×&W76–öâ"Â-˜‹M˜MŠ¢Š}˜M‹}ŠŠ}‹Š’"Â.
+j®
+xŞ
+k
+kş
+j
+xŞ
+iò
+jÎ
+xŞ
+jş
+k
+xŞ
+jR
+k
+jş
+kÎ
+x~
+i¾
+xr"Â$fÆ†æ–×&W7<:6ò"Â%Væ6WF¶âvvÂ"Â-›í‹˜m›˜mªò˜mŠ}ªŠ}˜R"Â%F—6²6RæW¦FY––Â"Â%FÆHÒ¦Ç–†Æ"Â$G'V¶÷væ–Ræ–R÷v–öLX&ò6œI’"’À¢'&–çEö6ö×ÆWFR#¢‚%&–çB¦ö"6VçC¢¶6÷VçGÒvR‡2’â"Â.h™>XÛK»¾Xª[{.Xù˜ûÉ§¶6÷VçGÒš^8""Â.
+J®
+XŞ
+K
+Kş
+H.
+Iò
+I^
+Kî
+K
+XŞ
+Jò
+JŞ
+X~
+IÎ
+Kâ
+I~
+Jş
+Kã¢¶6÷VçGÒ
+J®
+X>
+K~
+XŞ
+J
+ZB"Â%G&&¦òFR–×&W6œ;6âVçf–Fó¢¶6÷VçGÒ:v–æ‡2’â"Â%L:&6†RN(	––×&W76–öâVçf÷œ:–R¢¶6÷VçGÒvR‡2’â"Â-Š­˜RŠ]‹‹=Š}˜B˜]˜}˜]Š’Š}˜M‹}ŠŠ}‹Š“¢¶6÷VçGÒ‹]˜ŠİŠ’â"Â.
+j®
+xŞ
+k
+kş
+j
+xŞ
+iò
+i^
+kî
+iÂ
+j®
+kî
+j
+kî
+j
+x²
+k
+jş
+kÎ
+x~
+i¾
+xs¢¶6÷VçGÒ
+j®
+x>
+k~
+xŞ
+j
+kî
+ZB"Â%G&&Æ†òFR–×&W7<:6òVçf–Fó¢¶6÷VçGÒ:v–æ‡2’â"Â%V¶W&¦â6WF²F–¶—&–Ó¢¶6÷VçGÒ†ÆÖââ"Â-›í‹˜m›’ªŠ}˜RŠ«í¸ÍŠÂŠı¸ÍŠrªı¸ÍŠs¢¶6÷VçGÒ‹]˜Šİ¸¹B"Â%F—6¶÷l:;¦Æö†'–ÆöFW6Ì:æ¢¶6÷VçGÒ7G,:æV²â"Â%FÆHÖ÷l:;¦Æö†&öÆöF÷6Æì:¢¶6÷VçGÒ7G,:ââ"Â%¦Fæ–RG'V¶÷væ–w—<X&æó¢¶6÷VçGÒ7G&öââ"’À¢'6–FV&%÷vW2#¢‚%vW2"Â.š^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J"Â%:v–æ2"Â%vW2"Â-Š}˜M‹]˜ŠİŠ}Š¢"Â.
+j®
+x>
+k~
+xŞ
+j
+kî
+k
+jî
+x.
+k’"Â%:v–æ2"Â$†ÆÖâ"Â-‹]˜ŠİŠ}Š¢"Â%7G,:æ·’"Â%7G&ç’"Â%7G&öç’"’À¢'6–FV&%÷G&VR#¢‚%G&VR"Â.ih~j>j	"Â.
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+K^
+X>
+I^
+XŞ
+Kr"Â,8&&öÂ"Â$&&÷&W66Væ6R"Â-‹MŠÍ‹Š’Š}˜M˜]‹=Š­˜mŠò"Â.
+j
+j^
+kş
+k
+i~
+kî
+i²"Â,8'f÷&R"Â%7G'V·GW""Â-Šı‹=Š­Š}˜¸Í‹"ªŠrŠı‹ŠíŠ¢"Â%7G&öÒ"Â%7G&öÒ"Â$G'¦Wvò"’À¢&æõöFö7VÖVçE÷G&VR#¢‚%F†—2Db†2æòFö7VÖVçBG&VRâ"Â.jÚBDbk*iÈih~j>j	8""Â.
+H~
+K‚Db
+Jî
+X~
+H"
+Jn
+K
+XŞ
+JN
+Kî
+K^
+X~
+IÎ
+KÂ
+K^
+X>
+I^
+XŞ
+Kr
+J
+K
+X
+H"
+K
+X
+ZB"Â$W7FRDbæò6öçF–VæRVâ:&&öÂFRFö7VÖVçFòâ"Â$6RDbæR6öçF–VçBV7VæR&&÷&W66Væ6RFRFö7VÖVçBâ"Â-˜MŠr˜­ŠİŠ­˜˜¢˜]˜M˜Db˜}‹Šr‹˜M˜’‹MŠÍ‹Š’˜]‹=Š­˜mŠòâ"Â.
+hş
+hrDbŞ
+hò
+i^
+x¾
+j
+x²
+j
+j^
+kş
+k
+i~
+kî
+i²
+j
+x~
+h~
+ZB"Â$W7FRDbì:6ò6öçL:–ÒVÖ:'f÷&RFòFö7VÖVçFòâ"Â%Db–æ’F–F²ÖVÖ–Æ–¶’7G'V·GW"Fö·VÖVââ"Â-Š}‹2Db˜]¸Í«¢Šı‹=Š­Š}˜¸Í‹"ªŠrŠı‹ŠíŠ¢˜m¸¸Í«¢¸¹-¹B"Â%F÷FòDbæVö'6‡V¦R7G&öÒFö·VÖVçGRâ"Â%F÷FòDbæVö'6‡V¦R7G&öÒFö·VÖVçGRâ"Â%FVâÆ–²Dbæ–R¦v–W&G'¦WvFö·VÖVçGRâ"’À§Ğ ¥õ$õu2çWFFR‡°¢&f÷&×2#¢‚$f÷&×2"Â.ŠXÙR"Â.
+J¾
+KÎ
+X
+K
+XŞ
+Jâ"Â$f÷&×VÆ&–÷2"Â$f÷&×VÆ—&W2"Â-Š}˜M˜m˜]Š}‹ŠÂ"Â.
+j¾
+k
+xŞ
+jâ"Â$f÷&×VÌ:&–÷2"Â$f÷&×VÆ—""Â-˜Š}‹˜]‹""Â$f÷&×VÌ:Y–R"Â$f÷&×VÌ:&R"Â$f÷&×VÆ'¦R"’À¢&VF—Eöf÷&Õöf–VÆB#¢‚$VF—B6VÆV7FVBf÷&Òf–VÆBâââ"Â.{Én‹éh˜˜ŠXÙ^ZÙ~jëRâââ"Â.
+I®
+X
+J
+Kâ
+K
+X
+Hb
+J¾
+KÎ
+X
+K
+XŞ
+Jâ
+J¾
+KÎ
+X
+K.
+XŞ
+J
+K
+H.
+J®
+Kî
+Jn
+Kş
+JB
+I^
+K
+X~
+H"âââ"Â$VF—F"6×òFRf÷&×VÆ&–ò6VÆV66–öæFòâââ"Â$ÖöF–f–W"ÆR6†×FRf÷&×VÆ—&R<:–ÆV7F–öæì:’âââ"Â-Š­Šİ‹˜­‹Šİ˜-˜BŠ}˜M˜m˜]˜‹ŠÂŠ}˜M˜]ŠİŠıŠòâââ"Â.
+j
+kş
+k
+xŞ
+jÎ
+kî
+i®
+kş
+jB
+j¾
+k
+xŞ
+jâ
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kâ
+i^
+k
+x
+j‚âââ"Â$VF—F"6×òFRf÷&×VÌ:&–ò6VÆV6–öæFòâââ"Â$VF—B&–Færf÷&×VÆ—"FW'–Æ–‚âââ"Â-˜]˜mŠ­ŠíŠ‚˜Š}‹˜R˜¸Í˜M¨‚˜]¸Í«¢Š­‹˜]¸Í˜Rª‹¸Í«¢âââ"Â%W&f—Bg–'&ì:’öÆRf÷&×VÌ:Y–Râââ"Â%W&fœZRg–'&ì:’öÆRf÷&×VÌ:&âââ"Â$VG—GV¢w–'&æRöÆRf÷&×VÆ'¦âââ"’À¢&æõöf÷&Õöf–VÆG2#¢‚%F†—2Db†2æò7W÷'FVB7&ôf÷&Òf–VÆG2â"Â.jÚBDbk*iÈXù~iJşhÈy¨B7&ôf÷&ÒZÙ~jë^8""Â.
+H~
+K‚Db
+Jî
+X~
+H"
+K
+Jî
+K
+XŞ
+J^
+Kş
+JB7&ôf÷&Ò
+J¾
+KÎ
+X
+K.
+XŞ
+J
+J
+K
+X
+H"
+K
+X
+H.
+ZB"Â$W7FRDbæòF–VæR6×÷27&ôf÷&Ò6ö×F–&ÆW2â"Â$6RDbæR6öçF–VçBV7Vâ6†×7&ôf÷&Ò&—2Vâ6†&vRâ"Â-˜MŠr˜­ŠİŠ­˜˜¢˜]˜M˜Db˜}‹Šr‹˜M˜’Šİ˜-˜˜B7&ôf÷&Ò˜]Šı‹˜˜]Š’â"Â.
+hş
+hrDbŞ
+hò
+k
+jî
+k
+xŞ
+j^
+kş
+jB7&ôf÷&Ò
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+j
+x~
+h~
+ZB"Â$W7FRDbì:6ò6öçL:–Ò6×÷27&ôf÷&Ò6ö×L:×fV—2â"Â%Db–æ’F–F²ÖVÖ–Æ–¶’&–Fær7&ôf÷&Ò–ærF–GV·Værâ"Â-Š}‹2Db˜]¸Í«¢˜]‹Š}˜˜b7&ôf÷&Ò˜¸Í˜M¨‹"˜m¸¸Í«¢¸¸Í«­¹B"Â%F÷FòDbæVö'6‡V¦RöG÷&÷fì:öÆR7&ôf÷&Òâ"Â%F÷FòDbæVö'6‡V¦RöG÷&÷fì:’öÆ–7&ôf÷&Òâ"Â%FVâDbæ–R¦v–W&ö'<X'Vv—vç–6‚;6Â7&ôf÷&Òâ"’À¢'VææÖVEöf÷&Õöf–VÆB#¢‚%VææÖVBf–VÆB"Â.iÊ®YŞYŞZÙ~jëR"Â.
+H^
+J
+Kî
+Jâ
+J¾
+KÎ
+X
+K.
+XŞ
+J"Â$6×ò6–âæöÖ'&R"Â$6†×6ç2æöÒ"Â-Šİ˜-˜BŠ˜MŠrŠ}‹=˜R"Â.
+j
+kî
+jî
+k
+x
+j‚
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k"Â$6×ò6VÒæöÖR"Â$&–FærFçæÖ"Â-Š¹"˜mŠ}˜R˜¸Í˜M¨‚"Â%öÆR&W¢ì:§gR"Â%öÆR&W¢ì:§gR"Â%öÆR&W¢æ§w’"’À¢&f÷&Õö6†V6¶VB#¢‚$6†V6¶VB"Â.[{.˜KŠÒ"Â.
+I®
+Jş
+J
+Kş
+JB"Â$Ö&6Fò"Â$6ö6Œ:’"Â-˜]ŠİŠıŠò"Â.
+j
+kş
+k
+xŞ
+jÎ
+kî
+i®
+kş
+jB"Â$Ö&6Fò"Â$F–6VçFær"Â-˜]˜mŠ­ŠíŠ‚"Â%¦Z·'FçWFò"Â%¦HÖ–&¶çWL:’"Â%¦¦æ7¦öæR"’À¢&f÷&Õ÷Væ6†V6¶VB#¢‚%Væ6†V6¶VB"Â.iÊ®˜KŠÒ"Â.
+H^
+I®
+Jş
+J
+Kş
+JB"Â$æòÖ&6Fò"Â$æöâ6ö6Œ:’"Â-‹­˜­‹˜]ŠİŠıŠò"Â.
+h^
+j
+kş
+k
+xŞ
+jÎ
+kî
+i®
+kş
+jB"Â$FW6Ö&6Fò"Â%F–F²F–6VçFær"Â-‹­¸Í‹˜]˜mŠ­ŠíŠ‚"Â$æW¦Z·'FçWFò"Â$æW¦HÖ–&¶çWL:’"Â$æ–W¦¦æ7¦öæR"’À¢&f÷&ÕöV×G’#¢‚$V×G’"Â.z›¢"Â.
+In
+Kî
+K.
+X"Â%f<:Öò"Â%f–FR"Â-˜Š}‹‹¢"Â.
+in
+kî
+k.
+kò"Â%f¦–ò"Â$¶÷6öær"Â-ŠíŠ}˜M¸Â"Â%,:¦Fì:’"Â%,:¦FæR"Â%W7FR"’À¢&f÷&Õ÷&VEööæÇ’#¢‚%&VBÖöæÇ’"Â.Xú®Šû²"Â.
+I^
+X~
+K^
+K"
+J®
+J.
+KÎ
+J
+Xr
+Jş
+X¾
+I~
+XŞ
+Jò"Â%6öÆòÆV7GW&"Â$ÆV7GW&R6WVÆR"Â-˜M˜M˜-‹Š}ŠŠ’˜˜-‹r"Â.
+kn
+x
+j~
+x
+j®
+kî
+j
+jş
+x¾
+i~
+xŞ
+jò"Â%6öÖVçFRÆV—GW&"Â$†ç–&6"Â-‹]‹˜›í©«í˜m¹"ª¹"˜M¸Í¹""Â$¦Vâ&òH×FVì:Ò"Â$–&æHÜ:×Fæ–R"Â%G–Æ¶òFòöF7§—GR"’À¢&f÷&Õ÷&VEööæÇ•öÖW76vR#¢‚%F†—2f÷&Òf–VÆB—2&VBÖöæÇ’æB6ææ÷B&R6†ævVBâ"Â.jÚNŠXÙ^ZÙ~jë^K‹®Xú®Šû¾ûÈÎizk9^i»NiK8""Â.
+Jş
+K’
+J¾
+KÎ
+X
+K
+XŞ
+Jâ
+J¾
+KÎ
+X
+K.
+XŞ
+J
+I^
+X~
+K^
+K"
+J®
+J.
+KÎ
+J
+Xr
+Jş
+X¾
+I~
+XŞ
+Jò
+K
+X‚
+IN
+K
+JÎ
+Jn
+K.
+Kâ
+J
+K
+X
+H"
+IÎ
+Kâ
+K
+I^
+JN
+Kî
+ZB"Â$W7FR6×òW2FR6öÆòÆV7GW&’æò6RVVFR6Ö&–"â"Â$6R6†×W7BVâÆV7GW&R6WVÆRWBæRWWB2:§G&RÖöF–fœ:’â"Â-Šİ˜-˜BŠ}˜M˜m˜]˜‹ŠÂ˜}‹Šr˜M˜M˜-‹Š}ŠŠ’˜˜-‹r˜˜MŠr˜­˜]˜=˜bŠ­‹­˜­˜­‹˜râ"Â.
+hş
+hr
+j¾
+k
+xŞ
+jâ
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+iş
+kò
+kn
+x
+j~
+x
+j®
+kî
+j
+jş
+x¾
+i~
+xŞ
+jò
+hş
+jÎ
+h"
+j®
+k
+kş
+jÎ
+k
+xŞ
+jN
+j‚
+i^
+k
+kâ
+jş
+kî
+jş
+kÂ
+j
+kî
+ZB"Â$W7FR6×ò:’6öÖVçFRÆV—GW&Rì:6òöFR6W"ÇFW&Fòâ"Â$&–Fær–æ’†ç–&6FâF–F²FBF—V&‚â"Â-¸Í¸˜Š}‹˜R˜¸Í˜M¨‚‹]‹˜›í©«í˜m¹"ª¹"˜M¸Í¹"¸¹"Š}˜‹Š­ŠŠı¸Í˜B˜m¸¸Í«¢¸˜‚‹=ªŠ­¸Í¹B"Â%F÷FòöÆRf÷&×VÌ:Y–R¦R¦Vâ&òH×FVì:ÒæVÇ¦R¦R¦ÜI¶æ—Bâ"Â%F÷FòöÆRf÷&×VÌ:&¦R–&æHÜ:×Fæ–RæVÖü[ææò†ò¦ÖVæœZRâ"Â%FòöÆRf÷&×VÆ'¦¦W7BG–Æ¶òFòöF7§—GR’æ–RÖü[Æævò¦Ö–VæœHrâ"’À¢&f÷&Õ÷fÇVR#¢‚%fÇVS¢"Â.XÎûÉ¢"Â.
+Jî
+Kî
+Jƒ¢"Â%fÆ÷#¢"Â%fÆWW"¢"Â-Š}˜M˜-˜­˜]Š“¢"Â.
+jî
+kî
+jƒ¢"Â%fÆ÷#¢"Â$æ–Æ“¢"Â-˜-Šı‹¢"Â$†öFæ÷F¢"Â$†öFæ÷F¢"Â%v'FüY¼Hs¢"’À¢&f÷&Õöæõö6†ö–6W2#¢‚%F†—26†ö–6Rf–VÆB†2æòf–Æ&ÆRfÇVW2â"Â.jÚN˜hºZÙ~jë^k*iÈXúşyJXÎ8""Â.
+H~
+K‚
+I®
+Jş
+J‚
+J¾
+KÎ
+X
+K.
+XŞ
+J
+Jî
+X~
+H"
+H
+J®
+K.
+JÎ
+XŞ
+Jr
+Jî
+Kî
+J‚
+J
+K
+X
+H"
+K
+X
+H.
+ZB"Â$W7FR6×òFR6VÆV66œ;6âæòF–VæRfÆ÷&W2F—7öæ–&ÆW2â"Â$6R6†×FR6†ö—‚æR6öçF–VçBV7VæRfÆWW"F—7öæ–&ÆRâ"Â-˜MŠr˜­ŠİŠ­˜˜¢Šİ˜-˜BŠ}˜MŠ}ŠíŠ­˜­Š}‹˜}‹Šr‹˜M˜’˜-˜­˜R˜]Š­Š}ŠİŠ’â"Â.
+hş
+hr
+j
+kş
+k
+xŞ
+jÎ
+kî
+i®
+j‚
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+xr
+i^
+x¾
+j
+x²
+jî
+kî
+j‚
+j
+x~
+h~
+ZB"Â$W7FR6×òFRW66öÆ†ì:6ò÷77V’fÆ÷&W2F—7öì:×fV—2â"Â$&–Fær–Æ–†â–æ’F–F²ÖVÖ–Æ–¶’æ–Æ’–ærFW'6VF–â"Â-Š}‹2Š}˜mŠ­ŠíŠ}Š¸Â˜¸Í˜M¨‚˜]¸Í«¢ª˜Šm¸ÂŠı‹=Š­¸ÍŠ}Š‚˜-Šı‹˜m¸¸Í«¢¸¹-¹B"Â%F÷Fòl;Ö,I·&÷l:’öÆRæVÜ:[ì:Fì:’F÷7GWì:’†öFæ÷G’â"Â%F÷Fòl;Ö&W&÷l:’öÆRæVÜ:[æ–FæRF÷7GWì:’†öFæ÷G’â"Â%FòöÆRw–&÷'Ræ–RÖF÷7LI—ç–6‚v'FüY¶6’â"’À¢&f÷&Õ÷Vç7W÷'FVB#¢‚%F†—2f÷&Òf–VÆBG—R—2æ÷B7W÷'FVBf÷"VF—F–ærâ"Â.KˆŞiJşhÈ{Én‹éjÚN{¾Yè¾y¨NŠXÙ^ZÙ~jë^8""Â.
+H~
+K‚
+J®
+XŞ
+K
+I^
+Kî
+K
+I^
+Xr
+J¾
+KÎ
+X
+K
+XŞ
+Jâ
+J¾
+KÎ
+X
+K.
+XŞ
+J
+I^
+Kâ
+K
+H.
+J®
+Kî
+Jn
+J‚
+K
+Jî
+K
+XŞ
+J^
+Kş
+JB
+J
+K
+X
+H"
+K
+X
+ZB"Â$W7FRF—òFR6×òæò6RVVFRVF—F"â"Â$6RG—RFR6†×æRWWB2:§G&RÖöF–fœ:’â"Â-Š­Šİ‹˜­‹˜}‹ŠrŠ}˜M˜m˜‹’˜]˜bŠİ˜-˜˜BŠ}˜M˜m˜]˜‹ŠÂ‹­˜­‹˜]Šı‹˜˜Râ"Â.
+hş
+hr
+j~
+k
+j
+x~
+k
+j¾
+k
+xŞ
+jâ
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kâ
+k
+jî
+k
+xŞ
+j^
+kş
+jB
+j
+jş
+kÎ
+ZB"Â$W7FRF—òFR6×òì:6òöFR6W"VF—FFòâ"Â$¦Væ—2&–Færf÷&×VÆ—"–æ’F–F²F–GV·VærVçGV²F–VF—Bâ"Â-Š}‹2˜-‹=˜Rª¸Â˜Š}‹˜R˜¸Í˜M¨‚ª¸ÂŠ­Šı˜¸Í˜b˜]‹Š}˜˜b˜m¸¸Í«¢¸¹-¹B"Â,9§&fFö†÷FòG—RöÆRf÷&×VÌ:Y–RæVì:ÒöG÷&÷l:æâ"Â,9§&fFö‡FòG—RüKæf÷&×VÌ:&æ–R¦RöG÷&÷fì:â"Â$VG–6¦FVvòG—RöÆf÷&×VÆ'¦æ–R¦W7Bö'<X'Vv—væâ"’À¢&f÷&Õ÷WFFVB#¢‚$f÷&Òf–VÆBWFFVBâW6RVæFòFò&W7F÷&RF†R&Wf–÷W2fÇVRâ"Â.ŠXÙ^ZÙ~jë^[{.i»Nik8.KÛşyJi*N™HXúşh.ZHŞKº^X˜Şy¨NXÎ8""Â.
+J¾
+KÎ
+X
+K
+XŞ
+Jâ
+J¾
+KÎ
+X
+K.
+XŞ
+J
+H^
+J®
+J
+X~
+Iò
+K
+X
+Hn
+ZB
+J®
+Kş
+I¾
+K.
+Kâ
+Jî
+Kî
+J‚
+K.
+XÎ
+Iş
+Kî
+J
+Xr
+I^
+Xr
+K.
+Kş
+Hò
+J®
+X.
+K
+XŞ
+K^
+K^
+JB
+I^
+K
+X~
+H.
+ZB"Â$6×ò7GVÆ—¦FòâW6RFW6†6W"&&W7FW&"VÂfÆ÷"çFW&–÷"â"Â$6†×Ö—2:¦÷W"âWF–Æ—6W¢æçVÆW"÷W"&W7FW&W"ÆfÆWW",:–<:–FVçFRâ"Â-Š­˜RŠ­ŠİŠı˜­Š²Šİ˜-˜BŠ}˜M˜m˜]˜‹ŠÂâŠ}‹=Š­ŠíŠı˜RŠ­‹Š}ŠÍ‹’˜MŠ}‹=Š­‹Š}ŠıŠ’Š}˜M˜-˜­˜]Š’Š}˜M‹=Š}Š˜-Š’â"Â.
+j¾
+k
+xŞ
+jâ
+i^
+xŞ
+k~
+x~
+jN
+xŞ
+k
+hn
+j®
+j
+x~
+iò
+k
+jş
+kÎ
+x~
+i¾
+x~
+ZB
+hn
+i~
+x~
+k
+jî
+kî
+j‚
+j¾
+x~
+k
+kî
+jN
+xr
+j®
+x.
+k
+xŞ
+jÎ
+kî
+jÎ
+k
+xŞ
+j^
+kî
+jş
+kÂ
+j¾
+x~
+k
+kî
+j
+ZB"Â$6×òGVÆ—¦FòâW6RçVÆ"&&W7FW&"òfÆ÷"çFW&–÷"â"Â$&–Færf÷&×VÆ—"F—W&&'V’âwVæ¶âW'Væv¶âVçGV²ÖV×VÆ–†¶âæ–Æ’6V&VÇVÖç–â"Â-˜Š}‹˜R˜¸Í˜M¨‚Š}›â¨¸Í›’¸˜‚ªıŠm¸Í¹B‹=Š}Š˜-¸˜-Šı‹ŠŠİŠ}˜Bª‹˜m¹"ª¹"˜M¸Í¹"ªŠ}˜M‹Šı˜Rª‹¸Í«­¹B"Â%öÆRf÷&×VÌ:Y–R'–ÆòW&fVæòâöÖö<:Ò§I·Bö&æ÷l:×FRY–VF6†÷¬:Ò†öFæ÷GRâ"Â%öÆRf÷&×VÌ:&&öÆòW&fVì:’âöÖö6÷R7:LZRö&æ÷l:×FR&VF6Œ:G¦¬;¦7R†öFæ÷GRâ"Â%öÆRf÷&×VÆ'¦¦÷7FX&ò¦·GVÆ—¦÷væRâ\[Ç–¢6öfæ–¢Â'’'§—w,;66œHr÷'¦VFæœHRv'FüY¼Hrâ"’À¢&Ö÷fU÷vU÷W#¢‚$Ö÷fRvRV&Æ–W""Â.Y	X˜Şz{¾Xªš^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J
+I^
+X²
+J®
+K
+K.
+Xr
+K.
+Xr
+IÎ
+Kî
+Hş
+H"Â$Ö÷fW":v–æçFW2"Â$L:—Æ6W"ÆvRÇW2L;GB"Â-˜m˜-˜BŠ}˜M‹]˜ŠİŠ’Š]˜M˜’˜]˜‹m‹’‹=Š}Š˜""Â.
+j®
+x>
+k~
+xŞ
+j
+kâ
+hn
+i~
+xr
+k
+k
+kî
+j‚"Â$Ö÷fW":v–æ&çFW2"Â%–æF†¶â†ÆÖâ¶RFWâ"Â-‹]˜Šİ¸›í¸˜M¹"˜]˜mŠ­˜-˜Bª‹¸Í«¢"Â%Y–W7Væ÷WB7G,:æ·Rl;ÜZR"Â%&W7Vì;¬ZR7G&çRgœZZ–R"Â%'¦Væ–\Y²7G&öìI’wœ[ÆV¢"’À¢&Ö÷fU÷vUöF÷vâ#¢‚$Ö÷fRvRÆFW""Â.Y	Yîz{¾Xªš^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J
+I^
+X²
+JÎ
+Kî
+Jb
+Jî
+X~
+H"
+K.
+Xr
+IÎ
+Kî
+Hş
+H"Â$Ö÷fW":v–æFW7\:—2"Â$L:—Æ6W"ÆvRÇW2F&B"Â-˜m˜-˜BŠ}˜M‹]˜ŠİŠ’Š]˜M˜’˜]˜‹m‹’˜MŠ}Šİ˜""Â.
+j®
+x>
+k~
+xŞ
+j
+kâ
+j®
+k
+xr
+k
+k
+kî
+j‚"Â$Ö÷fW":v–æ&FWö—2"Â%–æF†¶â†ÆÖâ¶R&VÆ¶ær"Â-‹]˜Šİ¸Š‹Šò˜]¸Í«¢˜]˜mŠ­˜-˜Bª‹¸Í«¢"Â%Y–W7Væ÷WB7G,:æ·Rì:Ü[æR"Â%&W7Vì;¬ZR7G&çRæœ[ìZ–R"Â%'¦Væ–\Y²7G&öìI’æœ[ÆV¢"’À¢'vUöÖ÷fVB#¢‚%vRÖ÷fVBFò÷6—F–öâ·vWÒâ"Â.š^™Ú.[{.z{¾XªX‹KØŞ{Úâ·vWŞ8""Â.
+J®
+X>
+K~
+XŞ
+J
+I^
+X²
+K
+XŞ
+J^
+Kî
+J‚·vWÒ
+J®
+K
+K.
+Xr
+IÎ
+Kî
+Jş
+Kâ
+I~
+Jş
+Kî
+ZB"Â%:v–æÖ÷f–FÆ÷6–6œ;6â·vWÒâ"Â%vRL:—Æ<:–R:Æ÷6—F–öâ·vWÒâ"Â-Š­˜R˜m˜-˜BŠ}˜M‹]˜ŠİŠ’Š]˜M˜’Š}˜M˜]˜‹m‹’·vWÒâ"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ·vWÒ
+h^
+jÎ
+k
+xŞ
+j^
+kî
+j
+xr
+k
+k
+kî
+j
+x²
+k
+jş
+kÎ
+x~
+i¾
+x~
+ZB"Â%:v–æÖ÷f–F&÷6œ:|:6ò·vWÒâ"Â$†ÆÖâF—–æF†¶â¶R÷6—6’·vWÒâ"Â-‹]˜Šİ¸˜]˜-Š}˜R·vWÒ›í‹˜]˜mŠ­˜-˜Bª‹Šı¸ÍŠrªı¸ÍŠ}¹B"Â%7G,:æ¶'–ÆY–W7VçWFæ÷¦–6’·vWÒâ"Â%7G&æ&öÆ&W7VçWL:æ÷¬:Ö6—R·vWÒâ"Â%7G&öæ¦÷7FX&'¦Væ–W6–öææ÷§–6¬I’·vWÒâ"’À¢'&÷FFU÷vUöÆVgB#¢‚%&÷FFRvRÆVgB"Â.Y	[znix¾‹ÚÎš^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J
+I^
+X²
+JÎ
+Kî
+Hş
+H
+I
+X
+Jî
+Kî
+Hş
+H"Â$v—&":v–æÆ—§V–W&F"Â$f—&R—f÷FW"ÆvR:vV6†R"Â-Š­Šı˜˜­‹Š}˜M‹]˜ŠİŠ’Š]˜M˜’Š}˜M˜­‹=Š}‹"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ
+jÎ
+kî
+jî
+xr
+i
+x¾
+k
+kî
+j‚"Â%&öF":v–æ&W7VW&F"Â%WF"†ÆÖâ¶R¶—&’"Â-‹]˜Šİ¸ŠŠ}Šm¸Í«¢ªı«í˜]Š}Šm¸Í«¢"Â$÷FüHÖ—B7G,:æ·RFöÆWf"Â$÷FüHÖœZR7G&çRFüKæf"Â$ö',;<Hr7G&öìI’rÆWvò"’À¢'&÷FFU÷vU÷&–v‡B#¢‚%&÷FFRvR&–v‡B"Â.Y	Xû>ix¾‹ÚÎš^™Ú""Â.
+J®
+X>
+K~
+XŞ
+J
+I^
+X²
+Jn
+Kî
+Hş
+H
+I
+X
+Jî
+Kî
+Hş
+H"Â$v—&":v–æÆFW&V6†"Â$f—&R—f÷FW"ÆvR:G&ö—FR"Â-Š­Šı˜˜­‹Š}˜M‹]˜ŠİŠ’Š]˜M˜’Š}˜M˜­˜]˜­˜b"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ
+j
+kî
+j
+xr
+i
+x¾
+k
+kî
+j‚"Â%&öF":v–æ&F—&V—F"Â%WF"†ÆÖâ¶R¶æâ"Â-‹]˜Šİ¸ŠıŠ}Šm¸Í«¢ªı«í˜]Š}Šm¸Í«¢"Â$÷FüHÖ—B7G,:æ·RF÷&f"Â$÷FüHÖœZR7G&çRF÷&f"Â$ö',;<Hr7G&öìI’r&vò"’À¢'vU÷&÷FFVB#¢‚%vR·vWÒ&÷FFVBâ"Â.š^™Ú"·vWÒ[{.ix¾‹ÚÎ8""Â.
+J®
+X>
+K~
+XŞ
+J·vWÒ
+I
+X
+Jî
+Kî
+Jş
+Kâ
+I~
+Jş
+Kî
+ZB"Â%:v–æ·vWÒv—&Fâ"Â%vR·vWÒ—f÷L:–Râ"Â-Š­˜RŠ­Šı˜˜­‹Š}˜M‹]˜ŠİŠ’·vWÒâ"Â.
+j®
+x>
+k~
+xŞ
+j
+kâ·vWÒ
+i
+x¾
+k
+kî
+j
+x²
+k
+jş
+kÎ
+x~
+i¾
+x~
+ZB"Â%:v–æ·vWÒ&öFFâ"Â$†ÆÖâ·vWÒF—WF"â"Â-‹]˜Šİ¸·vWÒªı«í˜]ŠrŠı¸ÍŠrªı¸ÍŠ}¹B"Â%7G,:æ¶·vWÒ'–Æ÷FüHÖVæâ"Â%7G&æ·vWÒ&öÆ÷FüHÖVì:â"Â%7G&öæ·vWÒ¦÷7FX&ö',;66öæâ"’À¢&VF—Eö÷&–v–æÅö–ÖvR#¢‚$VF—B÷&–v–æÂ–ÖvRâââ"Â.{Én‹éXéşZx¾Y»îX8òâââ"Â.
+Jî
+X.
+K"
+I¾
+K^
+Kò
+K
+H.
+J®
+Kî
+Jn
+Kş
+JB
+I^
+K
+X~
+H"âââ"Â$VF—F"–ÖvVâ÷&–v–æÂâââ"Â$ÖöF–f–W"Î(	––ÖvRN(	–÷&–v–æRâââ"Â-Š­Šİ‹˜­‹Š}˜M‹]˜‹Š’Š}˜MŠ=‹]˜M˜­Š’âââ"Â.
+jî
+x.
+k"
+i¾
+jÎ
+kò
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kâ
+i^
+k
+x
+j‚âââ"Â$VF—F"–ÖvVÒ÷&–v–æÂâââ"Â$VF—BvÖ&"6Æ’âââ"Â-Š}‹]˜BŠ­‹]˜¸Í‹˜]¸Í«¢Š­‹˜]¸Í˜Rª‹¸Í«¢âââ"Â%W&f—BZ÷föFì:Òö',:¦V²âââ"Â%W&fœZR;GföFì;Òö',:¦ö²âââ"Â$VG—GV¢÷'–v–æÆç’ö'&¢âââ"’À¢&VF—Eö÷&–v–æÅö–ÖvUö†–çB#¢‚$6Æ–6²â÷&–v–æÂ–ÖvRFòÖ¶R—BÖ÷f&ÆRÂ&W6—¦&ÆRÂæB&÷FF&ÆRâ&W72W62Fò6æ6VÂâ"Â.XÙ^X{¾XéşZx¾Y»îX8şûÈÎKÛşX[nXúşz{¾Xª8‹>i[NZJ~[şY(Îix¾‹ÚÎ8.hÈ’W62Xùnkh8""Â.
+Jî
+X.
+K"
+I¾
+K^
+Kò
+J®
+K
+I^
+XŞ
+K.
+Kş
+IR
+I^
+K
+I^
+Xr
+H
+K
+Xr
+I®
+K.
+J
+XrÂ
+Hn
+I^
+Kî
+K
+JÎ
+Jn
+K.
+J
+Xr
+IN
+K
+I
+X
+Jî
+Kî
+J
+Xr
+Jş
+X¾
+I~
+XŞ
+Jò
+JÎ
+J
+Kî
+Hş
+H
+ZB
+K
+Jn
+XŞ
+Jb
+I^
+K
+J
+Xr
+I^
+Xr
+K.
+Kş
+HòW62
+Jn
+JÎ
+Kî
+Hş
+H
+ZB"Â$†v6Æ–2VâVæ–ÖvVâ÷&–v–æÂ&öFW"Ö÷fW&ÆÂ&VF–ÖVç6–öæ&Æ’v—&&ÆâVÇ6RW62&6æ6VÆ"â"Â$6Æ—VW¢7W"VæR–ÖvRN(	–÷&–v–æR÷W"÷Wfö—"ÆL:—Æ6W"ÂÆ&VF–ÖVç6–öææW"WBÆf—&R—f÷FW"âW–W¢7W"8–6†÷W"æçVÆW"â"Â-Š}˜m˜-‹‹˜M˜’‹]˜‹Š’Š=‹]˜M˜­Š’˜MŠÍ‹˜M˜}Šr˜-Š}Š˜MŠ’˜M˜M˜m˜-˜B˜Š­‹­˜­˜­‹Š}˜MŠİŠÍ˜R˜Š}˜MŠ­Šı˜˜­‹âŠ}‹m‹­‹rW62˜M˜MŠ]˜M‹­Š}Šâ"Â.
+jî
+x.
+k"
+i¾
+jÎ
+kş
+jN
+xr
+i^
+xŞ
+k.
+kş
+iR
+i^
+k
+xr
+k
+x~
+iş
+kş
+i^
+xr
+k
+k
+kî
+j
+x²Â
+hn
+i^
+kî
+k
+jÎ
+jn
+k.
+kî
+j
+x²
+i2
+i
+x¾
+k
+kî
+j
+x¾
+k
+h
+j®
+jş
+x¾
+i~
+x
+i^
+k
+x
+j
+ZB
+jÎ
+kî
+jN
+kş
+k"
+i^
+k
+jN
+xrW62
+i®
+kî
+j®
+x
+j
+ZB"Â$6Æ—VRçVÖ–ÖvVÒ÷&–v–æÂ&F÷&æ"Ö÷l:×fVÂÂ&VF–ÖVç6–öì:fVÂR&÷FF—fâ&–ÖW62&6æ6VÆ"â"Â$¶Æ–²vÖ&"6Æ’v"FBF—–æF†¶âÂF—V&‚V·W&æç–ÂFâF—WF"âFV¶âW62VçGV²&FÂâ"Â-Š}‹]˜BŠ­‹]˜¸Í‹ª˜‚˜-Š}Š˜M™Šİ‹ªŠ­ˆÂ˜-Š}Š˜M™‹=Š}Šm‹"Š­ŠŠı¸Í˜M¸ÂŠ}˜‹˜-Š}Š˜M™ªı‹Šı‹BŠ˜mŠ}˜m¹"ª¹"˜M¸Í¹"ª˜Mª’ª‹¸Í«­¹B˜]˜m‹=˜Šâª‹˜m¹"ª¹"˜M¸Í¹"W62ŠıŠŠ}Šm¸Í«­¹B"Â$¶Æ–¶ìI·FRæZ÷föFì:Òö',:¦V²Â·FW,;Ò6†6WFRY–W6÷WfBÂÜI¶æ—B¦V†òfVÆ–¶÷7B÷L:HÖWBâW62¶6’§'\Z:Òâ"Â$¶Æ–¶æ—FRæ;GföFì;Òö',:¦ö²Â·F÷,;Ò6†6WFR&W<;§fZRÂÖVæœZR¦V†òf\Kæ¶÷<ZR÷L:HÖZRâW62¶6—R§'\Z:Òâ"Â$¶Æ–¶æ–¢÷'–v–æÆç’ö'&¢Â'’vò'¦W7WvHrÂ6¶Æ÷vHr’ö'&6HrâW62çVÇV¦R÷W&6¬I’â"’À¢&÷&–v–æÅö–ÖvR#¢‚$÷&–v–æÂ–ÖvR"Â.XéşZx¾Y»îX8ò"Â.
+Jî
+X.
+K"
+I¾
+K^
+Kò"Â$–ÖvVâ÷&–v–æÂ"Â$–ÖvRN(	–÷&–v–æR"Â-Š}˜M‹]˜‹Š’Š}˜MŠ=‹]˜M˜­Š’"Â.
+jî
+x.
+k"
+i¾
+jÎ
+kò"Â$–ÖvVÒ÷&–v–æÂ"Â$vÖ&"6Æ’"Â-Š}‹]˜BŠ­‹]˜¸Í‹"Â%Z÷föFì:Òö',:¦V²"Â%;GföFì;Òö',:¦ö²"Â$÷'–v–æÆç’ö'&¢"’À¢&÷&–v–æÅö–ÖvU÷&VG’#¢‚%F†R÷&–v–æÂ–ÖvR—2æ÷rVF—F&ÆRâG&r—B÷"W6RF†R&W6—¦RæB&÷FF–öâ†æFÆW2â"Â.XéşZx¾Y»îX8şxëYÊXúş{Én‹é8.h¹nXªZè>h‰nKÛşyJZJ~[şY(Îix¾‹ÚÎh˜¾iøN8""Â.
+Jî
+X.
+K"
+I¾
+K^
+Kò
+H^
+JÂ
+K
+H.
+J®
+Kî
+Jn
+J‚
+Jş
+X¾
+I~
+XŞ
+Jò
+K
+X
+ZB
+H
+K
+Xr
+In
+X
+H.
+I®
+X~
+H"
+Jş
+Kâ
+Hn
+I^
+Kî
+K
+IN
+K
+I
+X
+Jî
+Kî
+KR
+K
+X
+H.
+J
+K"
+I^
+Kâ
+H
+J®
+Jş
+X¾
+Ir
+I^
+K
+X~
+H.
+ZB"Â$Æ–ÖvVâ÷&–v–æÂ–6RVVFRVF—F"â',:7G&VÆòW6RÆ÷26öçG&öÆW2FRFÖ;ò’&÷F6œ;6ââ"Â$Î(	––ÖvRN(	–÷&–v–æRW7BÖ–çFVæçBÖöF–f–&ÆRâf—FW2ÖÆvÆ—76W"÷RWF–Æ—6W¢ÆW2ö–vì:–W2FRF–ÆÆRWBFR&÷FF–öââ"Â-Š=‹]ŠŠİŠ¢Š}˜M‹]˜‹Š’Š}˜MŠ=‹]˜M˜­Š’˜-Š}Š˜MŠ’˜M˜MŠ­Šİ‹˜­‹âŠ}‹=ŠİŠ˜}ŠrŠ=˜‚Š}‹=Š­ŠíŠı˜R˜]˜-Š}Š‹bŠ}˜MŠİŠÍ˜R˜Š}˜MŠ­Šı˜˜­‹â"Â.
+jî
+x.
+k"
+i¾
+jÎ
+kò
+hş
+in
+j‚
+k
+jî
+xŞ
+j®
+kî
+jn
+j
+kî
+jş
+x¾
+i~
+xŞ
+jş
+ZB
+iş
+x~
+j
+xr
+j
+kş
+j‚
+jÎ
+kâ
+hn
+i^
+kî
+k
+i2
+i
+x.
+k
+xŞ
+j>
+j‚
+k
+xŞ
+jş
+kî
+j
+xŞ
+j
+x~
+k"
+jÎ
+xŞ
+jş
+jÎ
+k
+kî
+k
+i^
+k
+x
+j
+ZB"Â$–ÖvVÒ÷&–v–æÂW7L:v÷&VF—L:fVÂâ'&7FRÖ÷RW6R2Ì:v2FRFÖæ†òR&÷F:|:6òâ"Â$vÖ&"6Æ’6V¶&ærFBF–VF—Bâ6W&WBFRwVæ¶âvværV·W&âFâ&÷F6’â"Â-Š}‹]˜BŠ­‹]˜¸Í‹Š}Š‚˜-Š}Š˜M™Š­‹˜]¸Í˜R¸¹-¹BŠ}‹=¹"ª«í¸Í˜m¨m¸Í«¢¸ÍŠr‹=Š}Šm‹"Š}˜‹ªı‹Šı‹Bª¹"¸¸Í˜m¨˜BŠ}‹=Š­‹˜]Š}˜Bª‹¸Í«­¹B"Â%Z÷föFì:Òö',:¦V²¦Rç–ì:ÒW&f—FVÆì;ÒâY–WL:†ìI·FR¦V¢æV&ò÷\[æ–§FR;¦6‡—G’fVÆ–¶÷7F’÷FüHÖVì:Òâ"Â%;GföFì;Òö',:¦ö²¦RFW&¢W&f—F\Kæì;Òâ&W7\X‡FR†òÆV&ò÷\[æ—FR;¦6‡—G’f\Kæ¶÷7F’÷FüHÖVæ–â"Â$÷'–v–æÆç’ö'&¢Öü[ÆæFW&¢VG—F÷vHrâ'¦V6œHVvæ–¢vòÇV"\[Ç–¢V6‡w—L;7r&÷¦Ö–'R’ö'&÷GRâ"’À¢'6fUö6÷’#¢‚%6fR6÷’âââ"Â.KùŞZÙXšşiÊÂâââ"Â.
+Hş
+IR
+J®
+XŞ
+K
+JN
+Kò
+K
+K
+X~
+IÎ
+X~
+H"âââ"Â$wV&F"Væ6÷–âââ"Â$Vç&Vv—7G&W"VæR6÷–Râââ"Â-Šİ˜‹‚˜m‹=ŠíŠ’âââ"Â.
+hş
+i^
+iş
+kò
+h^
+j
+x
+k.
+kş
+j®
+kò
+k
+h.
+k
+i^
+xŞ
+k~
+j2
+i^
+k
+x
+j‚âââ"Â$wV&F"VÖ<;7–âââ"Â%6–×â6Æ–æââââ"Â-Š}¸Íª’˜m˜-˜B˜]Šİ˜˜‹‚ª‹¸Í«¢âââ"Â%VÆü[æ—B¶÷–’âââ"Â%VÆü[æœZR¼;7—Râââ"Â%¦—7¢¶÷œI’âââ"’À¢'Fe÷77v÷&E÷F—FÆR#¢‚%&÷FV7FVBDb"Â.Xù~KùŞhªNy¨BDb"Â.
+K
+X
+K
+I^
+XŞ
+K~
+Kş
+JBDb"Â%Db&÷FVv–Fò"Â%Db&÷L:–|:’"Â-˜]˜M˜Db˜]Šİ˜]˜¢"Â.
+k
+x
+k
+i^
+xŞ
+k~
+kş
+jBDb"Â%Db&÷FVv–Fò"Â%DbFW&Æ–æGVæv’"Â-˜]Šİ˜˜‹‚Db"Â$6‡,:ìI¶ì:’Db"Â$6‡,:æVì:’Db"Â$6‡&öæ–öç’Db"’À¢'Fe÷77v÷&E÷&ö×B#¢‚$VçFW"F†R77v÷&BFò÷VâF†—2Dc¢"Â.Šû~‹é>XZ^ZønzKº^h™>[ÈjÚBDnûÉ¢"Â.
+H~
+K‚Db
+I^
+X²
+In
+X¾
+K.
+J
+Xr
+I^
+Xr
+K.
+Kş
+Hò
+J®
+Kî
+K
+K^
+K
+XŞ
+J
+Jn
+K
+XŞ
+IÂ
+I^
+K
+X~
+H#¢"Â$–çG&öGW¦6Æ6öçG&6\;&'&—"W7FRDc¢"Â%6—6—76W¢ÆRÖ÷BFR76R÷W"÷Wg&—"6RDb¢"Â-Š=ŠıŠí˜B˜=˜M˜]Š’Š}˜M˜]‹˜‹˜M˜Š­ŠÒ˜]˜M˜Db˜}‹Šs¢"Â.
+hş
+hrDb
+in
+x
+k.
+jN
+xr
+j®
+kî
+k
+i>
+jş
+kÎ
+kî
+k
+xŞ
+j
+k.
+kş
+in
+x
+jƒ¢"Â$–çG&öGW¦Æg&×76R&'&—"W7FRDc¢"Â$Ö7V¶¶â¶F6æF’VçGV²ÖVÖ'V¶Db–æ“¢"Â-Š}‹2Dbª˜‚ª«í˜˜M˜m¹"ª¹"˜M¸Í¹"›íŠ}‹2˜‹¨‚Šı‹ŠÂª‹¸Í«£¢"Â%¦FV§FR†W6Æò&ò÷FWlY–Vì:ÒFö†÷FòDc¢"Â%¦F§FR†W6Æòæ÷Gf÷&Væ–RFö‡FòDc¢"Â%w&÷vL[¢†<X&òÂ'’÷Gv÷'§œHrFVâÆ–²Dc¢"’À¢'Fe÷77v÷&Eö–æ6÷'&V7B#¢‚$–æ6÷'&V7B77v÷&BâG'’v–ã¢"Â.ZønzKˆŞjÚ>zî8.Šû~˜xŞŠù^ûÉ¢"Â.
+J®
+Kî
+K
+K^
+K
+XŞ
+J
+I~
+K.
+JB
+K
+X
+ZB
+J®
+X
+J
+H2
+J®
+XŞ
+K
+Jş
+Kî
+K‚
+I^
+K
+X~
+H#¢"Â$6öçG&6\;–æ6÷'&V7Fâ–çL:–çFVÆòFRçVWfó¢"Â$Ö÷BFR76R–æ6÷'&V7Bâ,:–W76–W¢¢"Â-˜=˜M˜]Š’Š}˜M˜]‹˜‹‹­˜­‹‹]Šİ˜­ŠİŠ’âŠİŠ}˜˜B˜]‹Š’Š=Ší‹˜“¢"Â.
+jŞ
+x
+k"
+j®
+kî
+k
+i>
+jş
+kÎ
+kî
+k
+xŞ
+j
+ZB
+hn
+jÎ
+kî
+k
+i®
+x~
+k~
+xŞ
+iş
+kâ
+i^
+k
+x
+jƒ¢"Â%Æg&×76R–æ6÷'&WFâFVçFRæ÷fÖVçFS¢"Â$¶F6æF’6Æ‚â6ö&Æv“¢"Â-›íŠ}‹2˜‹¨‚‹­˜M‹r¸¹-¹BŠı˜ŠŠ}‹¸ª˜‹M‹Bª‹¸Í«£¢"Â$æW7,:fì:’†W6Æòâ¦·W7FRFò¦æ÷gS¢"Â$æW7,:fæR†W6Æòâ6¼;§7FRFò¦æ÷f¢"Â$æ–W&v–LX&÷vR†<X&òâ7,;6'V¢öæ÷væ–S¢"’À¢'Fe÷77v÷&E÷&VÖ÷fVEöæ÷F–6R#¢‚%F†RDbv2VæÆö6¶VBâVF—FVB6÷–W2v–ÆÂ&R6fVBv—F†÷WB77v÷&B&÷FV7F–öââ"Â%Db[{.Šz>™H8.{Én‹éYîy¨NXšşiÊÎ[nKˆŞ[ŠnZønzKùŞhªNKùŞZÙ8""Â%Db
+H^
+J
+K.
+X
+IR
+K
+X²
+I~
+Jş
+Kâ
+K
+X
+ZB
+K
+H.
+J®
+Kî
+Jn
+Kş
+JB
+J®
+XŞ
+K
+JN
+Kş
+Jş
+Kî
+H
+J®
+Kî
+K
+K^
+K
+XŞ
+J
+K
+X
+K
+I^
+XŞ
+K~
+Kâ
+I^
+Xr
+JÎ
+Kş
+J
+Kâ
+K
+K
+X~
+IÎ
+X
+IÎ
+Kî
+Hş
+H
+I~
+X
+ZB"Â$VÂDb6R†FW6&Æ÷VVFòâÆ26÷–2VF—FF26RwV&F,:â6–â&÷FV66œ;6â÷"6öçG&6\;â"Â$ÆRDb:—L:’L:—fW'&÷V–ÆÌ:’âÆW26÷–W2ÖöF–fœ:–W26W&öçBVç&Vv—7G,:–W26ç2&÷FV7F–öâ"Ö÷BFR76Râ"Â-Š­˜R˜Š­ŠÒ˜]˜M˜Dbâ‹=˜­Š­˜RŠİ˜‹‚Š}˜M˜m‹=ŠâŠ}˜M˜]‹Šı˜MŠ’˜]˜bŠı˜˜bŠİ˜]Š}˜­Š’Š˜=˜M˜]Š’˜]‹˜‹â"Â%Db
+hn
+j
+k.
+iR
+i^
+k
+kâ
+k
+jş
+kÎ
+x~
+i¾
+x~
+ZB
+k
+jî
+xŞ
+j®
+kî
+jn
+kş
+jB
+i^
+j®
+kò
+j®
+kî
+k
+i>
+jş
+kÎ
+kî
+k
+xŞ
+j
+k
+x
+k
+i^
+xŞ
+k~
+kâ
+i¾
+kî
+j
+kÎ
+kî
+hr
+k
+h.
+k
+i^
+xŞ
+k~
+kş
+jB
+k
+jÎ
+x~
+ZB"Â$òDbfö’FW6&Æ÷VVFòâ2<;7–2VF—FF26W,:6òwV&FF26VÒ&÷F\:|:6ò÷"Æg&×76Râ"Â%DbFVÆ‚F–'V¶â6Æ–æâ–ærF–VF—B¶âF—6–×âFçW&Æ–æGVævâ¶F6æF’â"Â%Dbª«í˜˜BŠı¸ÍŠrªı¸ÍŠr¸¹-¹BŠ­‹˜]¸Í˜R‹MŠı¸˜m˜-˜˜B›íŠ}‹2˜‹¨‚ª¹"Š­Šİ˜‹‚ª¹"Š‹­¸Í‹˜]Šİ˜˜‹‚¸˜«¢ªı¸Í¹B"Â%Db'–ÆòöFVÜHÖVæòâW&fVì:’¶÷–R'VF÷RVÆü[æVç’&W¢ö6‡&ç’†W6ÆVÒâ"Â%Db&öÆòöFöÖ¶çWL:’âW&fVì:’¼;7–R6VÆü[æ–&W¢ö6‡&ç’†W6ÆöÒâ"Â%Æ–²Db¦÷7FX"öF&Æö¶÷vç’âVG—F÷væR¶÷–R¦÷7FìHR¦—6æR&W¢ö6‡&öç’†<X&VÒâ"’À¢'&V6VçEöf–ÆW2#¢‚%&V6VçBf–ÆW2"Â.iÈ‹ùKÛşyJy¨Nih~K»b"Â.
+K
+Kî
+K"
+I^
+X
+J¾
+KÎ
+Kî
+H~
+K.
+X~
+H""Â$&6†—f÷2&V6–VçFW2"Â$f–6†–W'2,:–6VçG2"Â-Š}˜M˜]˜M˜Š}Š¢Š}˜MŠ=Ší˜­‹Š’"Â.
+k
+kî
+jî
+xŞ
+j®
+xŞ
+k
+jN
+kş
+iR
+j¾
+kî
+h~
+k""Â$f–6†V—&÷2&V6VçFW2"Â$&W&¶2FW&&'R"Â-ŠİŠ}˜M¸Í¸˜Š}Šm˜M¸Í«¢"Â$æVL:fì:’6÷V&÷'’"Â$æVL:fæR<;¦&÷'’"Â$÷7FFæ–RÆ–¶’"’À¢&æõ÷&V6VçEöf–ÆW2#¢‚$æò&V6VçBf–ÆW2"Â.k*iÈiÈ‹ùKÛşyJy¨Nih~K»b"Â.
+I^
+X¾
+H‚
+K
+Kî
+K"
+I^
+X
+J¾
+KÎ
+Kî
+H~
+K"
+J
+K
+X
+H""Â$æò†’&6†—f÷2&V6–VçFW2"Â$V7Vâf–6†–W",:–6VçB"Â-˜MŠrŠ­˜ŠÍŠò˜]˜M˜Š}Š¢Š=Ší˜­‹Š’"Â.
+i^
+x¾
+j
+x²
+k
+kî
+jî
+xŞ
+j®
+xŞ
+k
+jN
+kş
+iR
+j¾
+kî
+h~
+k"
+j
+x~
+hr"Â%6VÒf–6†V—&÷2&V6VçFW2"Â%F–F²F&W&¶2FW&&'R"Â-ª˜Šm¸ÂŠİŠ}˜M¸Í¸˜Š}Šm˜B˜m¸¸Í«¢"Â,[Ü:Fì:’æVL:fì:’6÷V&÷'’"Â,[Ö–FæRæVL:fæR<;¦&÷'’"Â$'&²÷7FFæ–6‚Æ–¼;7r"’À¢&6ÆV%÷&V6VçEöf–ÆW2#¢‚$6ÆV"&V6VçBf–ÆW2"Â.kˆ^™šNiÈ‹ùKÛşyJy¨Nih~K»b"Â.
+K
+Kî
+K"
+I^
+X
+J¾
+KÎ
+Kî
+H~
+K.
+X~
+H"
+K
+Kî
+J¾
+KÂ
+I^
+K
+X~
+H""Â$&÷'&"&6†—f÷2&V6–VçFW2"Â$Vff6W"ÆW2f–6†–W'2,:–6VçG2"Â-˜]‹=ŠÒŠ}˜M˜]˜M˜Š}Š¢Š}˜MŠ=Ší˜­‹Š’"Â.
+k
+kî
+jî
+xŞ
+j®
+xŞ
+k
+jN
+kş
+iR
+j¾
+kî
+h~
+k"
+jî
+x
+i¾
+x
+j‚"Â$Æ–×"f–6†V—&÷2&V6VçFW2"Â$†W2FgF"&W&¶2FW&&'R"Â-ŠİŠ}˜M¸Í¸˜Š}Šm˜M˜«¢ª¸Â˜¸‹‹=Š¢‹]Š}˜ª‹¸Í«¢"Â%g–Ö¦B6W¦æÒæVL:fì;Ö6‚6÷V&÷,Zò"Â%g–Ö¦ZR¦÷¦æÒæVL:fç–6‚<;¦&÷&÷b"Â%w–7§œY¼HrÆ—7LI’÷7FFæ–6‚Æ–¼;7r"’À¢'&V6VçEöf–ÆUöÖ—76–ær#¢‚%F†Rf–ÆR—2æòÆöævW"f–Æ&ÆS¥Æç·F‡Ò"Â.Šú^ih~K»n[{.KˆŞXúşyJûÉ¥Æç·F‡Ò"Â.
+J¾
+KÎ
+Kî
+H~
+K"
+H^
+JÂ
+H
+J®
+K.
+JÎ
+XŞ
+Jr
+J
+K
+X
+H"
+K
+Xƒ¥Æç·F‡Ò"Â$VÂ&6†—fò–æòW7L:F—7öæ–&ÆS¥Æç·F‡Ò"Â$ÆRf–6†–W"î(	–W7BÇW2F—7öæ–&ÆR¥Æç·F‡Ò"Â-˜M˜R˜­‹ŠòŠ}˜M˜]˜M˜˜]Š­Š}Šİ˜½Šs¥Æç·F‡Ò"Â.
+j¾
+kî
+h~
+k.
+iş
+kò
+hn
+k
+j®
+kî
+i>
+jş
+kÎ
+kâ
+jş
+kî
+i®
+xŞ
+i¾
+xr
+j
+kã¥Æç·F‡Ò"Â$òf–6†V—&ò¬:ì:6òW7L:F—7öì:×fVÃ¥Æç·F‡Ò"Â$&W&¶2F–F²Æv’FW'6VF–¥Æç·F‡Ò"Â-˜Š}Šm˜BŠ}Š‚Šı‹=Š­¸ÍŠ}Š‚˜m¸¸Í«¢¸¹#¥Æç·F‡Ò"Â%6÷V&÷"¦œ[âæVì:ÒF÷7GWì;Ó¥Æç·F‡Ò"Â%<;¦&÷"\[âæ–R¦RF÷7GWì;Ó¥Æç·F‡Ò"Â%Æ–²æ–R¦W7B§\[ÂF÷7LI—ç“¥Æç·F‡Ò"’À¢'&V6÷fW'•÷F—FÆR#¢‚%&V6÷fW"Vç6fVBv÷&²"Â.h.ZHŞiÊ®KùŞZÙy¨N[z^KÙÂ"Â.
+K
+K
+X~
+IÎ
+Xr
+J‚
+I~
+Hò
+I^
+Kî
+Jâ
+I^
+X²
+J®
+X
+J
+K
+XŞ
+J®
+XŞ
+K
+Kî
+J®
+XŞ
+JB
+I^
+K
+X~
+H""Â%&V7WW&"G&&¦òæòwV&FFò"Â%,:–7W:—&W"ÆRG&f–ÂæöâVç&Vv—7G,:’"Â-Š}‹=Š­‹Š}ŠıŠ’Š}˜M‹˜]˜B‹­˜­‹Š}˜M˜]Šİ˜˜‹‚"Â.
+h^
+k
+h.
+k
+i^
+xŞ
+k~
+kş
+jB
+i^
+kî
+iÂ
+j®
+x
+j
+k
+x
+jn
+xŞ
+j~
+kî
+k
+i^
+k
+x
+j‚"Â%&V7WW&"G&&Æ†òì:6òwV&FFò"Â%VÆ–†¶âV¶W&¦â–ær&VÇVÒF—6–×â"Â-‹­¸Í‹˜]Šİ˜˜‹‚ªŠ}˜RŠŠİŠ}˜Bª‹¸Í«¢"Â$ö&æ÷f—BæWVÆü[æVæ÷R,:6’"Â$ö&æ÷fœZRæWVÆü[æVì;¢,:7R"Â$öG§—6¶¢æ–W¦—6ìHR&<I’"’À¢'&V6÷fW'•÷VW7F–öâ#¢‚$æWGFöæv–DbVF—F÷"f÷VæBWFöÖF–6ÆÇ’6fVBVç6fVBv÷&²f÷"¶æÖWÒâ&W7F÷&R—Cò"Â$æWGFöæv–DbVF—F÷"h›îX‹K¨nK‹¢¶æÖWÒˆz®XªKùŞZÙy¨NiÊ®KùŞZÙ[z^KÙÎ8.iŠşY
+nh.ZHŞûÉò"Â$æWGFöæv–DbVF—F÷"
+I^
+X²¶æÖWÒ
+I^
+Xr
+K.
+Kş
+Hò
+K
+XŞ
+K^
+JN
+H2
+K
+K
+X~
+IÎ
+Kâ
+I~
+Jş
+Kâ
+I^
+Kî
+Jâ
+Jî
+Kş
+K.
+Kî
+ZB
+I^
+XŞ
+Jş
+Kâ
+H~
+K
+Xr
+J®
+X
+J
+K
+XŞ
+J®
+XŞ
+K
+Kî
+J®
+XŞ
+JB
+I^
+K
+X~
+H#ò"Â$æWGFöæv–DbVF—F÷"Væ6öçG,;2G&&¦òæòwV&FFòWFöÜ:F–6ÖVçFR&¶æÖWÒâ+ôFW6V&V7WW&&Æóò"Â$æWGFöæv–DbVF—F÷"G&÷Wl:’VâG&f–ÂæöâVç&Vv—7G,:’6WfVv&L:’WFöÖF—VVÖVçB÷W"¶æÖWÒâÆR&W7FW&W"ò"Â-‹Š½‹æWGFöæv–DbVF—F÷"‹˜M˜’‹˜]˜B‹­˜­‹˜]Šİ˜˜‹‚Š­˜RŠİ˜‹˜rŠ­˜M˜-Š}Šm˜­˜½Šr˜M˜M˜]˜M˜¶æÖWÒâ˜}˜BŠ­‹˜­ŠòŠ}‹=Š­‹Š}ŠıŠ­˜}‰ò"Â$æWGFöæv–DbVF—F÷"¶æÖWÒŞ
+hş
+k
+iÎ
+j
+xŞ
+jò
+k
+xŞ
+jÎ
+jş
+kÎ
+h.
+i^
+xŞ
+k
+kş
+jş
+kÎ
+jŞ
+kî
+jÎ
+xr
+k
+h.
+k
+i^
+xŞ
+k~
+kş
+jB
+i^
+kî
+iÂ
+in
+x
+h
+iÎ
+xr
+j®
+x~
+jş
+kÎ
+x~
+i¾
+x~
+ZB
+hş
+iş
+kò
+j®
+x
+j
+k
+x
+jn
+xŞ
+j~
+kî
+k
+i^
+k
+jÎ
+x~
+jƒò"Â$òæWGFöæv–DbVF—F÷"Væ6öçG&÷RG&&Æ†òì:6òwV&FFòWFöÖF–6ÖVçFR&¶æÖWÒâ&WFVæFR&V7WW,:ÖÆóò"Â$æWGFöæv–DbVF—F÷"ÖVæV×V¶âV¶W&¦â–ærF—6–×â÷FöÖF—2VçGV²¶æÖWÒâVÆ–†¶ãò"Â$æWGFöæv–DbVF—F÷"ª˜‚¶æÖWÒª¹"˜M¸Í¹"Ší˜ŠıªŠ}‹‹}˜‹›í‹˜]Šİ˜˜‹‚ª¸ÍŠrªı¸ÍŠrªŠ}˜R˜]˜MŠr¸¹-¹Bª¸ÍŠrŠ}‹=¹"ŠŠİŠ}˜Bª‹¸Í®zÚÚ$z{-®éÜj×ror de recuperaciÃ³n", "Ã‰chec de la rÃ©cupÃ©ration", "ÙØ´Ù„Øª Ø§Ù„Ø§Ø³ØªØ¹Ø§Ø¯Ø©", "à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦¬à§à¦¯à¦°à§à¦¥ à¦¹à¦¯à¦¼à§‡à¦›à§‡", "Falha na recuperaÃ§Ã£o", "Pemulihan gagal", "Ø¨Ø­Ø§Ù„ÛŒ Ù†Ø§Ú©Ø§Ù… ÛÙˆ Ú¯Ø¦ÛŒ", "ObnovenÃ­ se nezdaÅ™ilo", "Obnovenie zlyhalo", "Odzyskiwanie nie powiodÅ‚o siÄ™"),
     "recovery_failed_message": ("The recovery data could not be opened. It was preserved for diagnostics at:\n{path}\n\n{error}", "æ— æ³•æ‰“å¼€æ¢å¤æ•°æ®ã€‚æ•°æ®å·²ä¿ç•™ä»¥ä¾›è¯Šæ–­ï¼š\n{path}\n\n{error}", "à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤à¤¿ à¤¡à¥‡à¤Ÿà¤¾ à¤–à¥‹à¤²à¤¾ à¤¨à¤¹à¥€à¤‚ à¤œà¤¾ à¤¸à¤•à¤¾à¥¤ à¤¨à¤¿à¤¦à¤¾à¤¨ à¤•à¥‡ à¤²à¤¿à¤ à¤‡à¤¸à¥‡ à¤¯à¤¹à¤¾à¤ à¤¸à¥à¤°à¤•à¥à¤·à¤¿à¤¤ à¤°à¤–à¤¾ à¤—à¤¯à¤¾ à¤¹à¥ˆ:\n{path}\n\n{error}", "No se pudieron abrir los datos de recuperaciÃ³n. Se conservaron para diagnÃ³stico en:\n{path}\n\n{error}", "Les donnÃ©es de rÃ©cupÃ©ration nâ€™ont pas pu Ãªtre ouvertes. Elles ont Ã©tÃ© conservÃ©es Ã  des fins de diagnostic ici :\n{path}\n\n{error}", "ØªØ¹Ø°Ø± ÙØªØ­ Ø¨ÙŠØ§Ù†Ø§Øª Ø§Ù„Ø§Ø³ØªØ¹Ø§Ø¯Ø©. ØªÙ… Ø§Ù„Ø§Ø­ØªÙØ§Ø¸ Ø¨Ù‡Ø§ Ù„Ù„ØªØ´Ø®ÙŠØµ ÙÙŠ:\n{path}\n\n{error}", "à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦¡à§‡à¦Ÿà¦¾ à¦–à§‹à¦²à¦¾ à¦¯à¦¾à¦¯à¦¼à¦¨à¦¿à¥¤ à¦¤à§à¦°à§à¦Ÿà¦¿ à¦¨à¦¿à¦°à§à¦£à¦¯à¦¼à§‡à¦° à¦œà¦¨à§à¦¯ à¦à¦Ÿà¦¿ à¦à¦–à¦¾à¦¨à§‡ à¦°à¦¾à¦–à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡:\n{path}\n\n{error}", "NÃ£o foi possÃ­vel abrir os dados de recuperaÃ§Ã£o. Foram preservados para diagnÃ³stico em:\n{path}\n\n{error}", "Data pemulihan tidak dapat dibuka. Data disimpan untuk diagnosis di:\n{path}\n\n{error}", "Ø¨Ø­Ø§Ù„ÛŒ Ú©Ø§ ÚˆÛŒÙ¹Ø§ Ú©Ú¾ÙˆÙ„Ø§ Ù†ÛÛŒÚº Ø¬Ø§ Ø³Ú©Ø§Û” ØªØ´Ø®ÛŒØµ Ú©Û’ Ù„ÛŒÛ’ Ø§Ø³Û’ ÛŒÛØ§Úº Ù…Ø­ÙÙˆØ¸ Ø±Ú©Ú¾Ø§ Ú¯ÛŒØ§ ÛÛ’:\n{path}\n\n{error}", "Data pro obnovenÃ­ nelze otevÅ™Ã­t. Pro diagnostiku byla zachovÃ¡na zde:\n{path}\n\n{error}", "DÃ¡ta na obnovenie sa nepodarilo otvoriÅ¥. Na diagnostiku zostali uloÅ¾enÃ© tu:\n{path}\n\n{error}", "Nie moÅ¼na otworzyÄ‡ danych odzyskiwania. Zachowano je do diagnostyki w:\n{path}\n\n{error}"),
     "recovery_restored": ("Unsaved work was restored. Save the document to keep it.", "æœªä¿å­˜çš„å·¥ä½œå·²æ¢å¤ã€‚è¯·ä¿å­˜æ–‡æ¡£ä»¥ä¿ç•™è¿™äº›æ›´æ”¹ã€‚", "à¤¸à¤¹à¥‡à¤œà¤¾ à¤¨ à¤—à¤¯à¤¾ à¤•à¤¾à¤® à¤ªà¥à¤¨à¤°à¥à¤ªà¥à¤°à¤¾à¤ªà¥à¤¤ à¤¹à¥‹ à¤—à¤¯à¤¾à¥¤ à¤‡à¤¸à¥‡ à¤°à¤–à¤¨à¥‡ à¤•à¥‡ à¤²à¤¿à¤ à¤¦à¤¸à¥à¤¤à¤¾à¤µà¥‡à¤œà¤¼ à¤¸à¤¹à¥‡à¤œà¥‡à¤‚à¥¤", "Se recuperÃ³ el trabajo no guardado. Guarde el documento para conservarlo.", "Le travail non enregistrÃ© a Ã©tÃ© restaurÃ©. Enregistrez le document pour le conserver.", "ØªÙ…Øª Ø§Ø³ØªØ¹Ø§Ø¯Ø© Ø§Ù„Ø¹Ù…Ù„ ØºÙŠØ± Ø§Ù„Ù…Ø­ÙÙˆØ¸. Ø§Ø­ÙØ¸ Ø§Ù„Ù…Ø³ØªÙ†Ø¯ Ù„Ù„Ø§Ø­ØªÙØ§Ø¸ Ø¨Ù‡.", "à¦…à¦¸à¦‚à¦°à¦•à§à¦·à¦¿à¦¤ à¦•à¦¾à¦œ à¦ªà§à¦¨à¦°à§à¦¦à§à¦§à¦¾à¦° à¦•à¦°à¦¾ à¦¹à¦¯à¦¼à§‡à¦›à§‡à¥¤ à¦à¦Ÿà¦¿ à¦°à¦¾à¦–à¦¤à§‡ à¦¨à¦¥à¦¿à¦Ÿà¦¿ à¦¸à¦‚à¦°à¦•à§à¦·à¦£ à¦•à¦°à§à¦¨à¥¤", "O trabalho nÃ£o guardado foi recuperado. Guarde o documento para o conservar.", "Pekerjaan yang belum disimpan telah dipulihkan. Simpan dokumen untuk mempertahankannya.", "ØºÛŒØ± Ù…Ø­ÙÙˆØ¸ Ú©Ø§Ù… Ø¨Ø­Ø§Ù„ ÛÙˆ Ú¯ÛŒØ§ ÛÛ’Û” Ø§Ø³Û’ Ø¨Ø±Ù‚Ø±Ø§Ø± Ø±Ú©Ú¾Ù†Û’ Ú©Û’ Ù„ÛŒÛ’ Ø¯Ø³ØªØ§ÙˆÛŒØ² Ù…Ø­ÙÙˆØ¸ Ú©Ø±ÛŒÚºÛ”", "NeuloÅ¾enÃ¡ prÃ¡ce byla obnovena. ZachovÃ¡te ji uloÅ¾enÃ­m dokumentu.", "NeuloÅ¾enÃ¡ prÃ¡ca bola obnovenÃ¡. ZachovÃ¡te ju uloÅ¾enÃ­m dokumentu.", "Niezapisana praca zostaÅ‚a odzyskana. Zapisz dokument, aby jÄ… zachowaÄ‡."),
 })

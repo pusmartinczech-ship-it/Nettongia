@@ -12,9 +12,9 @@ from openpdf_editor.write_worker import (
 )
 
 
-def _snapshot(*, page_index: int = 0) -> RecoverySnapshot:
+def _snapshot(*, page_index: int = 0, pdf_bytes: bytes | None = None) -> RecoverySnapshot:
     return RecoverySnapshot(
-        pdf_bytes=PdfEngine.blank_document_bytes(420, 300),
+        pdf_bytes=pdf_bytes or PdfEngine.blank_document_bytes(420, 300),
         edits=(),
         inserted_texts=(
             TextPlacement(
@@ -68,6 +68,41 @@ def test_write_worker_reports_invalid_snapshot_without_partial_output(
     assert result is None
     assert error
     assert not output.exists()
+
+
+def test_write_worker_preserves_materialized_form_values(tmp_path: Path) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    widget = pymupdf.Widget()
+    widget.field_type = pymupdf.PDF_WIDGET_TYPE_TEXT
+    widget.field_name = "worker_form"
+    widget.field_value = "Before"
+    widget.rect = pymupdf.Rect(40, 40, 240, 70)
+    page.add_widget(widget)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    field = engine.form_fields()[0]
+    filled = engine.bytes_with_form_value(field.xref, "After")
+    engine.close()
+
+    output = tmp_path / "worker-form.pdf"
+    job, result_path = prepare_write_job(
+        tmp_path / "form-job",
+        _snapshot(pdf_bytes=filled),
+        output,
+        None,
+    )
+    assert run_write_job(job) == 0
+    result, error = read_write_result(result_path)
+    assert result is None
+    assert error is None
+    saved = PdfEngine()
+    saved.open(output)
+    assert saved.form_fields()[0].value == "After"
+    saved.close()
 
 
 def test_prepare_write_job_rejects_invalid_profile_and_extension(tmp_path: Path) -> None:

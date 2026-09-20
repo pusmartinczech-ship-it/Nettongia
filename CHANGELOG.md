@@ -2,6 +2,9 @@
 
 ## 0.19.0
 
+- Added a Forms sidebar for standard AcroForm text fields, check boxes, radio
+  buttons, combo boxes and list boxes, including protected read-only fields,
+  page navigation, Undo/Redo and saved-value preservation.
 - Fixed update checks for the published v0.19.0 public beta and other official
   prereleases while continuing to reject drafts and malformed metadata.
 - Made the default local and GitHub Windows build portable-only; installer
