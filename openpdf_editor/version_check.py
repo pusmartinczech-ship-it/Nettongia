@@ -15,7 +15,7 @@ from urllib.request import Request, urlopen
 from PySide6.QtCore import QObject, QRunnable, Signal
 
 
-CURRENT_RELEASE_API = "https://api.github.com/repos/pusmartinczech-ship-it/Nettongia/releases/latest"
+CURRENT_RELEASE_API = "https://api.github.com/repos/pusmartinczech-ship-it/Nettongia/releases?per_page=20"
 DEFAULT_RELEASE_PAGE = "https://github.com/pusmartinczech-ship-it/Nettongia/releases"
 _VERSION_RE = re.compile(r"^v?(\d+)\.(\d+)\.(\d+)$", re.IGNORECASE)
 MAX_RESPONSE_BYTES = 1024 * 1024
@@ -41,12 +41,11 @@ def is_newer(current: str, candidate: str) -> bool:
     return version_tuple(candidate) > version_tuple(current)
 
 
-def parse_release(payload: str) -> ReleaseInfo:
-    data = json.loads(payload)
+def _parse_release_data(data: object) -> ReleaseInfo:
     if not isinstance(data, dict):
         raise ValueError("GitHub release response is not an object")
-    if data.get("draft") or data.get("prerelease"):
-        raise ValueError("Only published stable releases are supported")
+    if data.get("draft"):
+        raise ValueError("Draft releases are not published")
     tag = data.get("tag_name")
     if not isinstance(tag, str):
         raise ValueError("GitHub release has no valid tag")
@@ -69,6 +68,29 @@ def parse_release(payload: str) -> ReleaseInfo:
     return ReleaseInfo(tag.lstrip("vV"), page_url, asset_url)
 
 
+def parse_release(payload: str) -> ReleaseInfo:
+    """Parse one published release, including an official public beta."""
+
+    return _parse_release_data(json.loads(payload))
+
+
+def parse_release_feed(payload: str) -> ReleaseInfo:
+    """Return the newest valid published release from a GitHub release feed."""
+
+    data = json.loads(payload)
+    if not isinstance(data, list):
+        raise ValueError("GitHub release response is not a list")
+    candidates: list[ReleaseInfo] = []
+    for item in data:
+        try:
+            candidates.append(_parse_release_data(item))
+        except ValueError:
+            continue
+    if not candidates:
+        raise ValueError("GitHub release feed has no valid published release")
+    return max(candidates, key=lambda release: version_tuple(release.version))
+
+
 def fetch_latest_release(timeout: float = 4.0) -> ReleaseInfo:
     request = Request(
         CURRENT_RELEASE_API,
@@ -81,7 +103,7 @@ def fetch_latest_release(timeout: float = 4.0) -> ReleaseInfo:
         payload = response.read(MAX_RESPONSE_BYTES + 1)
         if len(payload) > MAX_RESPONSE_BYTES:
             raise ValueError("Release metadata exceeds size limit")
-        return parse_release(payload.decode("utf-8"))
+        return parse_release_feed(payload.decode("utf-8"))
 
 
 class VersionCheckSignals(QObject):

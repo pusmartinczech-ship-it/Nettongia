@@ -2,6 +2,10 @@
 
 ## 0.19.0
 
+- Fixed update checks for the published v0.19.0 public beta and other official
+  prereleases while continuing to reject drafts and malformed metadata.
+- Made the default local and GitHub Windows build portable-only; installer
+  generation is now an explicit legacy opt-in.
 - Added native PDF sticky-note comments from a page-placement mode and standard
   yellow highlights from the text-object context menu.
 - Added a Comments sidebar for existing and new annotations, including page

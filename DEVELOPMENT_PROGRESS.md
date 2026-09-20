@@ -381,11 +381,18 @@ worker-process lifecycle state.
 
 ## Next stage
 
-Complete stage 8: configure the approved free SignPath Foundation project,
-sign the Windows candidate, then run the signed portable package and installer
-acceptance matrix on clean Windows 10 and Windows 11 systems together with the
-long-duration memory and final golden-PDF gates. Do not create a new release
-version unless every material gate passes.
+Continue the portable-only Windows acceptance matrix on clean Windows 10 and
+Windows 11 systems together with the long-duration memory and final golden-PDF
+gates. Do not create a new release version unless every material gate passes.
+
+## Completed checkpoint: public-beta updates and portable-only builds
+
+- Fixed update discovery for published GitHub prereleases such as the official
+  v0.19.0 public beta; draft releases and malformed or untrusted release data
+  remain rejected.
+- Changed the default local and hosted Windows build to create and upload only
+  the tested portable ZIP. Installer generation remains an explicit legacy
+  opt-in and is no longer part of the GitHub workflow.
 
 ## Completed release candidate: 0.18.0 page and source-image editing
 

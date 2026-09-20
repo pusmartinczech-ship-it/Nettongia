@@ -29,12 +29,7 @@ jobs:
         shell: powershell
         run: python ./tools/fetch_ocr_assets.py
 
-      - name: Install native build tools
-        shell: powershell
-        run: |
-          choco install innosetup --version=6.7.1 --allow-downgrade --yes --no-progress
-
-      - name: Build and self-test installer
+      - name: Build and self-test portable package
         shell: powershell
         run: ./tools/build_windows.ps1
 
@@ -77,13 +72,11 @@ jobs:
             throw "Clean portable package did not pass the complete OCR matrix."
           }
 
-      - name: Upload unsigned release candidate
-        id: upload-unsigned
+      - name: Upload portable release candidate
         uses: actions/upload-artifact@v4
         with:
-          name: Nettongia-PDF-Editor-Windows-unsigned
+          name: Nettongia-PDF-Editor-Windows-portable
           path: |
-            dist/installer/*.exe
             dist/*-portable.zip
             dist/self-test.json
             dist/distribution-size.json
@@ -127,24 +120,3 @@ jobs:
               --title "Nettongia PDF Editor $env:GITHUB_REF_NAME (unsigned public beta)" `
               --notes-file dist\release-notes.md
           }
-
-      - name: Submit free SignPath signing request
-        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
-        uses: signpath/github-action-submit-signing-request@v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG }}
-          artifact-configuration-slug: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
-          wait-for-completion: true
-          output-artifact-directory: dist/signed
-
-      - name: Upload signed release candidate
-        if: ${{ vars.SIGNPATH_ENABLED == 'true' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: Nettongia-PDF-Editor-Windows-signed
-          path: dist/signed
-          if-no-files-found: error

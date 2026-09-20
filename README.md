@@ -330,21 +330,22 @@ Vector text and graphics remain sharp in all profiles. Lossy profiles are intend
 - An existing cryptographic PDF signature becomes invalid after any content edit.
 - Print output is rendered page content rather than a vector-preserving PDF export; very large pages use the same safe render budget as the editor view.
 
-## Build a Windows EXE
+## Build a portable Windows version
 
-Install Python 3.12 and Inno Setup 6, then double-click `build_exe.bat`. The
+Install Python 3.12, then double-click `build_exe.bat`. The
 build uses `requirements-windows.lock`, verifies the five checked-in OCR models
 (it never downloads them), collects dependency license files, includes the
 complete corresponding source and runs the frozen executable self-test before
 creating:
 
-`dist\installer\Nettongia_PDF_Editor_<version>-x64.exe`
+`dist\Nettongia_PDF_Editor_<version>-portable.zip`
 
 The intermediate folder build remains at `dist\NettongiaPDFEditor`. Run
 `dist\NettongiaPDFEditor\NettongiaPDFEditor.exe --self-test result.json` to repeat its
-non-GUI open/render/save/inspection check. The GitHub workflow produces an
-unsigned artifact by default and can submit it to the free SignPath Foundation
-service after the project owner completes the one-time setup in `SIGNING.md`.
+non-GUI open/render/save/inspection check. The GitHub workflow builds, tests and
+publishes only the portable ZIP. An installer can still be built explicitly for
+legacy testing with `tools\build_windows.ps1 -IncludeInstaller` when Inno Setup
+6 is installed.
 
 ## Run the supplied-file tests
 

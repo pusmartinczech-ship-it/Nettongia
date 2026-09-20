@@ -10,6 +10,7 @@ from openpdf_editor.version_check import (
     ReleaseInfo,
     is_newer,
     parse_release,
+    parse_release_feed,
     version_tuple,
 )
 
@@ -57,10 +58,24 @@ def test_non_stable_tags_rejected(tag):
         version_tuple(tag)
 
 
-@pytest.mark.parametrize("flag", ["draft", "prerelease"])
-def test_unpublished_releases_rejected(flag):
+def test_draft_releases_rejected():
     with pytest.raises(ValueError):
-        parse_release(json.dumps({"tag_name": "v1.0.0", flag: True}))
+        parse_release(json.dumps({"tag_name": "v1.0.0", "draft": True}))
+
+
+def test_published_prerelease_is_supported():
+    release = parse_release(json.dumps({"tag_name": "v1.0.0", "prerelease": True}))
+    assert release.version == "1.0.0"
+
+
+def test_release_feed_selects_newest_valid_published_version():
+    payload = json.dumps([
+        {"tag_name": "v9.0.0", "draft": True},
+        {"tag_name": "not-a-version"},
+        {"tag_name": "v0.18.0"},
+        {"tag_name": "v0.19.0", "prerelease": True},
+    ])
+    assert parse_release_feed(payload).version == "0.19.0"
 
 
 def test_other_github_repository_is_not_trusted():
@@ -79,7 +94,7 @@ def test_transport_is_bounded_and_has_no_document_data(monkeypatch):
         def __exit__(self, *args): pass
         def read(self, limit):
             assert limit == module.MAX_RESPONSE_BYTES + 1
-            return b'{"tag_name":"v1.0.0"}'
+            return b'[{"tag_name":"v1.0.0"}]'
     def request(req, timeout):
         assert req.full_url == module.CURRENT_RELEASE_API
         assert req.data is None
