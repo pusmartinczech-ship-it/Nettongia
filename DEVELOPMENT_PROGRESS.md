@@ -1,6 +1,30 @@
 # Nettongia PDF Editor development progress
 
-Updated: 2026-09-17
+Updated: 2026-09-20
+
+## Update-check development checkpoint (version remains 0.19.0)
+
+- Added background GitHub stable-release checking on startup, limited to one
+  attempt per 24 hours, plus a manual Help action and persistent opt-out.
+- No document data is sent; normal connection metadata reaches GitHub. No
+  downloads, installation or replacement of the running application occurs.
+- GUI results are delivered through queued QObject slots, offline automatic
+  failures are silent, late results after close are ignored, and repeated
+  notifications for the same version are suppressed.
+- Corrected the unfinished implementation's initialization placement (it was
+  accidentally inside recovery writing instead of window construction).
+- Targeted update/i18n tests: **25 passed**. Full regression in the isolated
+  update-check worktree: **158 passed, 14 skipped, 7 failed**; all seven
+  failures are missing external PDF fixtures, not assertion failures.
+- Missing fixtures: Test_Word_PDF.pdf, KS_Teil_3_2_04_ROB-KUKA_KL.pdf,
+  0015_001.pdf. OCR assets were restored from a local copy and verified against
+  the repository's SHA-256 manifest before the full run.
+- Golden audit passed: zero changed pixels on all three unchanged pages and
+  zero changed pixels outside allowed edit regions.
+- No new ZIP or version bump. Windows verification and full fixture regression
+  remain pending. Annotations/comments are not implemented by this checkpoint.
+- Next: restore original test PDFs, rerun the complete suite and Windows gate,
+  then prepare a separately versioned portable candidate.
 
 ## 0.19.0 page-rotation and portable-publication candidate
 

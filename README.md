@@ -2,6 +2,23 @@
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
+### Update checking (development checkpoint)
+
+On startup the editor checks GitHub's latest stable release in the background,
+at most once per 24 hours. Disable this in **Help > Automatically check for
+updates (GitHub)** for fully offline operation. **Help > Check for updates...**
+always permits a manual check. Offline failures do not interrupt editing;
+manual checks report when the service is unavailable. A new release is announced
+once per version, with an option to open its GitHub release page. Nothing is
+automatically downloaded or installed and your portable copy is never replaced.
+
+This optional request sends no PDF content, filenames, paths or diagnostics.
+GitHub receives normal connection information, including your IP address and a
+generic application user-agent. The last check time, last announced version and
+enabled setting are stored locally with the existing application preferences.
+Disabling checks also suppresses notifications from any request already running.
+The update feature is not yet part of a newly verified Windows release.
+
 Version 0.19.0 adds reversible page rotation. Rotate the selected page left or right from the **Page** menu, the thumbnail context menu, or the `Ctrl+Shift+Left` / `Ctrl+Shift+Right` shortcuts. The page contents, pending text, images and visual signatures rotate together, and Undo/Redo restores the complete earlier state. Rotated source pages now expose their text and image selection geometry in the visible orientation, so editing remains aligned after a quarter turn.
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.

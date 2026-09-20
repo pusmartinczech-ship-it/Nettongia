@@ -29,7 +29,9 @@ from PySide6.QtCore import (
     QThreadPool,
     QTimer,
     Qt,
+    QUrl,
     Signal,
+    Slot,
 )
 from PySide6.QtGui import (
     QAction,
@@ -47,6 +49,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QTransform,
+    QDesktopServices,
 )
 from PySide6.QtPrintSupport import (
     QAbstractPrintDialog,
@@ -148,6 +151,7 @@ from .ocr_coordinator import OcrContext, OcrCoordinator, OcrOutcome
 from .tile_worker import RenderedTile
 from .tile_render_coordinator import TileRenderCoordinator, TileRenderOutcome
 from .workers import RecoveryTask, SearchTask
+from .version_check import ReleaseInfo, VersionCheckTask, is_newer
 
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
@@ -1835,6 +1839,11 @@ class MainWindow(QMainWindow):
         self._recovery_pool = QThreadPool(self)
         self._recovery_pool.setMaxThreadCount(1)
         self._recovery_pool.setExpiryTimeout(30_000)
+        self._update_pool = QThreadPool(self)
+        self._update_pool.setMaxThreadCount(1)
+        self._update_task: VersionCheckTask | None = None
+        self._update_manual = False
+        self._update_closing = False
         self._document_writer = DocumentWriteCoordinator(self)
         self._document_writer.completed.connect(self._document_write_finished)
         self._write_progress: QProgressDialog | None = None
@@ -2559,6 +2568,14 @@ class MainWindow(QMainWindow):
         self.export_diagnostics_action.triggered.connect(self.export_diagnostics)
         self.about_action = QAction("About", self)
         self.about_action.triggered.connect(self.show_about)
+        self.check_for_updates_action = QAction("Check for updates...", self)
+        self.check_for_updates_action.triggered.connect(self.check_for_updates)
+        self.automatic_updates_action = QAction(self)
+        self.automatic_updates_action.setCheckable(True)
+        self.automatic_updates_action.setChecked(
+            str(self.settings.value("updates/enabled", "true")).lower() == "true"
+        )
+        self.automatic_updates_action.toggled.connect(self._set_automatic_updates)
 
     def _make_menu(self) -> None:
         self.file_menu = self.menuBar().addMenu("File")
@@ -2626,6 +2643,8 @@ class MainWindow(QMainWindow):
 
         self.help_menu = self.menuBar().addMenu("Help")
         self.help_menu.addAction(self.export_diagnostics_action)
+        self.help_menu.addAction(self.check_for_updates_action)
+        self.help_menu.addAction(self.automatic_updates_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
@@ -2920,6 +2939,8 @@ class MainWindow(QMainWindow):
             self.delete_image_action: "delete_image",
             self.signature_action: "add_signature",
             self.export_diagnostics_action: "export_diagnostics",
+            self.check_for_updates_action: "check_for_updates",
+            self.automatic_updates_action: "automatic_updates",
             self.about_action: "about",
         }
         for action, key in action_keys.items():
@@ -6544,6 +6565,93 @@ class MainWindow(QMainWindow):
             "\n".join(body_lines),
         )
 
+    def start_automatic_update_check(self) -> None:
+        """Check at most once per day without delaying application startup."""
+
+        self._start_update_check(manual=False)
+
+    def check_for_updates(self) -> None:
+        """Run an immediate, user-requested release check."""
+
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if self._update_closing or self._update_task is not None:
+            return
+        now = int(datetime.now().timestamp())
+        if not manual:
+            if not self.automatic_updates_action.isChecked():
+                return
+            try:
+                last_check = int(self.settings.value("updates/last_check_epoch", 0))
+            except (TypeError, ValueError):
+                last_check = 0
+            if 0 <= now - last_check < 24 * 60 * 60:
+                return
+        self.settings.setValue("updates/last_check_epoch", now)
+        task = VersionCheckTask()
+        self._update_task = task
+        self._update_manual = manual
+        task.signals.finished.connect(self._update_check_finished, Qt.QueuedConnection)
+        task.signals.failed.connect(self._update_check_failed, Qt.QueuedConnection)
+        self._update_pool.start(task)
+
+    @Slot(bool)
+    def _set_automatic_updates(self, enabled: bool) -> None:
+        self.settings.setValue("updates/enabled", enabled)
+
+    @Slot(object)
+    def _update_check_finished(self, release: object) -> None:
+        manual = self._update_manual
+        self._update_task = None
+        if self._update_closing or (not manual and not self.automatic_updates_action.isChecked()):
+            return
+        if not isinstance(release, ReleaseInfo):
+            self._update_check_failed()
+            return
+        if not is_newer(__version__, release.version):
+            if manual:
+                QMessageBox.information(
+                    self,
+                    self.trx("update_check_title"),
+                    self.trx("no_update_available", version=__version__),
+                )
+            return
+        try:
+            last_notified = str(self.settings.value("updates/last_notified_version", ""))
+        except (TypeError, ValueError):
+            last_notified = ""
+        if not manual and last_notified == release.version:
+            return
+        self.settings.setValue("updates/last_notified_version", release.version)
+        prompt = QMessageBox(self)
+        prompt.setIcon(QMessageBox.Information)
+        prompt.setWindowTitle(self.trx("update_check_title"))
+        prompt.setText(
+            self.trx(
+                "update_available",
+                version=release.version,
+                current=__version__,
+            )
+        )
+        open_button = prompt.addButton(
+            self.trx("open_release_page"), QMessageBox.AcceptRole
+        )
+        prompt.addButton(self.trx("cancel"), QMessageBox.RejectRole)
+        prompt.exec()
+        if prompt.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl(release.page_url))
+
+    @Slot()
+    def _update_check_failed(self) -> None:
+        self._update_task = None
+        if self._update_manual and not self._update_closing:
+            QMessageBox.information(
+                self,
+                self.trx("update_check_title"),
+                self.trx("update_check_failed"),
+            )
+
     def closeEvent(self, event) -> None:
         if self._document_write_in_progress():
             event.ignore()
@@ -6551,6 +6659,7 @@ class MainWindow(QMainWindow):
         if self.page_view.inline_editing:
             self.page_view.finish_inline_editor(True)
         if self._maybe_save_changes():
+            self._update_closing = True
             self._clear_recovery(wait=True)
             self._cancel_document_inspection()
             self._cancel_search_task()

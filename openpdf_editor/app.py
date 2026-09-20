@@ -117,6 +117,7 @@ def main() -> int:
 
         def finish_startup() -> None:
             window.offer_recovery()
+            window.start_automatic_update_check()
             if len(sys.argv) > 1:
                 window.open_pdf(sys.argv[1])
 
