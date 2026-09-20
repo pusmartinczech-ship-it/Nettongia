@@ -109,6 +109,7 @@ from .diagnostics import (
     file_size_bucket,
 )
 from .engine import (
+    AnnotationInfo,
     CompressionResult,
     ImageDeletion,
     ImagePlacement,
@@ -941,6 +942,7 @@ class PageView(QGraphicsView):
     delete_text_requested = Signal(str, str)
     cancel_requested = Signal()
     placement_clicked = Signal(float, float)
+    comment_placement_clicked = Signal(float, float)
     delete_image_requested = Signal(str, str)
     source_image_edit_requested = Signal(str)
     visual_transform_requested = Signal(str, str, object, float)
@@ -952,6 +954,7 @@ class PageView(QGraphicsView):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._placement_mode = False
+        self._comment_placement_mode = False
         self._delete_image_mode = False
         self._source_image_edit_mode = False
         self._text_box_mode = False
@@ -1002,6 +1005,10 @@ class PageView(QGraphicsView):
         return self._placement_mode
 
     @property
+    def comment_placement_mode(self) -> bool:
+        return self._comment_placement_mode
+
+    @property
     def text_box_mode(self) -> bool:
         return self._text_box_mode
 
@@ -1017,6 +1024,7 @@ class PageView(QGraphicsView):
     def special_mode(self) -> bool:
         return (
             self._placement_mode
+            or self._comment_placement_mode
             or self._delete_image_mode
             or self._source_image_edit_mode
             or self._text_box_mode
@@ -1372,9 +1380,25 @@ class PageView(QGraphicsView):
     def set_placement_mode(self, enabled: bool) -> None:
         self._placement_mode = enabled
         if enabled:
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+        self._refresh_interaction_mode()
+        for item in self.scene().items():
+            if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
+                item.refresh_mode()
+            elif isinstance(item, TextObjectGraphicsItem):
+                item.refresh_visuals()
+
+    def set_comment_placement_mode(self, enabled: bool) -> None:
+        self._comment_placement_mode = enabled
+        if enabled:
+            self._placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self.finish_inline_editor(False)
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
@@ -1386,6 +1410,7 @@ class PageView(QGraphicsView):
         self._delete_image_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
         self._refresh_interaction_mode()
@@ -1401,6 +1426,7 @@ class PageView(QGraphicsView):
         self._source_image_edit_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._text_box_mode = False
         self._refresh_interaction_mode()
@@ -1416,6 +1442,7 @@ class PageView(QGraphicsView):
         self._text_box_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self.finish_inline_editor(False)
@@ -1443,7 +1470,7 @@ class PageView(QGraphicsView):
         else:
             self._enable_hand_drag_pending = False
             self.setDragMode(requested_drag_mode)
-        if self._placement_mode or self._text_box_mode:
+        if self._placement_mode or self._comment_placement_mode or self._text_box_mode:
             cursor = Qt.CrossCursor
         elif self._delete_image_mode or self._source_image_edit_mode:
             cursor = Qt.PointingHandCursor
@@ -1471,6 +1498,12 @@ class PageView(QGraphicsView):
             point = self.mapToScene(event.position().toPoint())
             if self.sceneRect().contains(point):
                 self.placement_clicked.emit(point.x(), point.y())
+                event.accept()
+                return
+        if self._comment_placement_mode and event.button() == Qt.LeftButton:
+            point = self.mapToScene(event.position().toPoint())
+            if self.sceneRect().contains(point):
+                self.comment_placement_clicked.emit(point.x(), point.y())
                 event.accept()
                 return
         explicit_clear = False
@@ -1884,6 +1917,18 @@ class MainWindow(QMainWindow):
         self.outline_tree.setAnimated(False)
         self.outline_tree.clicked.connect(self._outline_clicked)
 
+        self.comments_list = QListWidget()
+        self.comments_list.setObjectName("commentsList")
+        self.comments_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.comments_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.comments_list.itemDoubleClicked.connect(self._comment_item_activated)
+        self.comments_list.currentItemChanged.connect(
+            lambda _current, _previous: self._update_actions()
+        )
+        self.comments_list.customContextMenuRequested.connect(
+            self._show_comment_context_menu
+        )
+
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setObjectName("sidebarTabs")
         self.sidebar_tabs.setDocumentMode(True)
@@ -1898,6 +1943,11 @@ class MainWindow(QMainWindow):
             self.outline_tree,
             self.style().standardIcon(QStyle.SP_DirIcon),
             "Tree",
+        )
+        self.comments_tab_index = self.sidebar_tabs.addTab(
+            self.comments_list,
+            self.style().standardIcon(QStyle.SP_MessageBoxInformation),
+            "Comments",
         )
         self.sidebar_tabs.setTabEnabled(self.outline_tab_index, False)
 
@@ -1918,6 +1968,10 @@ class MainWindow(QMainWindow):
         self.page_view.delete_text_requested.connect(self._delete_text, Qt.QueuedConnection)
         self.page_view.cancel_requested.connect(self.cancel_special_mode)
         self.page_view.placement_clicked.connect(self._place_visual, Qt.QueuedConnection)
+        self.page_view.comment_placement_clicked.connect(
+            self._place_comment,
+            Qt.QueuedConnection,
+        )
         self.page_view.delete_image_requested.connect(self._delete_visual, Qt.QueuedConnection)
         self.page_view.source_image_edit_requested.connect(
             self._promote_source_image,
@@ -2549,6 +2603,13 @@ class MainWindow(QMainWindow):
         self.signature_action = QAction(self._asset_icon("signature.svg"), "Add visual signature...", self)
         self.signature_action.setToolTip("Draw or type a rotatable visual signature")
         self.signature_action.triggered.connect(self.add_signature)
+        self.add_comment_action = QAction("Add comment...", self)
+        self.add_comment_action.setShortcut(QKeySequence("Ctrl+Alt+M"))
+        self.add_comment_action.triggered.connect(self.start_add_comment)
+        self.edit_comment_action = QAction("Edit selected comment...", self)
+        self.edit_comment_action.triggered.connect(self.edit_selected_comment)
+        self.delete_comment_action = QAction("Delete selected annotation", self)
+        self.delete_comment_action.triggered.connect(self.delete_selected_annotation)
         self.compress_action = QAction(self._asset_icon("compress.svg"), "Compress PDF...", self)
         self.compress_action.setToolTip("Save an optimized or image-compressed copy")
         self.compress_action.triggered.connect(self.compress_pdf)
@@ -2613,6 +2674,7 @@ class MainWindow(QMainWindow):
         self.insert_menu.addSeparator()
         self.insert_menu.addAction(self.add_image_action)
         self.insert_menu.addAction(self.signature_action)
+        self.insert_menu.addAction(self.add_comment_action)
 
         self.page_menu = self.menuBar().addMenu("Page")
         self.page_menu.addAction(self.move_page_up_action)
@@ -2630,6 +2692,11 @@ class MainWindow(QMainWindow):
         self.image_menu.addAction(self.add_image_action)
         self.image_menu.addAction(self.edit_original_image_action)
         self.image_menu.addAction(self.delete_image_action)
+
+        self.comments_menu = self.menuBar().addMenu("Comments")
+        self.comments_menu.addAction(self.add_comment_action)
+        self.comments_menu.addAction(self.edit_comment_action)
+        self.comments_menu.addAction(self.delete_comment_action)
 
         self.view_menu = self.menuBar().addMenu("View")
         self.view_menu.addAction(self.zoom_in_action)
@@ -2896,6 +2963,7 @@ class MainWindow(QMainWindow):
             self.insert_menu: "menu_insert",
             self.page_menu: "menu_page",
             self.image_menu: "menu_image",
+            self.comments_menu: "comments",
             self.view_menu: "menu_view",
             self.appearance_menu: "menu_appearance",
             self.language_menu: "menu_language",
@@ -2938,6 +3006,9 @@ class MainWindow(QMainWindow):
             self.edit_original_image_action: "edit_original_image",
             self.delete_image_action: "delete_image",
             self.signature_action: "add_signature",
+            self.add_comment_action: "add_comment",
+            self.edit_comment_action: "edit_comment",
+            self.delete_comment_action: "delete_annotation",
             self.export_diagnostics_action: "export_diagnostics",
             self.check_for_updates_action: "check_for_updates",
             self.automatic_updates_action: "automatic_updates",
@@ -2980,6 +3051,7 @@ class MainWindow(QMainWindow):
         self._update_find_controls()
         self.sidebar_tabs.setTabText(self.pages_tab_index, self.trx("sidebar_pages"))
         self.sidebar_tabs.setTabText(self.outline_tab_index, self.trx("sidebar_tree"))
+        self.sidebar_tabs.setTabText(self.comments_tab_index, self.trx("comments"))
         self.sidebar_tabs.setTabToolTip(
             self.outline_tab_index,
             "" if self._outline_model and self._outline_model.has_entries else self.trx("no_document_tree"),
@@ -2995,6 +3067,7 @@ class MainWindow(QMainWindow):
         for index in range(self.page_list.count()):
             self.page_list.item(index).setText(f"{self.trx('page_word')} {index + 1}")
         if self.engine.is_open:
+            self._refresh_annotations_sidebar()
             self._render_current_page()
         else:
             self.status_label.setText(self.trx("open_to_begin"))
@@ -3242,6 +3315,7 @@ class MainWindow(QMainWindow):
         self._sync_zoom_display()
         self._load_thumbnails(self.current_page)
         self._load_outline_tree(select_tree=True)
+        self._refresh_annotations_sidebar()
         self._select_and_render_page(self.current_page)
         self._update_window_title()
         self._update_actions()
@@ -3365,6 +3439,7 @@ class MainWindow(QMainWindow):
         self.history = []
         self.history_index = -1
         self.page_list.clear()
+        self.comments_list.clear()
         self._clear_text_toolbar_target()
         self._sync_zoom_display()
         self.status_label.setText(self.trx("open_to_begin"))
@@ -3759,6 +3834,59 @@ class MainWindow(QMainWindow):
         self._select_and_render_page(entry.page_index)
         if entry.target_rect is not None:
             self.page_view.center_on_pdf_rect(entry.target_rect)
+
+    def _refresh_annotations_sidebar(self) -> None:
+        self.comments_list.clear()
+        if not self.engine.is_open:
+            return
+        try:
+            annotations = self.engine.annotations()
+        except Exception:
+            return
+        for annotation in annotations:
+            content = " ".join(annotation.content.split())
+            summary = content[:72] + ("…" if len(content) > 72 else "")
+            if not summary:
+                summary = self.trx("annotation_without_comment")
+            item = QListWidgetItem(
+                f"{self.trx('page_word')} {annotation.page_index + 1} · "
+                f"{annotation.type_name}\n{summary}"
+            )
+            item.setData(Qt.UserRole, annotation.xref)
+            item.setToolTip(annotation.content or annotation.type_name)
+            self.comments_list.addItem(item)
+
+    def _annotation_for_item(self, item: QListWidgetItem | None) -> AnnotationInfo | None:
+        if item is None or not self.engine.is_open:
+            return None
+        try:
+            xref = int(item.data(Qt.UserRole))
+        except (TypeError, ValueError):
+            return None
+        return next(
+            (annotation for annotation in self.engine.annotations() if annotation.xref == xref),
+            None,
+        )
+
+    def _comment_item_activated(self, item: QListWidgetItem) -> None:
+        annotation = self._annotation_for_item(item)
+        if annotation is None:
+            return
+        if self.current_page != annotation.page_index:
+            self._select_and_render_page(annotation.page_index)
+        self.page_view.center_on_pdf_rect(annotation.bbox)
+
+    def _show_comment_context_menu(self, position) -> None:
+        item = self.comments_list.itemAt(position)
+        if item is None:
+            return
+        self.comments_list.setCurrentItem(item)
+        menu = QMenu(self)
+        edit = menu.addAction(self.trx("edit_comment"))
+        edit.triggered.connect(self.edit_selected_comment)
+        delete = menu.addAction(self.trx("delete_annotation"))
+        delete.triggered.connect(self.delete_selected_annotation)
+        self._exec_context_menu(menu, self.comments_list.mapToGlobal(position))
 
     def _thumbnail_placeholder_icon(self) -> QIcon:
         pixmap = QPixmap(100, 132)
@@ -4834,6 +4962,12 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, text_kind=kind, text_key=key:
                 self._delete_text(text_kind, text_key)
             )
+            menu.addSeparator()
+            highlight = menu.addAction(self.trx("highlight_text"))
+            highlight.triggered.connect(
+                lambda _checked=False, text_kind=kind, text_key=key:
+                self._highlight_text(text_kind, text_key)
+            )
         elif category == "visual":
             if kind == "source":
                 edit = menu.addAction(self.trx("edit_original_image"))
@@ -4882,6 +5016,7 @@ class MainWindow(QMainWindow):
             self._load_thumbnails(target_page)
             self._load_outline_tree(select_tree=tree_was_selected)
             self._start_document_inspection()
+        self._refresh_annotations_sidebar()
         self._select_and_render_page(target_page)
         self._update_actions()
         self._update_window_title()
@@ -5249,6 +5384,134 @@ class MainWindow(QMainWindow):
             return
         self._begin_visual_placement("signature", payload, width, description, rotation)
 
+    def start_add_comment(self) -> None:
+        if not self.engine.is_open:
+            return
+        self.cancel_special_mode()
+        self.page_view.set_comment_placement_mode(True)
+        self.statusBar().showMessage(self.trx("comment_place_hint"))
+
+    def _materialize_annotation_change(self, callback, target_page: int) -> bool:
+        """Apply one native annotation mutation as a complete Undo/Redo state."""
+
+        temporary = PdfEngine()
+        try:
+            composed = self.engine.compose_bytes(
+                self.edits.values(),
+                self.signatures,
+                self.inserted_images,
+                self.deleted_images,
+                self.inserted_texts,
+            )
+            temporary.load_bytes(composed)
+            changed_bytes = callback(temporary)
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("comments"), str(exc))
+            return False
+        finally:
+            temporary.close()
+        self._push_state(EditorState(changed_bytes, {}, [], [], [], []), target_page)
+        return True
+
+    def _place_comment(self, scene_x: float, scene_y: float) -> None:
+        if not self.engine.is_open or not self.page_view.comment_placement_mode:
+            return
+        content, accepted = QInputDialog.getMultiLineText(
+            self,
+            self.trx("add_comment"),
+            self.trx("comment_text_prompt"),
+        )
+        if not accepted:
+            self.cancel_special_mode()
+            return
+        if not content.strip():
+            QMessageBox.information(
+                self,
+                self.trx("add_comment"),
+                self.trx("comment_empty"),
+            )
+            return
+        page_index = self.current_page
+        point = (scene_x / self.render_scale, scene_y / self.render_scale)
+        self.cancel_special_mode()
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_text_comment(page_index, point, content),
+            page_index,
+        ):
+            self._operation_log.record(
+                "annotation_added",
+                operation="comment_add",
+                outcome="succeeded",
+                page_index=page_index,
+            )
+            self.statusBar().showMessage(self.trx("comment_added"), 4000)
+
+    def _highlight_text(self, kind: str, key: str) -> None:
+        spec = self._text_spec(kind, key)
+        if spec is None:
+            return
+        self.cancel_special_mode()
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_highlight(spec.page_index, spec.bbox),
+            spec.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_added",
+                operation="highlight_add",
+                outcome="succeeded",
+                page_index=spec.page_index,
+            )
+            self.statusBar().showMessage(self.trx("highlight_added"), 4000)
+
+    def edit_selected_comment(self) -> None:
+        annotation = self._annotation_for_item(self.comments_list.currentItem())
+        if annotation is None:
+            return
+        content, accepted = QInputDialog.getMultiLineText(
+            self,
+            self.trx("edit_comment"),
+            self.trx("comment_text_prompt"),
+            annotation.content,
+        )
+        if not accepted or content == annotation.content:
+            return
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_annotation_content(annotation.xref, content),
+            annotation.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_updated",
+                operation="annotation_update",
+                outcome="succeeded",
+                page_index=annotation.page_index,
+            )
+            self.statusBar().showMessage(self.trx("comment_updated"), 4000)
+
+    def delete_selected_annotation(self) -> None:
+        annotation = self._annotation_for_item(self.comments_list.currentItem())
+        if annotation is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.trx("delete_annotation"),
+            self.trx("delete_annotation_question"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_without_annotation(annotation.xref),
+            annotation.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_deleted",
+                operation="annotation_delete",
+                outcome="succeeded",
+                page_index=annotation.page_index,
+            )
+            self.statusBar().showMessage(self.trx("annotation_deleted"), 4000)
+
     def _begin_visual_placement(
         self,
         kind: str,
@@ -5481,6 +5744,7 @@ class MainWindow(QMainWindow):
         self._pending_visual = None
         self._pending_text_box = None
         self.page_view.set_placement_mode(False)
+        self.page_view.set_comment_placement_mode(False)
         self.page_view.set_delete_image_mode(False)
         self.page_view.set_source_image_edit_mode(False)
         self.page_view.set_text_box_mode(False)
@@ -6414,6 +6678,7 @@ class MainWindow(QMainWindow):
             self.add_image_action,
             self.delete_image_action,
             self.signature_action,
+            self.add_comment_action,
         ):
             action.setEnabled(opened and not ocr_running)
         self.ocr_page_action.setEnabled(opened and not busy)
@@ -6446,6 +6711,9 @@ class MainWindow(QMainWindow):
             or self._text_toolbar_reference is not None
         )
         self.delete_text_action.setEnabled(opened and selected_text)
+        selected_annotation = self.comments_list.currentItem() is not None
+        self.edit_comment_action.setEnabled(opened and selected_annotation and not busy)
+        self.delete_comment_action.setEnabled(opened and selected_annotation and not busy)
         if hasattr(self, "text_font_box"):
             for widget in (
                 self.text_font_box,

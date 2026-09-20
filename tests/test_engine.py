@@ -641,3 +641,48 @@ def test_failed_post_save_validation_preserves_existing_target(
 
     assert target.read_bytes() == original
     assert not list(tmp_path.glob(".existing.pdf.*.tmp"))
+
+
+def test_native_comment_can_be_listed_edited_and_deleted() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+
+    with_comment = engine.bytes_with_text_comment(
+        0,
+        (72, 84),
+        "Check this dimension",
+        author="Reviewer",
+    )
+    engine.load_bytes(with_comment)
+    annotations = engine.annotations()
+    assert len(annotations) == 1
+    comment = annotations[0]
+    assert comment.type_name == "Text"
+    assert comment.content == "Check this dimension"
+    assert comment.author == "Reviewer"
+    assert comment.page_index == 0
+
+    engine.load_bytes(
+        engine.bytes_with_annotation_content(comment.xref, "Dimension verified")
+    )
+    edited = engine.annotations()[0]
+    assert edited.content == "Dimension verified"
+
+    engine.load_bytes(engine.bytes_without_annotation(edited.xref))
+    assert engine.annotations() == []
+
+
+def test_highlight_uses_visible_coordinates_on_rotated_page() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+    bbox = (60.0, 80.0, 160.0, 100.0)
+
+    engine.load_bytes(engine.bytes_with_highlight(0, bbox, content="Important"))
+    annotation = engine.annotations()[0]
+    assert annotation.type_name == "Highlight"
+    assert annotation.content == "Important"
+    assert annotation.bbox[0] == pytest.approx(bbox[0], abs=8)
+    assert annotation.bbox[1] == pytest.approx(bbox[1], abs=8)
+    assert annotation.bbox[2] == pytest.approx(bbox[2], abs=8)
+    assert annotation.bbox[3] == pytest.approx(bbox[3], abs=8)

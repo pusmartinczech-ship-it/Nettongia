@@ -382,6 +382,73 @@ def test_page_rotation_is_undoable_and_available_from_thumbnail_menu(
     app.processEvents()
 
 
+def test_native_comments_and_highlights_are_listed_and_undoable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((50, 90), "COMMENT TARGET", fontsize=20)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getMultiLineText",
+        lambda *args, **kwargs: ("Verify the drawing note", True),
+    )
+    window.start_add_comment()
+    assert window.page_view.comment_placement_mode
+    window._place_comment(100 * window.render_scale, 120 * window.render_scale)
+    assert len(window.engine.annotations()) == 1
+    assert window.comments_list.count() == 1
+    assert "Verify the drawing note" in window.comments_list.item(0).text()
+    assert window.history_index == 1
+
+    run = window.engine.text_runs(0)[0]
+    window._highlight_text("source", run.key)
+    assert [item.type_name for item in window.engine.annotations()] == ["Text", "Highlight"]
+    assert window.comments_list.count() == 2
+    assert window.history_index == 2
+
+    window.undo()
+    assert [item.type_name for item in window.engine.annotations()] == ["Text"]
+    assert window.comments_list.count() == 1
+    window.redo()
+    assert len(window.engine.annotations()) == 2
+
+    window.comments_list.setCurrentRow(0)
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getMultiLineText",
+        lambda *args, **kwargs: ("Updated review comment", True),
+    )
+    window.edit_selected_comment()
+    assert window.engine.annotations()[0].content == "Updated review comment"
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.comments_list.setCurrentRow(0)
+    window.delete_selected_annotation()
+    assert len(window.engine.annotations()) == 1
+    window.undo()
+    assert len(window.engine.annotations()) == 2
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_source_image_click_is_non_mutating_and_first_drag_preserves_jpeg(tmp_path: Path) -> None:
     app = _application()
     image = QImage(240, 100, QImage.Format_RGB888)

@@ -19,6 +19,21 @@ enabled setting are stored locally with the existing application preferences.
 Disabling checks also suppresses notifications from any request already running.
 The update feature is not yet part of a newly verified Windows release.
 
+### Comments and highlights (development checkpoint)
+
+Use **Comments > Add comment...** or `Ctrl+Alt+M`, then click the page and enter
+the note text. Nettongia writes a standard native PDF sticky-note annotation,
+not a flattened picture. The new **Comments** tab lists both newly created and
+existing annotations; double-click an entry to open its page and location, or
+right-click it to edit its comment text or delete it.
+
+Right-click editable source or inserted text and choose **Highlight text** to
+add a standard yellow PDF highlight. Comments, edits, deletions and highlights
+are single Undo/Redo operations, remain visible in other compatible PDF
+readers, and are included when the document is saved. The workflow is
+translated in all 21 interface languages. This checkpoint has not yet been
+published as a new Windows release.
+
 Version 0.19.0 adds reversible page rotation. Rotate the selected page left or right from the **Page** menu, the thumbnail context menu, or the `Ctrl+Shift+Left` / `Ctrl+Shift+Right` shortcuts. The page contents, pending text, images and visual signatures rotate together, and Undo/Redo restores the complete earlier state. Rotated source pages now expose their text and image selection geometry in the visible orientation, so editing remains aligned after a quarter turn.
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.

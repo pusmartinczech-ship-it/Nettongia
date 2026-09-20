@@ -200,6 +200,18 @@ class OutlineEntry:
     _cursor: object = field(repr=False, compare=False)
 
 
+@dataclass(frozen=True)
+class AnnotationInfo:
+    """A stable, user-facing description of one native PDF annotation."""
+
+    xref: int
+    page_index: int
+    type_name: str
+    content: str
+    author: str
+    bbox: tuple[float, float, float, float]
+
+
 class PdfEngine:
     def __init__(self) -> None:
         self.path: Path | None = None
@@ -282,6 +294,28 @@ class PdfEngine:
     def page_rect(self, page_index: int) -> pymupdf.Rect:
         self._require_open()
         return pymupdf.Rect(self._source[page_index].rect)
+
+    def annotations(self) -> list[AnnotationInfo]:
+        """Return native PDF annotations without keeping PyMuPDF proxies alive."""
+
+        self._require_open()
+        result: list[AnnotationInfo] = []
+        for page_index in range(self._source.page_count):
+            page = self._source[page_index]
+            for annotation in page.annots() or ():
+                info = annotation.info or {}
+                rect = self._view_rect(page, annotation.rect)
+                result.append(
+                    AnnotationInfo(
+                        xref=int(annotation.xref),
+                        page_index=page_index,
+                        type_name=str(annotation.type[1] or "Annotation"),
+                        content=str(info.get("content") or ""),
+                        author=str(info.get("title") or ""),
+                        bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                    )
+                )
+        return result
 
     @staticmethod
     def _view_rect(
@@ -901,6 +935,114 @@ class PdfEngine:
                 deflate_fonts=True,
                 use_objstms=1,
             )
+        finally:
+            document.close()
+
+    def bytes_with_text_comment(
+        self,
+        page_index: int,
+        point: tuple[float, float],
+        content: str,
+        *,
+        author: str = "",
+    ) -> bytes:
+        """Return a PDF containing a native sticky-note annotation."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        if not content.strip():
+            raise ValueError("A comment cannot be empty.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_point = pymupdf.Point(float(point[0]), float(point[1]))
+            page_point = self._mapped_point(page, view_point, to_view=False)
+            annotation = page.add_text_annot(page_point, content.strip())
+            annotation.set_info(
+                title=author.strip(),
+                content=content.strip(),
+                subject="Nettongia comment",
+            )
+            annotation.update()
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_highlight(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+        *,
+        content: str = "",
+        author: str = "",
+    ) -> bytes:
+        """Return a PDF containing a native yellow highlight annotation."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 0.5 or view_rect.height < 0.5:
+                raise ValueError("The selected text area is unavailable.")
+            # A plain Rect loses the text-baseline direction on rotated pages.
+            # Preserve the visible corner order in an explicit Quad so the
+            # highlight remains horizontal to the user.
+            quad = pymupdf.Quad(
+                self._mapped_point(page, view_rect.top_left, to_view=False),
+                self._mapped_point(page, view_rect.top_right, to_view=False),
+                self._mapped_point(page, view_rect.bottom_left, to_view=False),
+                self._mapped_point(page, view_rect.bottom_right, to_view=False),
+            )
+            annotation = page.add_highlight_annot(quad)
+            annotation.set_info(
+                title=author.strip(),
+                content=content.strip(),
+                subject="Nettongia highlight",
+            )
+            annotation.set_colors(stroke=(1.0, 0.82, 0.0))
+            annotation.update(opacity=0.45)
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_annotation_content(
+        self,
+        annotation_xref: int,
+        content: str,
+    ) -> bytes:
+        """Return a PDF with one annotation's comment text changed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for annotation in page.annots() or ():
+                    if int(annotation.xref) != int(annotation_xref):
+                        continue
+                    info = annotation.info or {}
+                    annotation.set_info(
+                        title=str(info.get("title") or ""),
+                        content=content.strip(),
+                        subject=str(info.get("subject") or ""),
+                    )
+                    annotation.update()
+                    return self._serialize(document)
+            raise ValueError("The annotation is no longer available.")
+        finally:
+            document.close()
+
+    def bytes_without_annotation(self, annotation_xref: int) -> bytes:
+        """Return a PDF with one native annotation removed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for annotation in page.annots() or ():
+                    if int(annotation.xref) == int(annotation_xref):
+                        page.delete_annot(annotation)
+                        return self._serialize(document)
+            raise ValueError("The annotation is no longer available.")
         finally:
             document.close()
 

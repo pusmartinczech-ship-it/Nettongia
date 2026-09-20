@@ -2,6 +2,27 @@
 
 Updated: 2026-09-20
 
+## Annotation and comment development checkpoint (version remains 0.19.0)
+
+- Added native PDF sticky-note comments through **Comments > Add comment...**
+  / `Ctrl+Alt+M` and direct placement on the current page.
+- Added a Comments sidebar that discovers existing annotations, navigates to
+  their page and position, and provides editing and deletion commands.
+- Added standard native PDF text highlighting to the right-click menu for
+  original and inserted text. Explicit quadrilateral geometry keeps highlights
+  aligned on pages carrying `/Rotate`.
+- Comment insertion, editing, deletion and highlighting each create one full
+  Undo/Redo state and materialize pending text/image/signature edits first, so
+  no unsaved work is lost or left visually detached.
+- Added privacy-safe diagnostic event categories without recording comment or
+  document content. Added complete translations for all 21 interface languages.
+- Local regression after restoring the integrity-pinned OCR models: **161
+  passed, 21 conditional fixture/platform tests skipped**.
+- Golden-PDF audit passed: all three unchanged pages remained pixel exact and
+  the representative edit changed zero pixels outside its allowed regions.
+- No version bump, ZIP or public release was created. The next gates are the
+  golden-PDF audit and GitHub-hosted Windows package workflow.
+
 ## Update-check development checkpoint (version remains 0.19.0)
 
 - Added background GitHub stable-release checking on startup, limited to one

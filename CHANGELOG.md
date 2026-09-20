@@ -2,6 +2,13 @@
 
 ## 0.19.0
 
+- Added native PDF sticky-note comments from a page-placement mode and standard
+  yellow highlights from the text-object context menu.
+- Added a Comments sidebar for existing and new annotations, including page
+  navigation, comment editing and deletion.
+- Made comment insertion, editing, deletion and text highlighting reversible
+  Undo/Redo operations, with correct geometry on rotated pages and all 21 UI
+  languages.
 - Added clockwise and counter-clockwise page rotation from the Page menu, the
   thumbnail context menu and keyboard shortcuts.
 - Made page rotation one reversible history operation that keeps page content,
