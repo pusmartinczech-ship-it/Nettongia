@@ -938,6 +938,7 @@ class PageView(QGraphicsView):
     pointer_interaction_finished = Signal()
     page_refresh_requested = Signal()
     new_text_box_requested = Signal(object)
+    redaction_area_requested = Signal(object, int)
     text_transform_requested = Signal(str, str, object)
     text_selection_changed = Signal(object)
     delete_text_requested = Signal(str, str)
@@ -959,6 +960,7 @@ class PageView(QGraphicsView):
         self._delete_image_mode = False
         self._source_image_edit_mode = False
         self._text_box_mode = False
+        self._redaction_mode = False
         self._text_drag_origin: QPointF | None = None
         self._text_drag_item: QGraphicsRectItem | None = None
         self._inline_proxy = None
@@ -1014,6 +1016,10 @@ class PageView(QGraphicsView):
         return self._text_box_mode
 
     @property
+    def redaction_mode(self) -> bool:
+        return self._redaction_mode
+
+    @property
     def inline_editing(self) -> bool:
         return self._inline_editor is not None
 
@@ -1029,6 +1035,7 @@ class PageView(QGraphicsView):
             or self._delete_image_mode
             or self._source_image_edit_mode
             or self._text_box_mode
+            or self._redaction_mode
             or self.inline_editing
         )
 
@@ -1385,6 +1392,7 @@ class PageView(QGraphicsView):
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
@@ -1399,6 +1407,7 @@ class PageView(QGraphicsView):
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
             self.finish_inline_editor(False)
         self._refresh_interaction_mode()
         for item in self.scene().items():
@@ -1414,6 +1423,7 @@ class PageView(QGraphicsView):
             self._comment_placement_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1430,6 +1440,7 @@ class PageView(QGraphicsView):
             self._comment_placement_mode = False
             self._delete_image_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1446,6 +1457,7 @@ class PageView(QGraphicsView):
             self._comment_placement_mode = False
             self._delete_image_mode = False
             self._source_image_edit_mode = False
+            self._redaction_mode = False
             self.finish_inline_editor(False)
         if not enabled:
             self._clear_text_drag()
@@ -1455,6 +1467,19 @@ class PageView(QGraphicsView):
                 item.refresh_mode()
             elif isinstance(item, TextObjectGraphicsItem):
                 item.refresh_visuals()
+
+    def set_redaction_mode(self, enabled: bool) -> None:
+        self._redaction_mode = enabled
+        if enabled:
+            self._placement_mode = False
+            self._comment_placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self.finish_inline_editor(False)
+        if not enabled:
+            self._clear_text_drag()
+        self._refresh_interaction_mode()
 
     def _refresh_interaction_mode(self) -> None:
         requested_drag_mode = (
@@ -1471,7 +1496,12 @@ class PageView(QGraphicsView):
         else:
             self._enable_hand_drag_pending = False
             self.setDragMode(requested_drag_mode)
-        if self._placement_mode or self._comment_placement_mode or self._text_box_mode:
+        if (
+            self._placement_mode
+            or self._comment_placement_mode
+            or self._text_box_mode
+            or self._redaction_mode
+        ):
             cursor = Qt.CrossCursor
         elif self._delete_image_mode or self._source_image_edit_mode:
             cursor = Qt.PointingHandCursor
@@ -1482,15 +1512,18 @@ class PageView(QGraphicsView):
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.NoButton:
             self._pointer_interaction_active = True
-        if self._text_box_mode and event.button() == Qt.LeftButton:
+        if (self._text_box_mode or self._redaction_mode) and event.button() == Qt.LeftButton:
             point = self.mapToScene(event.position().toPoint())
             if self.sceneRect().contains(point):
                 self._text_drag_origin = point
                 self._text_drag_item = QGraphicsRectItem(QRectF(point, point))
-                pen = QPen(self.text_accent, 1.8, Qt.DashLine)
+                accent = QColor("#e53935") if self._redaction_mode else self.text_accent
+                pen = QPen(accent, 1.8, Qt.DashLine)
                 pen.setCosmetic(True)
                 self._text_drag_item.setPen(pen)
-                self._text_drag_item.setBrush(QColor(self.text_accent.red(), self.text_accent.green(), self.text_accent.blue(), 30))
+                self._text_drag_item.setBrush(
+                    QColor(accent.red(), accent.green(), accent.blue(), 45)
+                )
                 self._text_drag_item.setZValue(90)
                 self.scene().addItem(self._text_drag_item)
                 event.accept()
@@ -1536,7 +1569,11 @@ class PageView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        if self._text_box_mode and self._text_drag_origin is not None and self._text_drag_item is not None:
+        if (
+            (self._text_box_mode or self._redaction_mode)
+            and self._text_drag_origin is not None
+            and self._text_drag_item is not None
+        ):
             point = self.mapToScene(event.position().toPoint())
             rect = QRectF(self._text_drag_origin, point).normalized().intersected(self.sceneRect())
             self._text_drag_item.setRect(rect)
@@ -1547,7 +1584,7 @@ class PageView(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:
         try:
             if (
-                self._text_box_mode
+                (self._text_box_mode or self._redaction_mode)
                 and self._text_drag_origin is not None
                 and event.button() == Qt.LeftButton
             ):
@@ -1555,7 +1592,8 @@ class PageView(QGraphicsView):
                 rect = QRectF(self._text_drag_origin, end).normalized().intersected(
                     self.sceneRect()
                 )
-                if rect.width() < 16 or rect.height() < 12:
+                redaction = self._redaction_mode
+                if not redaction and (rect.width() < 16 or rect.height() < 12):
                     width = min(220.0 * self.render_scale, self.sceneRect().width())
                     height = min(60.0 * self.render_scale, self.sceneRect().height())
                     left = min(
@@ -1574,9 +1612,14 @@ class PageView(QGraphicsView):
                     rect.bottom() / self.render_scale,
                 )
                 self._text_box_mode = False
+                self._redaction_mode = False
                 self._clear_text_drag()
                 self._refresh_interaction_mode()
-                self.new_text_box_requested.emit(bbox)
+                if redaction:
+                    if rect.width() / self.render_scale >= 1.0 and rect.height() / self.render_scale >= 1.0:
+                        self.redaction_area_requested.emit(bbox, self._page_generation)
+                else:
+                    self.new_text_box_requested.emit(bbox)
                 event.accept()
                 return
             super().mouseReleaseEvent(event)
@@ -1808,6 +1851,7 @@ class MainWindow(QMainWindow):
         self.history_index = -1
         self._pending_visual: tuple[str, bytes, float, str, float] | None = None
         self._pending_text_box: tuple[str, tuple[float, float, float, float]] | None = None
+        self._redaction_target_page: int | None = None
         self._syncing_text_toolbar = False
         self._text_toolbar_reference: tuple[str, str] | None = None
         self._text_toolbar_preserved_family: str | None = None
@@ -1982,6 +2026,10 @@ class MainWindow(QMainWindow):
         self.page_view.pointer_interaction_finished.connect(self._resume_deferred_render)
         self.page_view.page_refresh_requested.connect(self._render_current_page)
         self.page_view.new_text_box_requested.connect(self._create_text_box)
+        self.page_view.redaction_area_requested.connect(
+            self._confirm_redaction,
+            Qt.QueuedConnection,
+        )
         self.page_view.text_transform_requested.connect(
             self._transform_text,
             Qt.QueuedConnection,
@@ -2634,6 +2682,9 @@ class MainWindow(QMainWindow):
         self.delete_comment_action.triggered.connect(self.delete_selected_annotation)
         self.edit_form_action = QAction("Edit selected form field...", self)
         self.edit_form_action.triggered.connect(self.edit_selected_form_field)
+        self.redact_area_action = QAction("Permanently redact area...", self)
+        self.redact_area_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self.redact_area_action.triggered.connect(self.start_redact_area)
         self.compress_action = QAction(self._asset_icon("compress.svg"), "Compress PDF...", self)
         self.compress_action.setToolTip("Save an optimized or image-compressed copy")
         self.compress_action.triggered.connect(self.compress_pdf)
@@ -2689,6 +2740,7 @@ class MainWindow(QMainWindow):
         self.edit_menu.addAction(self.find_previous_action)
         self.edit_menu.addSeparator()
         self.edit_menu.addAction(self.delete_text_action)
+        self.edit_menu.addAction(self.redact_area_action)
 
         self.insert_menu = self.menuBar().addMenu("Insert")
         self.insert_menu.addAction(self.add_text_action)
@@ -3038,6 +3090,7 @@ class MainWindow(QMainWindow):
             self.edit_comment_action: "edit_comment",
             self.delete_comment_action: "delete_annotation",
             self.edit_form_action: "edit_form_field",
+            self.redact_area_action: "redact_area",
             self.export_diagnostics_action: "export_diagnostics",
             self.check_for_updates_action: "check_for_updates",
             self.automatic_updates_action: "automatic_updates",
@@ -5522,6 +5575,55 @@ class MainWindow(QMainWindow):
         self.page_view.set_comment_placement_mode(True)
         self.statusBar().showMessage(self.trx("comment_place_hint"))
 
+    def start_redact_area(self) -> None:
+        if (
+            not self.engine.is_open
+            or self._write_process is not None
+            or self._ocr_process is not None
+        ):
+            return
+        self.cancel_special_mode()
+        self._redaction_target_page = self.current_page
+        self.page_view.set_redaction_mode(True)
+        self.statusBar().showMessage(self.trx("redaction_draw_hint"))
+
+    def _confirm_redaction(
+        self,
+        bbox: tuple[float, float, float, float],
+        page_generation: int,
+    ) -> None:
+        target_page = self._redaction_target_page
+        self._redaction_target_page = None
+        if (
+            target_page is None
+            or target_page != self.current_page
+            or page_generation != self.page_view._page_generation
+            or not self.engine.is_open
+        ):
+            return
+        answer = QMessageBox.warning(
+            self,
+            self.trx("redaction_title"),
+            self.trx("redaction_confirm"),
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        if answer != QMessageBox.Yes:
+            self.statusBar().showMessage(self.trx("redaction_cancelled"), 3000)
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_redaction(target_page, bbox),
+            target_page,
+            self.trx("redaction_title"),
+        ):
+            self._operation_log.record(
+                "area_redacted",
+                operation="redact",
+                outcome="succeeded",
+                page_index=target_page,
+            )
+            self.statusBar().showMessage(self.trx("redaction_complete"), 5000)
+
     def _materialize_pdf_change(
         self,
         callback,
@@ -5972,11 +6074,13 @@ class MainWindow(QMainWindow):
             self.page_view.finish_inline_editor(True)
         self._pending_visual = None
         self._pending_text_box = None
+        self._redaction_target_page = None
         self.page_view.set_placement_mode(False)
         self.page_view.set_comment_placement_mode(False)
         self.page_view.set_delete_image_mode(False)
         self.page_view.set_source_image_edit_mode(False)
         self.page_view.set_text_box_mode(False)
+        self.page_view.set_redaction_mode(False)
         self.statusBar().clearMessage()
 
     def step_zoom(self, direction: int) -> None:
@@ -6908,6 +7012,7 @@ class MainWindow(QMainWindow):
             self.delete_image_action,
             self.signature_action,
             self.add_comment_action,
+            self.redact_area_action,
         ):
             action.setEnabled(opened and not ocr_running)
         self.ocr_page_action.setEnabled(opened and not busy)

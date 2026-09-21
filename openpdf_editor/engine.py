@@ -1119,6 +1119,58 @@ class PdfEngine:
         finally:
             document.close()
 
+    def bytes_with_redaction(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+    ) -> bytes:
+        """Permanently remove page content inside a visible rectangle.
+
+        The rectangle uses the same rotated, on-screen coordinate system as
+        rendering and selection.  Overlapping annotations and form widgets
+        are removed as well so their values or comments cannot remain hidden
+        behind the black rectangle.
+        """
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 1.0 or view_rect.height < 1.0:
+                raise ValueError("The selected redaction area is too small.")
+            page_rect = self._page_rect_from_view(page, view_rect)
+
+            annotations = list(page.annots() or ())
+            if any(item.type[0] == pymupdf.PDF_ANNOT_REDACT for item in annotations):
+                raise ValueError(
+                    "This page already contains unapplied redaction marks. "
+                    "Remove them before creating a permanent redaction."
+                )
+            for annotation in annotations:
+                if not (pymupdf.Rect(annotation.rect) & page_rect).is_empty:
+                    page.delete_annot(annotation)
+            for widget in list(page.widgets() or ()):
+                if not (pymupdf.Rect(widget.rect) & page_rect).is_empty:
+                    page.delete_widget(widget)
+
+            page.add_redact_annot(
+                page_rect,
+                fill=(0.0, 0.0, 0.0),
+                cross_out=False,
+            )
+            applied = page.apply_redactions(
+                images=pymupdf.PDF_REDACT_IMAGE_PIXELS,
+                graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED,
+                text=pymupdf.PDF_REDACT_TEXT_REMOVE,
+            )
+            if not applied:
+                raise RuntimeError("The redaction could not be applied.")
+            return self._serialize(document)
+        finally:
+            document.close()
+
     def bytes_with_annotation_content(
         self,
         annotation_xref: int,

@@ -531,6 +531,48 @@ def test_acroform_sidebar_edits_fields_with_undo_redo(
     app.processEvents()
 
 
+def test_area_redaction_is_confirmed_and_supports_undo_redo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((60, 100), "VISIBLE SECRET-97531", fontsize=18)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    secret_rect = window.engine._source[0].search_for("SECRET-97531")[0]
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.start_redact_area()
+    assert window.page_view.redaction_mode
+    window._confirm_redaction(tuple(secret_rect), window.page_view._page_generation)
+
+    assert "SECRET-97531" not in window.engine._source[0].get_text()
+    assert window.history_index == 1
+    assert window.has_unsaved_changes
+    window.undo()
+    assert "SECRET-97531" in window.engine._source[0].get_text()
+    window.redo()
+    assert "SECRET-97531" not in window.engine._source[0].get_text()
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_source_image_click_is_non_mutating_and_first_drag_preserves_jpeg(tmp_path: Path) -> None:
     app = _application()
     image = QImage(240, 100, QImage.Format_RGB888)

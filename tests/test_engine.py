@@ -767,3 +767,96 @@ def test_acroform_fields_can_be_listed_changed_and_saved(tmp_path: Path) -> None
     assert saved["approved"].checked is True
     assert saved["country"].value == "Poland"
     reopened.close()
+
+
+def test_area_redaction_removes_content_and_overlapping_pdf_objects() -> None:
+    secret = "CUSTOMER-SECRET-48291"
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((45, 70), "Public heading", fontsize=14)
+    page.insert_text((45, 125), secret, fontsize=16)
+    secret_rect = page.search_for(secret)[0]
+    page.draw_rect(secret_rect + (-4, -4, 4, 4), color=(1, 0, 0), width=2)
+    note = page.add_text_annot(secret_rect.top_left, "ANNOTATION-SECRET")
+    note.update()
+    widget = fitz.Widget()
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.field_name = "private_value"
+    widget.field_value = "FORM-SECRET"
+    widget.rect = secret_rect
+    page.add_widget(widget)
+    page.insert_link({"kind": fitz.LINK_URI, "from": secret_rect, "uri": "https://example.invalid/private"})
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    redacted = engine.bytes_with_redaction(0, tuple(secret_rect))
+    result = fitz.open(stream=redacted, filetype="pdf")
+    try:
+        result_page = result[0]
+        extracted = result_page.get_text()
+        assert "Public heading" in extracted
+        assert secret not in extracted
+        assert list(result_page.annots() or ()) == []
+        assert list(result_page.widgets() or ()) == []
+        assert result_page.get_links() == []
+
+        pixmap = result_page.get_pixmap(alpha=False)
+        center = fitz.Point(
+            (secret_rect.x0 + secret_rect.x1) / 2,
+            (secret_rect.y0 + secret_rect.y1) / 2,
+        )
+        pixel = pixmap.pixel(int(center.x), int(center.y))
+        assert max(pixel[:3]) < 20
+
+        searchable = bytearray()
+        for xref in range(1, result.xref_length()):
+            searchable.extend(result.xref_object(xref, compressed=False).encode("utf-8"))
+            stream = result.xref_stream(xref)
+            if stream:
+                searchable.extend(stream)
+        for forbidden in (secret, "ANNOTATION-SECRET", "FORM-SECRET"):
+            assert forbidden.encode() not in searchable
+    finally:
+        result.close()
+
+
+def test_area_redaction_uses_visible_coordinates_on_rotated_page() -> None:
+    secret = "ROTATED-SECRET"
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((80, 110), secret, fontsize=18)
+    page.set_rotation(90)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    page = engine._source[0]
+    visible_rect = page.search_for(secret)[0] * page.rotation_matrix
+    redacted = engine.bytes_with_redaction(0, tuple(visible_rect))
+    result = fitz.open(stream=redacted, filetype="pdf")
+    try:
+        assert secret not in result[0].get_text()
+        pixmap = result[0].get_pixmap(alpha=False)
+        center = fitz.Point(
+            (visible_rect.x0 + visible_rect.x1) / 2,
+            (visible_rect.y0 + visible_rect.y1) / 2,
+        )
+        assert max(pixmap.pixel(int(center.x), int(center.y))[:3]) < 20
+    finally:
+        result.close()
+
+
+def test_area_redaction_rejects_existing_unapplied_redaction_marks() -> None:
+    document = fitz.open()
+    page = document.new_page(width=300, height=200)
+    page.add_redact_annot((20, 20, 80, 50))
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    with pytest.raises(ValueError, match="unapplied redaction"):
+        engine.bytes_with_redaction(0, (100, 100, 180, 150))

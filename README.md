@@ -34,6 +34,20 @@ readers, and are included when the document is saved. The workflow is
 translated in all 21 interface languages. This checkpoint has not yet been
 published as a new Windows release.
 
+### Permanent redaction (development checkpoint)
+
+Choose **Edit > Permanently redact area...** or press `Ctrl+Shift+R`, then drag
+a rectangle over sensitive page content and confirm the operation. Nettongia
+physically removes intersecting text, image pixels, vector content, links,
+comments and form fields, then fills the selected area in black. The operation
+is reversible with Undo/Redo until the document is saved.
+
+Redaction applies only to the selected area on the current page. It does not
+remove another occurrence elsewhere in the document, document metadata or
+attachments. A confirmation dialog states this scope before the change is
+made. Pages containing unapplied redaction annotations are rejected to avoid
+silently applying marks that the user did not select in Nettongia.
+
 Version 0.19.0 adds reversible page rotation. Rotate the selected page left or right from the **Page** menu, the thumbnail context menu, or the `Ctrl+Shift+Left` / `Ctrl+Shift+Right` shortcuts. The page contents, pending text, images and visual signatures rotate together, and Undo/Redo restores the complete earlier state. Rotated source pages now expose their text and image selection geometry in the visible orientation, so editing remains aligned after a quarter turn.
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.

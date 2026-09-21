@@ -2,6 +2,12 @@
 
 ## 0.19.0
 
+- Added permanent rectangular redaction from the Edit menu. Selected text,
+  image pixels, vector content, links, comments and form fields are removed
+  before a black replacement area is written, with confirmation and Undo/Redo.
+- Added regressions that inspect extracted text, PDF object streams, rendered
+  pixels, rotated-page geometry and overlapping interactive objects after
+  redaction.
 - Added a Forms sidebar for standard AcroForm text fields, check boxes, radio
   buttons, combo boxes and list boxes, including protected read-only fields,
   page navigation, Undo/Redo and saved-value preservation.
