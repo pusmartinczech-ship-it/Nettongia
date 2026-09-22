@@ -226,6 +226,7 @@ class FormFieldInfo:
     choices: tuple[str, ...]
     bbox: tuple[float, float, float, float]
     read_only: bool
+    required: bool
     multiline: bool
     checked: bool
     on_value: str
@@ -241,6 +242,7 @@ class FormFieldSpec:
     value: str = ""
     choices: tuple[str, ...] = ()
     read_only: bool = False
+    required: bool = False
     multiline: bool = False
 
 
@@ -360,6 +362,7 @@ class PdfEngine:
             pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
             pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
             pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
         }
         for page_index in range(self._source.page_count):
             page = self._source[page_index]
@@ -391,6 +394,7 @@ class PdfEngine:
                         choices=choices,
                         bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
                         read_only=bool(flags & pymupdf.PDF_FIELD_IS_READ_ONLY),
+                        required=bool(flags & pymupdf.PDF_FIELD_IS_REQUIRED),
                         multiline=bool(
                             field_type == pymupdf.PDF_WIDGET_TYPE_TEXT
                             and flags & (1 << 12)
@@ -442,6 +446,49 @@ class PdfEngine:
         finally:
             document.close()
 
+    def bytes_with_cleared_form_values(self) -> bytes:
+        """Return a PDF with editable AcroForm values reset to an empty state."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        changed = False
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    flags = int(widget.field_flags or 0)
+                    if flags & pymupdf.PDF_FIELD_IS_READ_ONLY:
+                        continue
+                    field_type = int(widget.field_type or 0)
+                    if field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_TEXT,
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        # PyMuPDF intentionally ignores an empty assignment.
+                        # Generate a visually blank appearance with one space,
+                        # then store the canonical AcroForm value as empty.
+                        widget.field_value = " "
+                        widget.update()
+                        document.xref_set_key(widget.xref, "V", "()")
+                    elif field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                        pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                    ):
+                        widget.field_value = "Off"
+                    else:
+                        continue
+                    if field_type not in (
+                        pymupdf.PDF_WIDGET_TYPE_TEXT,
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        widget.update()
+                    changed = True
+            if not changed:
+                raise ValueError("This document has no editable form values.")
+            return self._serialize(document)
+        finally:
+            document.close()
+
     def bytes_with_new_form_field(
         self,
         page_index: int,
@@ -457,6 +504,7 @@ class PdfEngine:
             pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
             pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
             pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
         }
         if int(spec.type_code) not in supported:
             raise ValueError("This form field type cannot be created.")
@@ -499,6 +547,8 @@ class PdfEngine:
             widget.text_font = "Helv"
             widget.text_fontsize = 11
             flags = pymupdf.PDF_FIELD_IS_READ_ONLY if spec.read_only else 0
+            if spec.required:
+                flags |= pymupdf.PDF_FIELD_IS_REQUIRED
             if spec.type_code == pymupdf.PDF_WIDGET_TYPE_TEXT:
                 if spec.multiline:
                     flags |= pymupdf.PDF_TX_FIELD_IS_MULTILINE
@@ -508,7 +558,10 @@ class PdfEngine:
                 widget.text_fontsize = 0
                 if spec.value.lower() in {"1", "true", "yes", "on", "checked"}:
                     widget.field_value = True
-            else:
+            elif spec.type_code in (
+                pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            ):
                 widget.choice_values = list(choices)
                 widget.field_value = spec.value if spec.value in choices else choices[0]
             widget.field_flags = flags

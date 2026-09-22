@@ -166,6 +166,9 @@ class FormFieldDialog(QDialog):
         self.type_box.addItem(
             self._tr("form_type_list"), pymupdf.PDF_WIDGET_TYPE_LISTBOX
         )
+        self.type_box.addItem(
+            self._tr("form_type_signature"), pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+        )
         self.name_edit = QLineEdit(suggested_name)
         self.name_edit.setClearButtonEnabled(True)
         self.label_edit = QLineEdit()
@@ -176,6 +179,7 @@ class FormFieldDialog(QDialog):
         self.default_checked = QCheckBox(self._tr("form_default_checked"))
         self.multiline = QCheckBox(self._tr("form_multiline"))
         self.read_only = QCheckBox(self._tr("form_read_only"))
+        self.required = QCheckBox(self._tr("form_required"))
 
         form = QFormLayout()
         form.addRow(self._tr("form_field_type"), self.type_box)
@@ -185,6 +189,7 @@ class FormFieldDialog(QDialog):
         form.addRow(self._tr("form_choices"), self.choices_edit)
         form.addRow("", self.default_checked)
         form.addRow("", self.multiline)
+        form.addRow("", self.required)
         form.addRow("", self.read_only)
 
         hint = QLabel(self._tr("form_shared_name_hint"))
@@ -269,6 +274,7 @@ class FormFieldDialog(QDialog):
             value=value,
             choices=self._choices(),
             read_only=self.read_only.isChecked(),
+            required=self.required.isChecked(),
             multiline=self.multiline.isChecked(),
         )
 

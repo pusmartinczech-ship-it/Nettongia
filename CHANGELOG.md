@@ -2,6 +2,14 @@
 
 ## 0.19.0
 
+- Added native AcroForm signature fields and required-field flags, including
+  canonical field widgets and appearance streams for compatible PDF readers.
+- Added separate Forms Edit and Preview modes. Preview values are temporary and
+  never modify the PDF or its Undo history.
+- Added a Fill & Sign tool with live on-page controls, reversible value changes,
+  one-step form clearing and visual signatures fitted into signature fields.
+- Clearly distinguishes image-based visual signatures from certificate-based
+  digital signatures; native signature fields remain cryptographically unsigned.
 - Replaced the Comments and Forms tabs in the left navigation area with an
   Acrobat-style collapsible tool rail on the right. Pages and the document
   tree remain on the left; the right rail is ready for future tools.

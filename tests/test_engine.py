@@ -1000,3 +1000,41 @@ def test_form_creation_validates_choices_names_types_and_rotated_geometry() -> N
     )
     rotated = next(field for field in engine.form_fields() if field.name == "rotated")
     assert rotated.bbox == pytest.approx(visible_rect, abs=1.0)
+
+
+def test_signature_field_is_native_required_and_values_can_be_cleared() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (40, 40, 260, 95),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "customer_signature",
+                "Customer signature",
+                required=True,
+            ),
+        )
+    )
+    field = engine.form_fields()[0]
+    assert field.type_code == fitz.PDF_WIDGET_TYPE_SIGNATURE
+    assert field.required
+    assert not field.value
+
+    document = fitz.open(stream=engine.source_bytes, filetype="pdf")
+    try:
+        widget = next(document[0].widgets())
+        assert document.xref_get_key(widget.xref, "FT") == ("name", "/Sig")
+        assert int(document.xref_get_key(widget.xref, "Ff")[1]) & fitz.PDF_FIELD_IS_REQUIRED
+        assert document.xref_get_key(widget.xref, "AP/N")[0] == "xref"
+    finally:
+        document.close()
+
+    engine.load_bytes(_acroform_pdf())
+    engine.load_bytes(engine.bytes_with_cleared_form_values())
+    fields = {item.name: item for item in engine.form_fields()}
+    assert fields["customer_name"].value == ""
+    assert not fields["approved"].checked
+    assert fields["country"].value == ""
+    assert fields["locked"].value == "Do not change"

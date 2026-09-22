@@ -42,6 +42,7 @@ _EVENTS = {
     "form_field_created",
     "form_field_updated",
     "form_field_deleted",
+    "form_values_cleared",
     "text_deleted",
     "visual_deleted",
     "ocr_started",

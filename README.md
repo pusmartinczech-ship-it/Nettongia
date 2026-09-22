@@ -60,17 +60,26 @@ the home for additional document tools added in future versions.
 
 Use **Forms > Create form field...**, `Ctrl+Alt+F`, or the plus button in the
 right Forms panel to create a native interactive text field, check box,
-drop-down list or list box. Configure its name, tooltip, default value and
-options, then drag its rectangle directly on the page. Multiline and read-only
-fields are supported, and fields with the same name intentionally share their
-value according to the AcroForm standard. Creation and deletion participate in
-Undo/Redo and remain editable in compatible PDF readers after saving.
+drop-down list, list box or signature field. Configure its name, tooltip,
+default value, choices, required state and other properties, then drag its
+rectangle directly on the page. Multiline and read-only fields are supported,
+and fields with the same name intentionally share their value according to the
+AcroForm standard. Creation and deletion participate in Undo/Redo and remain
+editable in compatible PDF readers after saving.
 
-Existing AcroForm text fields, check boxes, radio buttons, combo boxes and list
-boxes remain editable from the Forms panel. Read-only fields are identified and
-protected. Creation of radio-button groups, XFA forms, push buttons and digital
-signature fields is not included in this checkpoint; XFA and signature fields
-remain covered by compatibility inspection.
+The Forms panel has separate **Edit** and **Preview** modes. Preview provides
+live controls directly on the page and keeps all test entries temporary, so the
+PDF and Undo history are not changed. The separate **Fill & Sign** tool uses the
+same on-page controls for real values saved into the PDF, supports Undo/Redo and
+can clear editable values in one reversible operation. Existing AcroForm text
+fields, check boxes, radio buttons, combo boxes and list boxes are supported;
+read-only fields are identified and protected.
+
+A visual signature can be fitted into a native signature-field rectangle, but
+it is deliberately identified as an image-based visual signature. It does not
+create a certificate-based digital signature and the native `/Sig` field stays
+cryptographically unsigned. Creation of radio-button groups, XFA forms, push
+buttons and certificate-based signing is not included in this checkpoint.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete
