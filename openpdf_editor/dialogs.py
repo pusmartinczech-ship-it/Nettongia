@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import ceil
 
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QPointF, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -600,20 +601,34 @@ class SignatureDialog(QDialog):
         return _image_to_png(image), self.width_box.value(), angle, description
 
     def _typed_signature_image(self) -> QImage:
-        image = QImage(1800, 440, QImage.Format_ARGB32_Premultiplied)
-        image.fill(Qt.transparent)
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.TextAntialiasing)
+        text = self.typed_text.text().strip()
         font = QFont(self.typed_font.currentFont().family())
         font.setPixelSize(int(self.typed_size.value() * 4))
         font.setBold(self.typed_bold.isChecked())
         font.setItalic(self.typed_italic.isChecked())
+        bounds = QFontMetricsF(font).tightBoundingRect(text)
+        margin = 24
+        image = QImage(
+            max(2, ceil(bounds.width()) + margin * 2),
+            max(2, ceil(bounds.height()) + margin * 2),
+            QImage.Format_ARGB32_Premultiplied,
+        )
+        if image.isNull():
+            raise RuntimeError("Unable to allocate the typed signature image.")
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        if not painter.isActive():
+            raise RuntimeError("Unable to render the typed signature image.")
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
         painter.setFont(font)
         painter.setPen(Qt.black)
-        painter.drawText(image.rect().adjusted(24, 12, -24, -12), Qt.AlignCenter, self.typed_text.text().strip())
+        painter.drawText(
+            QPointF(margin - bounds.left(), margin - bounds.top()),
+            text,
+        )
         painter.end()
-        return _crop_transparent(image)
+        return image
 
 
 def _crop_transparent(image: QImage, margin: int = 10) -> QImage:

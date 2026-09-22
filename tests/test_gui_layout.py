@@ -876,6 +876,69 @@ def test_drawing_signature_from_proxy_button_keeps_editor_alive(
     app.processEvents()
 
 
+def test_typed_signature_from_proxy_button_keeps_editor_alive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "typed_signature",
+                "Typed signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+
+    def type_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        dialog.type_mode.setChecked(True)
+        dialog.typed_text.setText("Martin Puš")
+        dialog._validate_and_accept()
+
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+    QTimer.singleShot(50, type_and_accept)
+    signature_button.click()
+    assert window.signatures == []
+    app.processEvents()
+
+    assert window.isVisible()
+    assert len(window.signatures) == 1
+    assert window.history_index == 1
+    payload = window.signatures[0].png_bytes
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    image = QImage.fromData(payload)
+    assert not image.isNull()
+    assert image.width() < 1800
+    assert image.height() < 440
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_area_redaction_is_confirmed_and_supports_undo_redo(
     tmp_path: Path, monkeypatch
 ) -> None:
