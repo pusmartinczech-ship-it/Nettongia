@@ -864,8 +864,6 @@ def test_area_redaction_rejects_existing_unapplied_redaction_marks() -> None:
 
 
 def test_native_form_fields_can_be_created_validated_and_deleted() -> None:
-    from pypdf import PdfReader
-
     engine = PdfEngine()
     engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
     specs_and_rects = (
@@ -922,20 +920,32 @@ def test_native_form_fields_can_be_created_validated_and_deleted() -> None:
     assert fields["country"].value == "Poland"
     assert fields["department"].read_only
 
-    reader = PdfReader(BytesIO(engine.source_bytes))
-    canonical = reader.get_fields() or {}
-    assert set(canonical) >= {"customer.name", "approved", "country", "department"}
-    assert canonical["customer.name"].get("/V") == "Alice"
-    widgets = [
-        annotation.get_object()
-        for annotation in reader.pages[0].get("/Annots", ())
-        if annotation.get_object().get("/Subtype") == "/Widget"
-    ]
-    assert len(widgets) == 4
-    for widget in widgets:
-        appearance = widget.get("/AP")
-        assert appearance is not None
-        assert appearance.get_object().get("/N") is not None
+    document = fitz.open(stream=engine.source_bytes, filetype="pdf")
+    try:
+        field_refs = document.xref_get_key(
+            document.pdf_catalog(), "AcroForm/Fields"
+        )
+        assert field_refs[0] == "array"
+        widgets = list(document[0].widgets() or ())
+        assert len(widgets) == 4
+        assert {widget.field_name for widget in widgets} == {
+            "customer.name",
+            "approved",
+            "country",
+            "department",
+        }
+        customer = next(
+            widget for widget in widgets if widget.field_name == "customer.name"
+        )
+        assert document.xref_get_key(customer.xref, "V") == ("string", "Alice")
+        for widget in widgets:
+            assert document.xref_get_key(widget.xref, "FT")[0] == "name"
+            assert document.xref_get_key(widget.xref, "T")[0] == "string"
+            appearance = document.xref_get_key(widget.xref, "AP/N")
+            assert appearance[0] in {"xref", "dict"}
+            assert appearance[1] not in {"null", "<<>>"}
+    finally:
+        document.close()
 
     engine.load_bytes(engine.bytes_without_form_field(fields["country"].xref))
     assert {field.name for field in engine.form_fields()} == {
