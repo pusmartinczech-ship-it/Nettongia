@@ -83,7 +83,9 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressDialog,
+    QPushButton,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QTabWidget,
     QToolBar,
@@ -95,7 +97,13 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .branding import APP_NAME, LEGACY_APP_NAME
-from .dialogs import CompressionDialog, EditTextDialog, NewDocumentDialog, SignatureDialog
+from .dialogs import (
+    CompressionDialog,
+    EditTextDialog,
+    FormFieldDialog,
+    NewDocumentDialog,
+    SignatureDialog,
+)
 from .document_session import DocumentSession, DocumentWriteContext
 from .document_write_coordinator import (
     DocumentWriteCoordinator,
@@ -112,6 +120,7 @@ from .engine import (
     AnnotationInfo,
     CompressionResult,
     FormFieldInfo,
+    FormFieldSpec,
     ImageDeletion,
     ImagePlacement,
     OutlineEntry,
@@ -939,6 +948,7 @@ class PageView(QGraphicsView):
     page_refresh_requested = Signal()
     new_text_box_requested = Signal(object)
     redaction_area_requested = Signal(object, int)
+    form_field_area_requested = Signal(object, int)
     text_transform_requested = Signal(str, str, object)
     text_selection_changed = Signal(object)
     delete_text_requested = Signal(str, str)
@@ -961,6 +971,8 @@ class PageView(QGraphicsView):
         self._source_image_edit_mode = False
         self._text_box_mode = False
         self._redaction_mode = False
+        self._form_field_mode = False
+        self._form_field_compact = False
         self._text_drag_origin: QPointF | None = None
         self._text_drag_item: QGraphicsRectItem | None = None
         self._inline_proxy = None
@@ -1020,6 +1032,10 @@ class PageView(QGraphicsView):
         return self._redaction_mode
 
     @property
+    def form_field_mode(self) -> bool:
+        return self._form_field_mode
+
+    @property
     def inline_editing(self) -> bool:
         return self._inline_editor is not None
 
@@ -1036,6 +1052,7 @@ class PageView(QGraphicsView):
             or self._source_image_edit_mode
             or self._text_box_mode
             or self._redaction_mode
+            or self._form_field_mode
             or self.inline_editing
         )
 
@@ -1393,6 +1410,7 @@ class PageView(QGraphicsView):
             self._source_image_edit_mode = False
             self._text_box_mode = False
             self._redaction_mode = False
+            self._form_field_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
@@ -1408,6 +1426,7 @@ class PageView(QGraphicsView):
             self._source_image_edit_mode = False
             self._text_box_mode = False
             self._redaction_mode = False
+            self._form_field_mode = False
             self.finish_inline_editor(False)
         self._refresh_interaction_mode()
         for item in self.scene().items():
@@ -1424,6 +1443,7 @@ class PageView(QGraphicsView):
             self._source_image_edit_mode = False
             self._text_box_mode = False
             self._redaction_mode = False
+            self._form_field_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1441,6 +1461,7 @@ class PageView(QGraphicsView):
             self._delete_image_mode = False
             self._text_box_mode = False
             self._redaction_mode = False
+            self._form_field_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1458,6 +1479,7 @@ class PageView(QGraphicsView):
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._redaction_mode = False
+            self._form_field_mode = False
             self.finish_inline_editor(False)
         if not enabled:
             self._clear_text_drag()
@@ -1476,6 +1498,22 @@ class PageView(QGraphicsView):
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._form_field_mode = False
+            self.finish_inline_editor(False)
+        if not enabled:
+            self._clear_text_drag()
+        self._refresh_interaction_mode()
+
+    def set_form_field_mode(self, enabled: bool, *, compact: bool = False) -> None:
+        self._form_field_mode = enabled
+        self._form_field_compact = bool(compact) if enabled else False
+        if enabled:
+            self._placement_mode = False
+            self._comment_placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self._redaction_mode = False
             self.finish_inline_editor(False)
         if not enabled:
             self._clear_text_drag()
@@ -1501,6 +1539,7 @@ class PageView(QGraphicsView):
             or self._comment_placement_mode
             or self._text_box_mode
             or self._redaction_mode
+            or self._form_field_mode
         ):
             cursor = Qt.CrossCursor
         elif self._delete_image_mode or self._source_image_edit_mode:
@@ -1512,12 +1551,19 @@ class PageView(QGraphicsView):
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.NoButton:
             self._pointer_interaction_active = True
-        if (self._text_box_mode or self._redaction_mode) and event.button() == Qt.LeftButton:
+        if (
+            self._text_box_mode or self._redaction_mode or self._form_field_mode
+        ) and event.button() == Qt.LeftButton:
             point = self.mapToScene(event.position().toPoint())
             if self.sceneRect().contains(point):
                 self._text_drag_origin = point
                 self._text_drag_item = QGraphicsRectItem(QRectF(point, point))
-                accent = QColor("#e53935") if self._redaction_mode else self.text_accent
+                if self._redaction_mode:
+                    accent = QColor("#e53935")
+                elif self._form_field_mode:
+                    accent = QColor("#7b61ff")
+                else:
+                    accent = self.text_accent
                 pen = QPen(accent, 1.8, Qt.DashLine)
                 pen.setCosmetic(True)
                 self._text_drag_item.setPen(pen)
@@ -1570,7 +1616,7 @@ class PageView(QGraphicsView):
 
     def mouseMoveEvent(self, event) -> None:
         if (
-            (self._text_box_mode or self._redaction_mode)
+            (self._text_box_mode or self._redaction_mode or self._form_field_mode)
             and self._text_drag_origin is not None
             and self._text_drag_item is not None
         ):
@@ -1584,7 +1630,7 @@ class PageView(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:
         try:
             if (
-                (self._text_box_mode or self._redaction_mode)
+                (self._text_box_mode or self._redaction_mode or self._form_field_mode)
                 and self._text_drag_origin is not None
                 and event.button() == Qt.LeftButton
             ):
@@ -1593,9 +1639,16 @@ class PageView(QGraphicsView):
                     self.sceneRect()
                 )
                 redaction = self._redaction_mode
+                form_field = self._form_field_mode
                 if not redaction and (rect.width() < 16 or rect.height() < 12):
-                    width = min(220.0 * self.render_scale, self.sceneRect().width())
-                    height = min(60.0 * self.render_scale, self.sceneRect().height())
+                    if form_field and self._form_field_compact:
+                        default_width, default_height = 24.0, 24.0
+                    elif form_field:
+                        default_width, default_height = 180.0, 28.0
+                    else:
+                        default_width, default_height = 220.0, 60.0
+                    width = min(default_width * self.render_scale, self.sceneRect().width())
+                    height = min(default_height * self.render_scale, self.sceneRect().height())
                     left = min(
                         max(self.sceneRect().left(), self._text_drag_origin.x()),
                         self.sceneRect().right() - width,
@@ -1613,11 +1666,15 @@ class PageView(QGraphicsView):
                 )
                 self._text_box_mode = False
                 self._redaction_mode = False
+                self._form_field_mode = False
+                self._form_field_compact = False
                 self._clear_text_drag()
                 self._refresh_interaction_mode()
                 if redaction:
                     if rect.width() / self.render_scale >= 1.0 and rect.height() / self.render_scale >= 1.0:
                         self.redaction_area_requested.emit(bbox, self._page_generation)
+                elif form_field:
+                    self.form_field_area_requested.emit(bbox, self._page_generation)
                 else:
                     self.new_text_box_requested.emit(bbox)
                 event.accept()
@@ -1807,6 +1864,139 @@ class PageView(QGraphicsView):
         self.visible_area_changed.emit()
 
 
+class CollapsibleToolSidebar(QWidget):
+    """Acrobat-style right tool rail with a panel that opens to the left."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("rightToolSidebar")
+        self._buttons: list[QToolButton] = []
+        self._titles: list[str] = []
+        self._current_index = -1
+        self._expanded = False
+
+        self._title = QLabel()
+        self._title.setObjectName("rightToolTitle")
+        title_font = self._title.font()
+        title_font.setBold(True)
+        self._title.setFont(title_font)
+        close_button = QToolButton()
+        close_button.setObjectName("rightToolClose")
+        close_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowRight))
+        close_button.clicked.connect(self.collapse)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(10, 6, 6, 4)
+        title_row.addWidget(self._title, 1)
+        title_row.addWidget(close_button)
+        self._stack = QStackedWidget()
+        self._panel = QWidget()
+        panel_layout = QVBoxLayout(self._panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+        panel_layout.addLayout(title_row)
+        panel_layout.addWidget(self._stack, 1)
+
+        self._rail = QWidget()
+        self._rail.setObjectName("rightToolRail")
+        self._rail.setFixedWidth(48)
+        self._rail_layout = QVBoxLayout(self._rail)
+        self._rail_layout.setContentsMargins(3, 4, 3, 4)
+        self._rail_layout.setSpacing(3)
+        self._rail_layout.addStretch(1)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._panel, 1)
+        layout.addWidget(self._rail)
+        self.collapse()
+
+    def addTab(self, widget: QWidget, icon: QIcon, title: str) -> int:
+        index = self._stack.addWidget(widget)
+        button = QToolButton(self._rail)
+        button.setObjectName("rightToolButton")
+        button.setCheckable(True)
+        button.setAutoExclusive(False)
+        button.setIcon(icon)
+        button.setIconSize(QPixmap(24, 24).size())
+        button.setFixedSize(42, 42)
+        button.setToolTip(title)
+        button.clicked.connect(lambda _checked=False, tab=index: self._activate(tab))
+        self._rail_layout.insertWidget(self._rail_layout.count() - 1, button)
+        self._buttons.append(button)
+        self._titles.append(title)
+        if self._current_index < 0:
+            self._current_index = index
+            self._stack.setCurrentIndex(index)
+            self._title.setText(title)
+        return index
+
+    def _activate(self, index: int) -> None:
+        if not 0 <= index < len(self._buttons) or not self._buttons[index].isEnabled():
+            return
+        if self._expanded and self._current_index == index:
+            self.collapse()
+            return
+        self.setCurrentIndex(index)
+
+    def setCurrentIndex(self, index: int) -> None:
+        if not 0 <= index < len(self._buttons) or not self._buttons[index].isEnabled():
+            return
+        self._current_index = index
+        self._stack.setCurrentIndex(index)
+        self._title.setText(self._titles[index])
+        self._expanded = True
+        self._panel.show()
+        self.setMinimumWidth(250)
+        self.setMaximumWidth(420)
+        for item, button in enumerate(self._buttons):
+            button.setChecked(item == index)
+
+    def currentIndex(self) -> int:
+        return self._current_index
+
+    def isExpanded(self) -> bool:
+        return self._expanded
+
+    def collapse(self) -> None:
+        self._expanded = False
+        self._panel.hide()
+        self.setFixedWidth(48)
+        for button in self._buttons:
+            button.setChecked(False)
+
+    def setTabEnabled(self, index: int, enabled: bool) -> None:
+        if not 0 <= index < len(self._buttons):
+            return
+        self._buttons[index].setEnabled(enabled)
+        self._stack.widget(index).setEnabled(enabled)
+        if not enabled and self._expanded and self._current_index == index:
+            replacement = next(
+                (item for item, button in enumerate(self._buttons) if button.isEnabled()),
+                None,
+            )
+            if replacement is None:
+                self.collapse()
+            else:
+                self.setCurrentIndex(replacement)
+
+    def isTabEnabled(self, index: int) -> bool:
+        return 0 <= index < len(self._buttons) and self._buttons[index].isEnabled()
+
+    def setTabText(self, index: int, title: str) -> None:
+        if not 0 <= index < len(self._buttons):
+            return
+        self._titles[index] = title
+        self._buttons[index].setToolTip(title)
+        if self._current_index == index:
+            self._title.setText(title)
+
+    def setTabToolTip(self, index: int, text: str) -> None:
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].setToolTip(text or self._titles[index])
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -1852,6 +2042,8 @@ class MainWindow(QMainWindow):
         self._pending_visual: tuple[str, bytes, float, str, float] | None = None
         self._pending_text_box: tuple[str, tuple[float, float, float, float]] | None = None
         self._redaction_target_page: int | None = None
+        self._pending_form_field: FormFieldSpec | None = None
+        self._form_field_target_page: int | None = None
         self._syncing_text_toolbar = False
         self._text_toolbar_reference: tuple[str, str] | None = None
         self._text_toolbar_preserved_family: str | None = None
@@ -2004,18 +2196,57 @@ class MainWindow(QMainWindow):
             self.style().standardIcon(QStyle.SP_DirIcon),
             "Tree",
         )
-        self.comments_tab_index = self.sidebar_tabs.addTab(
-            self.comments_list,
+        self.sidebar_tabs.setTabEnabled(self.outline_tab_index, False)
+
+        self.add_comment_side_button = QPushButton("Add comment...")
+        self.edit_comment_side_button = QPushButton("Edit")
+        self.delete_comment_side_button = QPushButton("Delete")
+        self.add_comment_side_button.clicked.connect(self.start_add_comment)
+        self.edit_comment_side_button.clicked.connect(self.edit_selected_comment)
+        self.delete_comment_side_button.clicked.connect(self.delete_selected_annotation)
+        comments_actions = QHBoxLayout()
+        comments_actions.setContentsMargins(6, 4, 6, 4)
+        comments_actions.addWidget(self.add_comment_side_button)
+        comments_actions.addWidget(self.edit_comment_side_button)
+        comments_actions.addWidget(self.delete_comment_side_button)
+        comments_panel = QWidget()
+        comments_layout = QVBoxLayout(comments_panel)
+        comments_layout.setContentsMargins(0, 0, 0, 0)
+        comments_layout.setSpacing(0)
+        comments_layout.addLayout(comments_actions)
+        comments_layout.addWidget(self.comments_list, 1)
+
+        self.create_form_side_button = QPushButton("Create field...")
+        self.edit_form_side_button = QPushButton("Edit")
+        self.delete_form_side_button = QPushButton("Delete")
+        self.create_form_side_button.clicked.connect(self.start_create_form_field)
+        self.edit_form_side_button.clicked.connect(self.edit_selected_form_field)
+        self.delete_form_side_button.clicked.connect(self.delete_selected_form_field)
+        forms_actions = QHBoxLayout()
+        forms_actions.setContentsMargins(6, 4, 6, 4)
+        forms_actions.addWidget(self.create_form_side_button)
+        forms_actions.addWidget(self.edit_form_side_button)
+        forms_actions.addWidget(self.delete_form_side_button)
+        forms_panel = QWidget()
+        forms_layout = QVBoxLayout(forms_panel)
+        forms_layout.setContentsMargins(0, 0, 0, 0)
+        forms_layout.setSpacing(0)
+        forms_layout.addLayout(forms_actions)
+        forms_layout.addWidget(self.forms_list, 1)
+
+        self.right_sidebar = CollapsibleToolSidebar()
+        self.comments_tool_index = self.right_sidebar.addTab(
+            comments_panel,
             self.style().standardIcon(QStyle.SP_MessageBoxInformation),
             "Comments",
         )
-        self.forms_tab_index = self.sidebar_tabs.addTab(
-            self.forms_list,
+        self.forms_tool_index = self.right_sidebar.addTab(
+            forms_panel,
             self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
             "Forms",
         )
-        self.sidebar_tabs.setTabEnabled(self.outline_tab_index, False)
-        self.sidebar_tabs.setTabEnabled(self.forms_tab_index, False)
+        self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
 
         self.page_view = PageView()
         self.page_view.edit_requested.connect(self._edit_run)
@@ -2028,6 +2259,10 @@ class MainWindow(QMainWindow):
         self.page_view.new_text_box_requested.connect(self._create_text_box)
         self.page_view.redaction_area_requested.connect(
             self._confirm_redaction,
+            Qt.QueuedConnection,
+        )
+        self.page_view.form_field_area_requested.connect(
+            self._create_form_field,
             Qt.QueuedConnection,
         )
         self.page_view.text_transform_requested.connect(
@@ -2061,8 +2296,9 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         splitter.addWidget(self.sidebar_tabs)
         splitter.addWidget(self.page_view)
+        splitter.addWidget(self.right_sidebar)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([280, 1140])
+        splitter.setSizes([280, 1092, 48])
 
         workspace = QWidget(self)
         workspace_layout = QVBoxLayout(workspace)
@@ -2682,6 +2918,11 @@ class MainWindow(QMainWindow):
         self.delete_comment_action.triggered.connect(self.delete_selected_annotation)
         self.edit_form_action = QAction("Edit selected form field...", self)
         self.edit_form_action.triggered.connect(self.edit_selected_form_field)
+        self.create_form_action = QAction("Create form field...", self)
+        self.create_form_action.setShortcut(QKeySequence("Ctrl+Alt+F"))
+        self.create_form_action.triggered.connect(self.start_create_form_field)
+        self.delete_form_action = QAction("Delete selected form field", self)
+        self.delete_form_action.triggered.connect(self.delete_selected_form_field)
         self.redact_area_action = QAction("Permanently redact area...", self)
         self.redact_area_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
         self.redact_area_action.triggered.connect(self.start_redact_area)
@@ -2775,7 +3016,10 @@ class MainWindow(QMainWindow):
         self.comments_menu.addAction(self.delete_comment_action)
 
         self.forms_menu = self.menuBar().addMenu("Forms")
+        self.forms_menu.addAction(self.create_form_action)
+        self.forms_menu.addSeparator()
         self.forms_menu.addAction(self.edit_form_action)
+        self.forms_menu.addAction(self.delete_form_action)
 
         self.view_menu = self.menuBar().addMenu("View")
         self.view_menu.addAction(self.zoom_in_action)
@@ -3090,6 +3334,8 @@ class MainWindow(QMainWindow):
             self.edit_comment_action: "edit_comment",
             self.delete_comment_action: "delete_annotation",
             self.edit_form_action: "edit_form_field",
+            self.create_form_action: "create_form_field",
+            self.delete_form_action: "delete_form_field",
             self.redact_area_action: "redact_area",
             self.export_diagnostics_action: "export_diagnostics",
             self.check_for_updates_action: "check_for_updates",
@@ -3133,16 +3379,28 @@ class MainWindow(QMainWindow):
         self._update_find_controls()
         self.sidebar_tabs.setTabText(self.pages_tab_index, self.trx("sidebar_pages"))
         self.sidebar_tabs.setTabText(self.outline_tab_index, self.trx("sidebar_tree"))
-        self.sidebar_tabs.setTabText(self.comments_tab_index, self.trx("comments"))
-        self.sidebar_tabs.setTabText(self.forms_tab_index, self.trx("forms"))
+        self.right_sidebar.setTabText(self.comments_tool_index, self.trx("comments"))
+        self.right_sidebar.setTabText(self.forms_tool_index, self.trx("forms"))
         self.sidebar_tabs.setTabToolTip(
             self.outline_tab_index,
             "" if self._outline_model and self._outline_model.has_entries else self.trx("no_document_tree"),
         )
-        self.sidebar_tabs.setTabToolTip(
-            self.forms_tab_index,
+        self.right_sidebar.setTabToolTip(
+            self.forms_tool_index,
             "" if self.forms_list.count() else self.trx("no_form_fields"),
         )
+        self.add_comment_side_button.setText("+")
+        self.add_comment_side_button.setToolTip(self.trx("add_comment"))
+        self.edit_comment_side_button.setText("✎")
+        self.edit_comment_side_button.setToolTip(self.trx("edit_comment"))
+        self.delete_comment_side_button.setText("×")
+        self.delete_comment_side_button.setToolTip(self.trx("delete_annotation"))
+        self.create_form_side_button.setText("+")
+        self.create_form_side_button.setToolTip(self.trx("create_form_field"))
+        self.edit_form_side_button.setText("✎")
+        self.edit_form_side_button.setToolTip(self.trx("edit_form_field"))
+        self.delete_form_side_button.setText("×")
+        self.delete_form_side_button.setToolTip(self.trx("delete_form_field"))
         self.toolbar.setWindowTitle(self.trx("menu_file"))
         self.text_controls_widget.setToolTip(self.trx("font"))
         current_icon = language_icon(self.language_code)
@@ -3212,9 +3470,30 @@ class MainWindow(QMainWindow):
                 "QWidget#findBar QToolButton:disabled { background: #d2d8df; "
                 "border-color: #aeb7c1; }"
             )
+        if self._effective_dark:
+            right_sidebar_styles = (
+                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #252b32; "
+                "border-left: 1px solid #59636e; }"
+                "QLabel#rightToolTitle { padding: 4px; color: #f2f5f7; }"
+                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
+                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
+                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
+                "QToolButton#rightToolClose:hover { background: #3b424c; border-color: #707b88; }"
+            )
+        else:
+            right_sidebar_styles = (
+                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #edf1f5; "
+                "border-left: 1px solid #aab3bd; }"
+                "QLabel#rightToolTitle { padding: 4px; color: #17212b; }"
+                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
+                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
+                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
+                "QToolButton#rightToolClose:hover { background: #c7e5f8; border-color: #74808d; }"
+            )
         app.setStyleSheet(
             menu_styles
             + find_styles
+            + right_sidebar_styles
             + "QToolTip { background: #fff4ce; color: #392d00; border: 1px solid #b69122; padding: 4px; }"
         )
         if persist:
@@ -3530,7 +3809,9 @@ class MainWindow(QMainWindow):
         self.page_list.clear()
         self.comments_list.clear()
         self.forms_list.clear()
-        self.sidebar_tabs.setTabEnabled(self.forms_tab_index, False)
+        self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
+        self.right_sidebar.collapse()
         self._clear_text_toolbar_target()
         self._sync_zoom_display()
         self.status_label.setText(self.trx("open_to_begin"))
@@ -3928,6 +4209,10 @@ class MainWindow(QMainWindow):
 
     def _refresh_annotations_sidebar(self) -> None:
         self.comments_list.clear()
+        self.right_sidebar.setTabEnabled(
+            self.comments_tool_index,
+            self.engine.is_open,
+        )
         if not self.engine.is_open:
             return
         try:
@@ -4013,14 +4298,14 @@ class MainWindow(QMainWindow):
             item.setData(Qt.UserRole, field.xref)
             item.setToolTip(field.name or name)
             self.forms_list.addItem(item)
-        available = bool(fields)
-        self.sidebar_tabs.setTabEnabled(self.forms_tab_index, available)
-        self.sidebar_tabs.setTabToolTip(
-            self.forms_tab_index,
-            "" if available else self.trx("no_form_fields"),
+        self.right_sidebar.setTabEnabled(
+            self.forms_tool_index,
+            self.engine.is_open,
         )
-        if not available and self.sidebar_tabs.currentIndex() == self.forms_tab_index:
-            self.sidebar_tabs.setCurrentIndex(self.pages_tab_index)
+        self.right_sidebar.setTabToolTip(
+            self.forms_tool_index,
+            "" if fields else self.trx("no_form_fields"),
+        )
 
     def _form_field_for_item(self, item: QListWidgetItem | None) -> FormFieldInfo | None:
         if item is None or not self.engine.is_open:
@@ -4069,6 +4354,7 @@ class MainWindow(QMainWindow):
         self.forms_list.setCurrentItem(item)
         menu = QMenu(self)
         menu.addAction(self.edit_form_action)
+        menu.addAction(self.delete_form_action)
         self._exec_context_menu(menu, self.forms_list.mapToGlobal(position))
 
     def _thumbnail_placeholder_icon(self) -> QIcon:
@@ -5658,6 +5944,92 @@ class MainWindow(QMainWindow):
             self.trx("comments"),
         )
 
+    def start_create_form_field(self) -> None:
+        if (
+            not self.engine.is_open
+            or self._write_process is not None
+            or self._ocr_process is not None
+        ):
+            return
+        try:
+            existing_names = {field.name for field in self.engine.form_fields()}
+        except Exception:
+            existing_names = set()
+        number = 1
+        while f"field_{number}" in existing_names:
+            number += 1
+        dialog = FormFieldDialog(f"field_{number}", self, self.trx)
+        if not dialog.exec():
+            return
+        spec = dialog.field_spec()
+        self.cancel_special_mode()
+        self._pending_form_field = spec
+        self._form_field_target_page = self.current_page
+        self.page_view.set_form_field_mode(
+            True,
+            compact=spec.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+        )
+        self.statusBar().showMessage(self.trx("form_draw_hint"))
+
+    def _create_form_field(
+        self,
+        bbox: tuple[float, float, float, float],
+        page_generation: int,
+    ) -> None:
+        spec = self._pending_form_field
+        target_page = self._form_field_target_page
+        self._pending_form_field = None
+        self._form_field_target_page = None
+        if (
+            spec is None
+            or target_page is None
+            or target_page != self.current_page
+            or page_generation != self.page_view._page_generation
+            or not self.engine.is_open
+        ):
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_new_form_field(target_page, bbox, spec),
+            target_page,
+            self.trx("forms"),
+        ):
+            self.right_sidebar.setCurrentIndex(self.forms_tool_index)
+            self._operation_log.record(
+                "form_field_created",
+                operation="form_create",
+                outcome="succeeded",
+                page_index=target_page,
+            )
+            self.statusBar().showMessage(self.trx("form_created"), 5000)
+
+    def delete_selected_form_field(self) -> None:
+        field = self._form_field_for_item(self.forms_list.currentItem())
+        if field is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.trx("forms"),
+            self.trx("delete_form_field_question"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_without_form_field(
+                self._matching_form_xref(engine, field)
+            ),
+            field.page_index,
+            self.trx("forms"),
+        ):
+            self._operation_log.record(
+                "form_field_deleted",
+                operation="form_delete",
+                outcome="succeeded",
+                page_index=field.page_index,
+            )
+            self.statusBar().showMessage(self.trx("form_deleted"), 5000)
+
     def edit_selected_form_field(self) -> None:
         field = self._form_field_for_item(self.forms_list.currentItem())
         if field is None:
@@ -6075,12 +6447,15 @@ class MainWindow(QMainWindow):
         self._pending_visual = None
         self._pending_text_box = None
         self._redaction_target_page = None
+        self._pending_form_field = None
+        self._form_field_target_page = None
         self.page_view.set_placement_mode(False)
         self.page_view.set_comment_placement_mode(False)
         self.page_view.set_delete_image_mode(False)
         self.page_view.set_source_image_edit_mode(False)
         self.page_view.set_text_box_mode(False)
         self.page_view.set_redaction_mode(False)
+        self.page_view.set_form_field_mode(False)
         self.statusBar().clearMessage()
 
     def step_zoom(self, direction: int) -> None:
@@ -7013,6 +7388,7 @@ class MainWindow(QMainWindow):
             self.signature_action,
             self.add_comment_action,
             self.redact_area_action,
+            self.create_form_action,
         ):
             action.setEnabled(opened and not ocr_running)
         self.ocr_page_action.setEnabled(opened and not busy)
@@ -7050,6 +7426,13 @@ class MainWindow(QMainWindow):
         self.delete_comment_action.setEnabled(opened and selected_annotation and not busy)
         selected_form = self.forms_list.currentItem() is not None
         self.edit_form_action.setEnabled(opened and selected_form and not busy)
+        self.delete_form_action.setEnabled(opened and selected_form and not busy)
+        self.add_comment_side_button.setEnabled(opened and not busy)
+        self.edit_comment_side_button.setEnabled(opened and selected_annotation and not busy)
+        self.delete_comment_side_button.setEnabled(opened and selected_annotation and not busy)
+        self.create_form_side_button.setEnabled(opened and not busy)
+        self.edit_form_side_button.setEnabled(opened and selected_form and not busy)
+        self.delete_form_side_button.setEnabled(opened and selected_form and not busy)
         if hasattr(self, "text_font_box"):
             for widget in (
                 self.text_font_box,

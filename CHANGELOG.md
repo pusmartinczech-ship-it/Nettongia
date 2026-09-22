@@ -2,6 +2,16 @@
 
 ## 0.19.0
 
+- Replaced the Comments and Forms tabs in the left navigation area with an
+  Acrobat-style collapsible tool rail on the right. Pages and the document
+  tree remain on the left; the right rail is ready for future tools.
+- Added creation and deletion of native AcroForm text fields, check boxes,
+  drop-down lists and list boxes. New fields support names, tooltips, default
+  values, choice lists, multiline text, read-only state, rotated pages and
+  complete Undo/Redo.
+- Added independent validation of the canonical AcroForm field tree, page
+  widgets and appearance streams so created fields remain interactive in
+  compatible PDF readers after saving.
 - Added permanent rectangular redaction from the Edit menu. Selected text,
   image pixels, vector content, links, comments and form fields are removed
   before a black replacement area is written, with confirmation and Undo/Redo.

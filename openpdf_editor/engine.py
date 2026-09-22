@@ -231,6 +231,19 @@ class FormFieldInfo:
     on_value: str
 
 
+@dataclass(frozen=True)
+class FormFieldSpec:
+    """Validated settings for a new interactive AcroForm field."""
+
+    type_code: int
+    name: str
+    label: str = ""
+    value: str = ""
+    choices: tuple[str, ...] = ()
+    read_only: bool = False
+    multiline: bool = False
+
+
 class PdfEngine:
     def __init__(self) -> None:
         self.path: Path | None = None
@@ -425,6 +438,95 @@ class PdfEngine:
                         raise ValueError("This form field type is not editable.")
                     widget.update()
                     return self._serialize(document)
+            raise ValueError("The form field is no longer available.")
+        finally:
+            document.close()
+
+    def bytes_with_new_form_field(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+        spec: FormFieldSpec,
+    ) -> bytes:
+        """Return a PDF with one new native AcroForm widget."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        supported = {
+            pymupdf.PDF_WIDGET_TYPE_TEXT,
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        }
+        if int(spec.type_code) not in supported:
+            raise ValueError("This form field type cannot be created.")
+        name = spec.name.strip()
+        if not name or len(name) > 200 or any(ord(char) < 32 for char in name):
+            raise ValueError("Enter a valid form field name.")
+        if len(spec.label) > 500 or len(spec.value) > 10_000:
+            raise ValueError("The form field text is too long.")
+        choices = tuple(item.strip() for item in spec.choices if item.strip())
+        if spec.type_code in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        ) and len(choices) < 2:
+            raise ValueError("Choice fields require at least two values.")
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for existing in page.widgets() or ():
+                    if (
+                        str(existing.field_name or "") == name
+                        and int(existing.field_type or 0) != int(spec.type_code)
+                    ):
+                        raise ValueError(
+                            "A field with this name already exists with a different type."
+                        )
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 4.0 or view_rect.height < 4.0:
+                raise ValueError("The selected form field area is too small.")
+            widget = pymupdf.Widget()
+            widget.field_type = int(spec.type_code)
+            widget.field_name = name
+            widget.field_label = spec.label.strip() or name
+            widget.rect = self._page_rect_from_view(page, view_rect)
+            widget.border_color = (0.25, 0.45, 0.75)
+            widget.border_width = 1.0
+            widget.fill_color = (1.0, 1.0, 1.0)
+            widget.text_color = (0.0, 0.0, 0.0)
+            widget.text_font = "Helv"
+            widget.text_fontsize = 11
+            flags = pymupdf.PDF_FIELD_IS_READ_ONLY if spec.read_only else 0
+            if spec.type_code == pymupdf.PDF_WIDGET_TYPE_TEXT:
+                if spec.multiline:
+                    flags |= pymupdf.PDF_TX_FIELD_IS_MULTILINE
+                widget.field_value = spec.value
+            elif spec.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+                widget.text_font = "ZaDb"
+                widget.text_fontsize = 0
+                if spec.value.lower() in {"1", "true", "yes", "on", "checked"}:
+                    widget.field_value = True
+            else:
+                widget.choice_values = list(choices)
+                widget.field_value = spec.value if spec.value in choices else choices[0]
+            widget.field_flags = flags
+            page.add_widget(widget)
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_without_form_field(self, field_xref: int) -> bytes:
+        """Return a PDF with one form widget removed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    if int(widget.xref) == int(field_xref):
+                        page.delete_widget(widget)
+                        return self._serialize(document)
             raise ValueError("The form field is no longer available.")
         finally:
             document.close()

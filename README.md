@@ -52,11 +52,25 @@ Version 0.19.0 adds reversible page rotation. Rotate the selected page left or r
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
 
-Existing AcroForm fields are available in the **Forms** sidebar. Double-click a
-text field, check box, radio button, combo box or list box to change its value;
-every change participates in Undo/Redo and is stored in the saved PDF. Read-only
-fields are identified and protected. XFA forms, push buttons and digital
-signature fields are detected by compatibility inspection but are not edited.
+The left sidebar now contains only page thumbnails and the document tree.
+Comments and Forms live in a collapsible Acrobat-style tool rail on the right;
+click a vertical tool icon to open its panel and click it again, or use the
+arrow in the panel header, to return to the compact rail. This right rail is
+the home for additional document tools added in future versions.
+
+Use **Forms > Create form field...**, `Ctrl+Alt+F`, or the plus button in the
+right Forms panel to create a native interactive text field, check box,
+drop-down list or list box. Configure its name, tooltip, default value and
+options, then drag its rectangle directly on the page. Multiline and read-only
+fields are supported, and fields with the same name intentionally share their
+value according to the AcroForm standard. Creation and deletion participate in
+Undo/Redo and remain editable in compatible PDF readers after saving.
+
+Existing AcroForm text fields, check boxes, radio buttons, combo boxes and list
+boxes remain editable from the Forms panel. Read-only fields are identified and
+protected. Creation of radio-button groups, XFA forms, push buttons and digital
+signature fields is not included in this checkpoint; XFA and signature fields
+remain covered by compatibility inspection.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete

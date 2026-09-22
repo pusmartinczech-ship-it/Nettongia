@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -26,7 +27,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .engine import TextEdit, TextRun
+from .engine import FormFieldSpec, TextEdit, TextRun
 from .i18n import translate
 from .text_layer import clean_pdf_font_name
 
@@ -135,6 +136,140 @@ class NewDocumentDialog(QDialog):
             width_mm * points_per_mm,
             height_mm * points_per_mm,
             self.page_count_box.value(),
+        )
+
+
+class FormFieldDialog(QDialog):
+    """Collect properties for a new standard AcroForm field."""
+
+    def __init__(
+        self,
+        suggested_name: str,
+        parent=None,
+        translator: Translator | None = None,
+    ) -> None:
+        super().__init__(parent)
+        import pymupdf
+
+        self._tr = _translator(translator)
+        self.setWindowTitle(self._tr("create_form_field"))
+        self.setMinimumWidth(480)
+
+        self.type_box = QComboBox()
+        self.type_box.addItem(self._tr("form_type_text"), pymupdf.PDF_WIDGET_TYPE_TEXT)
+        self.type_box.addItem(
+            self._tr("form_type_checkbox"), pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+        )
+        self.type_box.addItem(
+            self._tr("form_type_combo"), pymupdf.PDF_WIDGET_TYPE_COMBOBOX
+        )
+        self.type_box.addItem(
+            self._tr("form_type_list"), pymupdf.PDF_WIDGET_TYPE_LISTBOX
+        )
+        self.name_edit = QLineEdit(suggested_name)
+        self.name_edit.setClearButtonEnabled(True)
+        self.label_edit = QLineEdit()
+        self.value_edit = QLineEdit()
+        self.choices_edit = QPlainTextEdit()
+        self.choices_edit.setMaximumHeight(90)
+        self.choices_edit.setPlaceholderText(self._tr("form_choices_hint"))
+        self.default_checked = QCheckBox(self._tr("form_default_checked"))
+        self.multiline = QCheckBox(self._tr("form_multiline"))
+        self.read_only = QCheckBox(self._tr("form_read_only"))
+
+        form = QFormLayout()
+        form.addRow(self._tr("form_field_type"), self.type_box)
+        form.addRow(self._tr("form_field_name"), self.name_edit)
+        form.addRow(self._tr("form_field_label"), self.label_edit)
+        form.addRow(self._tr("form_default_value"), self.value_edit)
+        form.addRow(self._tr("form_choices"), self.choices_edit)
+        form.addRow("", self.default_checked)
+        form.addRow("", self.multiline)
+        form.addRow("", self.read_only)
+
+        hint = QLabel(self._tr("form_shared_name_hint"))
+        hint.setWordWrap(True)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText(self._tr("create"))
+        buttons.button(QDialogButtonBox.Cancel).setText(self._tr("cancel"))
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(hint)
+        layout.addWidget(buttons)
+        self.type_box.currentIndexChanged.connect(self._type_changed)
+        self._type_changed()
+        self.name_edit.selectAll()
+        self.name_edit.setFocus()
+
+    def _type_changed(self, *args) -> None:
+        import pymupdf
+
+        field_type = int(self.type_box.currentData())
+        choice = field_type in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        )
+        checkbox = field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+        text = field_type == pymupdf.PDF_WIDGET_TYPE_TEXT
+        self.choices_edit.setVisible(choice)
+        label = self.layout().itemAt(0).layout().labelForField(self.choices_edit)
+        if label is not None:
+            label.setVisible(choice)
+        self.value_edit.setVisible(text or choice)
+        label = self.layout().itemAt(0).layout().labelForField(self.value_edit)
+        if label is not None:
+            label.setVisible(text or choice)
+        self.default_checked.setVisible(checkbox)
+        self.multiline.setVisible(text)
+
+    def accept(self) -> None:
+        import pymupdf
+
+        if not self.name_edit.text().strip():
+            QMessageBox.warning(
+                self,
+                self._tr("create_form_field"),
+                self._tr("form_name_required"),
+            )
+            return
+        field_type = int(self.type_box.currentData())
+        if field_type in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        ) and len(self._choices()) < 2:
+            QMessageBox.warning(
+                self,
+                self._tr("create_form_field"),
+                self._tr("form_choices_required"),
+            )
+            return
+        super().accept()
+
+    def _choices(self) -> tuple[str, ...]:
+        return tuple(
+            value.strip()
+            for value in self.choices_edit.toPlainText().splitlines()
+            if value.strip()
+        )
+
+    def field_spec(self) -> FormFieldSpec:
+        import pymupdf
+
+        field_type = int(self.type_box.currentData())
+        value = self.value_edit.text()
+        if field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+            value = "Yes" if self.default_checked.isChecked() else "Off"
+        return FormFieldSpec(
+            type_code=field_type,
+            name=self.name_edit.text().strip(),
+            label=self.label_edit.text().strip(),
+            value=value,
+            choices=self._choices(),
+            read_only=self.read_only.isChecked(),
+            multiline=self.multiline.isChecked(),
         )
 
 

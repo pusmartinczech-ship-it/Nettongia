@@ -41,7 +41,7 @@ from PySide6.QtWidgets import (
 )
 
 import openpdf_editor.main_window as main_window_module
-from openpdf_editor.engine import PdfEngine
+from openpdf_editor.engine import FormFieldSpec, PdfEngine
 from openpdf_editor.main_window import (
     FONT_SIZE_PRESETS,
     MainWindow,
@@ -486,7 +486,17 @@ def test_acroform_sidebar_edits_fields_with_undo_redo(
     app.processEvents()
 
     assert window.forms_list.count() == 3
-    assert window.sidebar_tabs.isTabEnabled(window.forms_tab_index)
+    assert window.sidebar_tabs.count() == 2
+    assert window.right_sidebar.isTabEnabled(window.forms_tool_index)
+    assert not window.right_sidebar.isExpanded()
+    window.right_sidebar.setCurrentIndex(window.forms_tool_index)
+    assert window.right_sidebar.isExpanded()
+    app.processEvents()
+    assert window.right_sidebar.width() >= 250
+    window.right_sidebar.collapse()
+    assert not window.right_sidebar.isExpanded()
+    app.processEvents()
+    assert window.right_sidebar.width() == 48
 
     def select_field(name: str) -> None:
         field = next(item for item in window.engine.form_fields() if item.name == name)
@@ -524,6 +534,74 @@ def test_acroform_sidebar_edits_fields_with_undo_redo(
     window.edit_selected_form_field()
     assert {item.name: item.value for item in window.engine.form_fields()}["country"] == "Poland"
     assert window.has_unsaved_changes
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_form_field_creation_and_deletion_use_right_sidebar_and_history(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    spec = FormFieldSpec(
+        fitz.PDF_WIDGET_TYPE_TEXT,
+        "customer_email",
+        "Customer email",
+        "mail@example.com",
+    )
+
+    class AcceptedFormDialog:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return True
+
+        def field_spec(self):
+            return spec
+
+    monkeypatch.setattr(main_window_module, "FormFieldDialog", AcceptedFormDialog)
+    window.start_create_form_field()
+    assert window.page_view.form_field_mode
+    window._create_form_field(
+        (50, 70, 260, 102),
+        window.page_view._page_generation,
+    )
+
+    fields = window.engine.form_fields()
+    assert len(fields) == 1
+    assert fields[0].name == "customer_email"
+    assert fields[0].value == "mail@example.com"
+    assert window.forms_list.count() == 1
+    assert window.right_sidebar.currentIndex() == window.forms_tool_index
+    assert window.right_sidebar.isExpanded()
+    assert window.history_index == 1
+
+    window.undo()
+    assert window.engine.form_fields() == []
+    window.redo()
+    assert len(window.engine.form_fields()) == 1
+
+    window.forms_list.setCurrentRow(0)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.delete_selected_form_field()
+    assert window.engine.form_fields() == []
+    window.undo()
+    assert len(window.engine.form_fields()) == 1
 
     window._maybe_save_changes = lambda: True
     window.close()

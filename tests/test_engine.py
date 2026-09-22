@@ -8,6 +8,7 @@ import pytest
 from PIL import Image, ImageChops, ImageDraw
 
 from openpdf_editor.engine import (
+    FormFieldSpec,
     ImageDeletion,
     ImagePlacement,
     PdfEngine,
@@ -860,3 +861,132 @@ def test_area_redaction_rejects_existing_unapplied_redaction_marks() -> None:
     engine.load_bytes(source)
     with pytest.raises(ValueError, match="unapplied redaction"):
         engine.bytes_with_redaction(0, (100, 100, 180, 150))
+
+
+def test_native_form_fields_can_be_created_validated_and_deleted() -> None:
+    from pypdf import PdfReader
+
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    specs_and_rects = (
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_TEXT,
+                "customer.name",
+                "Customer name",
+                "Alice",
+                multiline=True,
+            ),
+            (40, 40, 240, 82),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_CHECKBOX,
+                "approved",
+                "Approved",
+                "Yes",
+            ),
+            (40, 100, 62, 122),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_COMBOBOX,
+                "country",
+                "Country",
+                "Poland",
+                ("Czechia", "Poland", "Slovakia"),
+            ),
+            (40, 140, 240, 168),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_LISTBOX,
+                "department",
+                "Department",
+                "Quality",
+                ("Engineering", "Quality"),
+                read_only=True,
+            ),
+            (40, 190, 240, 245),
+        ),
+    )
+    for spec, rect in specs_and_rects:
+        engine.load_bytes(engine.bytes_with_new_form_field(0, rect, spec))
+
+    fields = {field.name: field for field in engine.form_fields()}
+    assert set(fields) == {"customer.name", "approved", "country", "department"}
+    assert fields["customer.name"].value == "Alice"
+    assert fields["customer.name"].multiline
+    assert fields["approved"].checked
+    assert fields["country"].choices == ("Czechia", "Poland", "Slovakia")
+    assert fields["country"].value == "Poland"
+    assert fields["department"].read_only
+
+    reader = PdfReader(BytesIO(engine.source_bytes))
+    canonical = reader.get_fields() or {}
+    assert set(canonical) >= {"customer.name", "approved", "country", "department"}
+    assert canonical["customer.name"].get("/V") == "Alice"
+    widgets = [
+        annotation.get_object()
+        for annotation in reader.pages[0].get("/Annots", ())
+        if annotation.get_object().get("/Subtype") == "/Widget"
+    ]
+    assert len(widgets) == 4
+    for widget in widgets:
+        appearance = widget.get("/AP")
+        assert appearance is not None
+        assert appearance.get_object().get("/N") is not None
+
+    engine.load_bytes(engine.bytes_without_form_field(fields["country"].xref))
+    assert {field.name for field in engine.form_fields()} == {
+        "customer.name",
+        "approved",
+        "department",
+    }
+
+
+def test_form_creation_validates_choices_names_types_and_rotated_geometry() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    with pytest.raises(ValueError, match="field name"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, ""),
+        )
+    with pytest.raises(ValueError, match="at least two"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_COMBOBOX,
+                "choice",
+                choices=("Only",),
+            ),
+        )
+
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, "shared", value="One"),
+        )
+    )
+    with pytest.raises(ValueError, match="different type"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 70, 42, 92),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_CHECKBOX, "shared"),
+        )
+
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+    visible_rect = (70.0, 90.0, 210.0, 122.0)
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            visible_rect,
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, "rotated"),
+        )
+    )
+    rotated = next(field for field in engine.form_fields() if field.name == "rotated")
+    assert rotated.bbox == pytest.approx(visible_rect, abs=1.0)
