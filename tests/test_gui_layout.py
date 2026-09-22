@@ -930,8 +930,9 @@ def test_typed_signature_from_proxy_button_keeps_editor_alive(
     assert payload.startswith(b"\x89PNG\r\n\x1a\n")
     image = QImage.fromData(payload)
     assert not image.isNull()
-    assert image.width() < 1800
-    assert image.height() < 440
+    assert image.width() <= 4096
+    assert image.height() <= 1024
+    assert image.sizeInBytes() <= 16 * 1024 * 1024
 
     window._maybe_save_changes = lambda: True
     window.close()

@@ -608,9 +608,19 @@ class SignatureDialog(QDialog):
         font.setItalic(self.typed_italic.isChecked())
         bounds = QFontMetricsF(font).tightBoundingRect(text)
         margin = 24
+        max_content_width = 4096 - margin * 2
+        max_content_height = 1024 - margin * 2
+        fit_factor = min(
+            1.0,
+            max_content_width / max(1.0, bounds.width()),
+            max_content_height / max(1.0, bounds.height()),
+        )
+        if fit_factor < 1.0:
+            font.setPixelSize(max(1, int(font.pixelSize() * fit_factor)))
+            bounds = QFontMetricsF(font).tightBoundingRect(text)
         image = QImage(
-            max(2, ceil(bounds.width()) + margin * 2),
-            max(2, ceil(bounds.height()) + margin * 2),
+            min(4096, max(2, ceil(bounds.width()) + margin * 2)),
+            min(1024, max(2, ceil(bounds.height()) + margin * 2)),
             QImage.Format_ARGB32_Premultiplied,
         )
         if image.isNull():
