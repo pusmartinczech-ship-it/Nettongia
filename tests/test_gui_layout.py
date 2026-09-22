@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QPointF,
     QRect,
     QSettings,
+    QTimer,
     Qt,
 )
 from PySide6.QtGui import (
@@ -712,7 +713,19 @@ def test_visual_signature_fits_native_signature_field_without_signing_it(
     app.processEvents()
 
     field = window.engine.form_fields()[0]
-    window._form_signature_requested(field.xref)
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+        and item.widget().text() == window.trx("form_signature_button")
+    )
+    signature_button.click()
+    # The scene must not be replaced while the proxy button's click handler is
+    # still executing. Processing the queued signal performs the mutation.
+    assert window.history_index == 0
+    assert window.signatures == []
+    app.processEvents()
     assert window.history_index == 1
     assert len(window.signatures) == 1
     signature = window.signatures[0]
@@ -787,6 +800,75 @@ def test_visual_signature_button_reports_dialog_errors_without_closing_window(
     assert errors == ["signature dialog test failure"]
     assert window.isVisible()
     assert not window.page_view.placement_mode
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_drawing_signature_from_proxy_button_keeps_editor_alive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "drawn_signature",
+                "Drawn signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+
+    def draw_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        QTest.mousePress(
+            dialog.pad,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPoint(80, 95),
+        )
+        QTest.mouseMove(dialog.pad, QPoint(250, 70), delay=5)
+        QTest.mouseRelease(
+            dialog.pad,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPoint(420, 110),
+        )
+        dialog._validate_and_accept()
+
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+    QTimer.singleShot(50, draw_and_accept)
+    signature_button.click()
+    assert window.signatures == []
+    app.processEvents()
+
+    assert window.isVisible()
+    assert len(window.signatures) == 1
+    assert window.history_index == 1
+    assert window.signatures[0].png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
 
     window._maybe_save_changes = lambda: True
     window.close()

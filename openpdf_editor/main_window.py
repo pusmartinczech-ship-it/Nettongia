@@ -2454,9 +2454,17 @@ class MainWindow(QMainWindow):
             self._create_form_field,
             Qt.QueuedConnection,
         )
-        self.page_view.form_value_edited.connect(self._form_value_edited)
+        # Form controls live inside QGraphicsProxyWidget items. Their handlers
+        # can rebuild the whole page scene, so defer mutations until the
+        # originating widget's click/focus event has completely returned.
+        # Destroying the active proxy synchronously can crash Qt on Windows.
+        self.page_view.form_value_edited.connect(
+            self._form_value_edited,
+            Qt.QueuedConnection,
+        )
         self.page_view.form_signature_requested.connect(
-            self._form_signature_requested
+            self._form_signature_requested,
+            Qt.QueuedConnection,
         )
         self.page_view.text_transform_requested.connect(
             self._transform_text,
