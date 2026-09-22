@@ -757,6 +757,43 @@ def test_visual_signature_fits_native_signature_field_without_signing_it(
     app.processEvents()
 
 
+def test_visual_signature_button_reports_dialog_errors_without_closing_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+
+    errors: list[str] = []
+
+    class BrokenSignatureDialog:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("signature dialog test failure")
+
+    monkeypatch.setattr(main_window_module, "SignatureDialog", BrokenSignatureDialog)
+    monkeypatch.setattr(
+        QMessageBox,
+        "critical",
+        lambda _parent, _title, message: errors.append(str(message)),
+    )
+    window.add_visual_signature_button.click()
+    app.processEvents()
+    assert errors == ["signature dialog test failure"]
+    assert window.isVisible()
+    assert not window.page_view.placement_mode
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_area_redaction_is_confirmed_and_supports_undo_redo(
     tmp_path: Path, monkeypatch
 ) -> None:

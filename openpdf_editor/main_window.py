@@ -6136,15 +6136,22 @@ class MainWindow(QMainWindow):
     def add_signature(self) -> None:
         if not self.engine.is_open:
             return
-        dialog = SignatureDialog(self, self.trx)
-        if not dialog.exec():
-            return
         try:
+            dialog = SignatureDialog(self, self.trx)
+            if not dialog.exec():
+                return
             payload, width, rotation, description = dialog.signature_data()
         except Exception as exc:
             QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
             return
-        self._begin_visual_placement("signature", payload, width, description, rotation)
+        try:
+            self._begin_visual_placement(
+                "signature", payload, width, description, rotation
+            )
+        except Exception as exc:
+            self._pending_visual = None
+            self.page_view.set_placement_mode(False)
+            QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
 
     def start_add_comment(self) -> None:
         if not self.engine.is_open:
@@ -6333,10 +6340,10 @@ class MainWindow(QMainWindow):
             return
         if self._form_workspace_mode != "fill" or field.read_only:
             return
-        dialog = SignatureDialog(self, self.trx)
-        if not dialog.exec():
-            return
         try:
+            dialog = SignatureDialog(self, self.trx)
+            if not dialog.exec():
+                return
             payload, _width, rotation, description = dialog.signature_data()
             image = QImage.fromData(payload)
             if image.isNull():
