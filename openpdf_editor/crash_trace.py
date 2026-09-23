@@ -30,6 +30,8 @@ _SIGNATURE_PHASES = {
     "png_encode_finished",
     "field_request_received",
     "field_resolved",
+    "preview_control_updated",
+    "preview_value_stored",
     "dialog_opening",
     "dialog_cancelled",
     "dialog_accepted",

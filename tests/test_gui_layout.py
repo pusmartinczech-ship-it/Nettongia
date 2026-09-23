@@ -665,6 +665,62 @@ def test_form_preview_is_temporary_and_fill_mode_is_undoable(tmp_path: Path) -> 
     app.processEvents()
 
 
+def test_preview_signature_click_updates_proxy_without_rebuilding_scene(
+    tmp_path: Path,
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "preview_signature",
+                "Preview signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.forms_tool_index)
+    window._set_form_workspace_mode("preview")
+    app.processEvents()
+
+    original_scene = window.page_view.scene()
+    original_bytes = window.engine.source_bytes
+    original_history = window.history_index
+    field = window.engine.form_fields()[0]
+    signature_button = next(
+        item.widget()
+        for item in original_scene.items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+
+    QTest.mouseClick(signature_button, Qt.LeftButton)
+    assert window.page_view.scene() is original_scene
+    assert signature_button.text() == window.trx("form_visual_signature_added")
+    assert not signature_button.isEnabled()
+    app.processEvents()
+
+    assert window.page_view.scene() is original_scene
+    assert (
+        window._form_preview_values[field.xref]
+        is main_window_module.FORM_VISUAL_SIGNATURE_VALUE
+    )
+    assert window.engine.source_bytes == original_bytes
+    assert window.history_index == original_history
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_visual_signature_fits_native_signature_field_without_signing_it(
     tmp_path: Path, monkeypatch
 ) -> None:

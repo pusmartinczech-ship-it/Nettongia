@@ -1219,8 +1219,16 @@ class PageView(QGraphicsView):
                             else signed_label if bool(value) else sign_label
                         )
                         control.clicked.connect(
-                            lambda _checked=False, field_xref=field.xref:
-                            self.form_signature_requested.emit(field_xref)
+                            lambda _checked=False,
+                            field_xref=field.xref,
+                            button=control,
+                            preview=form_mode == "preview":
+                            self._form_signature_control_clicked(
+                                field_xref,
+                                button,
+                                preview,
+                                visual_signature_added_label,
+                            )
                         )
                     else:
                         continue
@@ -1298,6 +1306,21 @@ class PageView(QGraphicsView):
                 state,
             ),
         )
+
+    def _form_signature_control_clicked(
+        self,
+        field_xref: int,
+        button: QPushButton,
+        preview: bool,
+        preview_label: str,
+    ) -> None:
+        if preview:
+            button.setText(preview_label)
+            button.setEnabled(False)
+            record_signature_trace(
+                "preview_control_updated", context="field", outcome="succeeded"
+            )
+        self.form_signature_requested.emit(field_xref)
 
     def set_render_tile(
         self,
@@ -6368,7 +6391,12 @@ class MainWindow(QMainWindow):
         )
         if self._form_workspace_mode == "preview":
             self._form_preview_values[field_xref] = FORM_VISUAL_SIGNATURE_VALUE
-            self._render_current_page()
+            record_signature_trace(
+                "preview_value_stored",
+                context="field",
+                page_index=field.page_index,
+                outcome="succeeded",
+            )
             self.statusBar().showMessage(self.trx("signature_preview_only"), 4500)
             return
         if self._form_workspace_mode != "fill" or field.read_only:
