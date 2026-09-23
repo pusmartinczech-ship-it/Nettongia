@@ -123,7 +123,7 @@ jobs:
           SHA-256: $sha256
           "@
           $notes | Set-Content -Encoding utf8 dist\release-notes.md
-          gh release view $releaseTag *> $null
+          cmd /c "gh release view $releaseTag >nul 2>nul"
           $releaseExists = ($LASTEXITCODE -eq 0)
           if ($releaseExists) {
             gh release upload $releaseTag $archive.FullName --clobber
