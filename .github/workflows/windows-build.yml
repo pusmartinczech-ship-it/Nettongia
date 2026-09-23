@@ -88,21 +88,29 @@ jobs:
           if-no-files-found: error
 
       - name: Publish unsigned portable beta
-        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')) }}
+        if: ${{ startsWith(github.ref, 'refs/tags/v') || (github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release]')) || (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release/publish-v')) }}
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           $archive = Get-ChildItem dist\Nettongia_PDF_Editor_*-portable.zip | Select-Object -First 1
           if (-not $archive) { throw "The verified portable archive is missing." }
-          if ($env:GITHUB_REF -like "refs/tags/v*") {
+          $versionText = Get-Content openpdf_editor\__init__.py -Raw
+          if ($versionText -notmatch '__version__\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"') {
+            throw "Unable to determine the application version for the release tag."
+          }
+          $expectedTag = "v$($Matches[1])"
+          $releaseTarget = $env:GITHUB_SHA
+          if ($env:GITHUB_EVENT_NAME -eq "pull_request") {
+            $releaseTag = $env:GITHUB_HEAD_REF.Replace("release/publish-", "")
+            $releaseTarget = "main"
+          } elseif ($env:GITHUB_REF -like "refs/tags/v*") {
             $releaseTag = $env:GITHUB_REF_NAME
           } else {
-            $versionText = Get-Content openpdf_editor\__init__.py -Raw
-            if ($versionText -notmatch '__version__\s*=\s*"([0-9]+\.[0-9]+\.[0-9]+)"') {
-              throw "Unable to determine the application version for the release tag."
-            }
-            $releaseTag = "v$($Matches[1])"
+            $releaseTag = $expectedTag
+          }
+          if ($releaseTag -ne $expectedTag) {
+            throw "Release branch/tag $releaseTag does not match application version $expectedTag."
           }
           $sha256 = (Get-FileHash -Algorithm SHA256 $archive.FullName).Hash.ToLowerInvariant()
           $notes = @"
@@ -125,7 +133,7 @@ jobs:
               --notes-file dist\release-notes.md
           } else {
             gh release create $releaseTag $archive.FullName `
-              --target $env:GITHUB_SHA `
+              --target $releaseTarget `
               --title "Nettongia PDF Editor $releaseTag (unsigned public beta)" `
               --notes-file dist\release-notes.md
           }
