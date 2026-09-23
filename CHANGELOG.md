@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.19.0
+## 0.20.0
 
 - Fixed a native Windows crash when a signature field was clicked in Forms
   Preview mode. The temporary signature is inserted into the existing page

@@ -336,7 +336,7 @@ BASE = {
     "original_working": "Original working document",
     "compressed_copy": "Compressed copy",
     "recompressed_images": "Recompressed images",
-    "about_body": "Nettongia PDF Editor 0.17.0\n\nEdit existing text directly on the page and add movable, resizable text boxes. Create blank PDFs; insert or remove images; manage pages; add rotatable visual signatures; switch appearance and interface language; preview and print documents; and save compressed copies.\n\nOriginal selected text and deleted images are removed from page content before saving.\n\nUnsaved work is marked with an asterisk, protected by a Save / Discard / Cancel prompt, and captured by automatic crash recovery. Recently opened PDFs are available from the File menu.\n\nVisual signatures are not certificate-based digital signatures. Image-only text still requires OCR.",
+    "about_body": "Nettongia PDF Editor 0.20.0\n\nEdit existing text, images and pages directly on the page. Create and fill native PDF forms, add comments and highlights, permanently redact selected areas, and insert visual signatures.\n\nOriginal selected text, deleted images and permanently redacted content are removed before saving. OCR, document processing and diagnostics remain local.\n\nUnsaved work is protected by Undo/Redo, a Save / Discard / Cancel prompt and automatic crash recovery.\n\nVisual signatures are image-based and are not certificate-based digital signatures.",
 }
 
 

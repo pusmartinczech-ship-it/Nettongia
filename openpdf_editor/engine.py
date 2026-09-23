@@ -1102,7 +1102,7 @@ class PdfEngine:
             document.set_metadata(
                 {
                     "creator": "Nettongia PDF Editor",
-                    "producer": "Nettongia PDF Editor 0.19.0",
+                    "producer": "Nettongia PDF Editor 0.20.0",
                 }
             )
             for _ in range(page_count):

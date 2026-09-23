@@ -1,8 +1,8 @@
-# Nettongia PDF Editor 0.19.0
+# Nettongia PDF Editor 0.20.0
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
-### Update checking (development checkpoint)
+### Update checking
 
 On startup the editor checks GitHub's latest stable release in the background,
 at most once per 24 hours. Disable this in **Help > Automatically check for
@@ -17,9 +17,9 @@ GitHub receives normal connection information, including your IP address and a
 generic application user-agent. The last check time, last announced version and
 enabled setting are stored locally with the existing application preferences.
 Disabling checks also suppresses notifications from any request already running.
-The update feature is not yet part of a newly verified Windows release.
+The update feature is included in version 0.20.0.
 
-### Comments and highlights (development checkpoint)
+### Comments and highlights
 
 Use **Comments > Add comment...** or `Ctrl+Alt+M`, then click the page and enter
 the note text. Nettongia writes a standard native PDF sticky-note annotation,
@@ -31,10 +31,9 @@ Right-click editable source or inserted text and choose **Highlight text** to
 add a standard yellow PDF highlight. Comments, edits, deletions and highlights
 are single Undo/Redo operations, remain visible in other compatible PDF
 readers, and are included when the document is saved. The workflow is
-translated in all 21 interface languages. This checkpoint has not yet been
-published as a new Windows release.
+translated in all 21 interface languages.
 
-### Permanent redaction (development checkpoint)
+### Permanent redaction
 
 Choose **Edit > Permanently redact area...** or press `Ctrl+Shift+R`, then drag
 a rectangle over sensitive page content and confirm the operation. Nettongia
@@ -79,7 +78,7 @@ A visual signature can be fitted into a native signature-field rectangle, but
 it is deliberately identified as an image-based visual signature. It does not
 create a certificate-based digital signature and the native `/Sig` field stays
 cryptographically unsigned. Creation of radio-button groups, XFA forms, push
-buttons and certificate-based signing is not included in this checkpoint.
+buttons and certificate-based signing is not included in version 0.20.0.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete
