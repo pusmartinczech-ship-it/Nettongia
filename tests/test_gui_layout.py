@@ -805,6 +805,7 @@ def test_visual_signature_fits_native_signature_field_without_signing_it(
     window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
     app.processEvents()
 
+    original_scene = window.page_view.scene()
     field = window.engine.form_fields()[0]
     signature_button = next(
         item.widget()
@@ -819,6 +820,7 @@ def test_visual_signature_fits_native_signature_field_without_signing_it(
     assert window.history_index == 0
     assert window.signatures == []
     app.processEvents()
+    assert window.page_view.scene() is original_scene
     assert window.history_index == 1
     assert len(window.signatures) == 1
     signature = window.signatures[0]
@@ -837,11 +839,14 @@ def test_visual_signature_fits_native_signature_field_without_signing_it(
         if isinstance(item, QGraphicsProxyWidget)
         and isinstance(item.widget(), QPushButton)
     ]
-    assert any(
-        button.text() == window.trx("form_visual_signature_added")
-        and not button.isEnabled()
-        for button in signature_buttons
-    )
+    assert not any(button.isVisible() for button in signature_buttons)
+    signature_layers = [
+        item
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsPixmapItem) and item.zValue() == 89
+    ]
+    assert len(signature_layers) == 1
+    assert not signature_layers[0].pixmap().isNull()
 
     window.undo()
     assert window.signatures == []

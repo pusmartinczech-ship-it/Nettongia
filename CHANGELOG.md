@@ -5,6 +5,9 @@
 - Fixed a native Windows crash when a signature field was clicked in Forms
   Preview mode. The temporary signature is inserted into the existing page
   scene without replacing its active `QGraphicsProxyWidget` hierarchy.
+- Applied the same in-place scene update to committed Fill & Sign signatures;
+  PDF state, recovery and Undo history are updated without destroying the
+  originating proxy control during its event dispatch.
 - Forms Preview now renders the typed or drawn test signature inside its field
   while keeping it temporary, resettable and outside both PDF bytes and Undo.
 - Added synchronously flushed local crash tracing for every visual-signature

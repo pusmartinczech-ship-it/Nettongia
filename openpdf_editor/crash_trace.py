@@ -31,6 +31,7 @@ _SIGNATURE_PHASES = {
     "field_request_received",
     "field_resolved",
     "preview_visual_added",
+    "committed_visual_added",
     "preview_value_stored",
     "dialog_opening",
     "dialog_cancelled",

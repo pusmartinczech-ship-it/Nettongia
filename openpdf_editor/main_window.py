@@ -1241,10 +1241,9 @@ class PageView(QGraphicsView):
                     if (
                         field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE
                         and value is FORM_VISUAL_SIGNATURE_VALUE
-                        and form_mode == "preview"
                     ):
-                        # The temporary signature is rendered into the page
-                        # preview. Do not cover it with an opaque proxy button.
+                        # The signature is rendered into the page. Do not cover
+                        # it with an opaque proxy button.
                         control.setVisible(False)
                     border = "#f59e0b" if field.required else "#2477c9"
                     background = (
@@ -1334,10 +1333,12 @@ class PageView(QGraphicsView):
         self.scene().addItem(item)
         self._tile_items[key] = item
 
-    def show_form_preview_signature(
+    def show_form_field_signature(
         self,
         field_xref: int,
         signature: SignaturePlacement,
+        *,
+        temporary: bool,
     ) -> bool:
         proxy = self._form_control_proxies.get(field_xref)
         if proxy is None or proxy.scene() is not self.scene():
@@ -1368,10 +1369,11 @@ class PageView(QGraphicsView):
         self.scene().addItem(item)
         proxy.setVisible(False)
         self._scene_item_refs.append(item)
-        self._form_preview_signature_items[field_xref] = item
-        record_signature_trace(
-            "preview_visual_added", context="field", outcome="succeeded"
-        )
+        if temporary:
+            self._form_preview_signature_items[field_xref] = item
+            record_signature_trace(
+                "preview_visual_added", context="field", outcome="succeeded"
+            )
         return True
 
     def clear_form_preview_signatures(self) -> None:
@@ -5835,12 +5837,20 @@ class MainWindow(QMainWindow):
             return
         self._exec_context_menu(menu, global_position)
 
-    def _push_state(self, state: EditorState, target_page: int) -> None:
+    def _push_state(
+        self,
+        state: EditorState,
+        target_page: int,
+        *,
+        render: bool = True,
+    ) -> None:
         self._document_session.content_changed(history_index=self.history_index)
         del self.history[self.history_index + 1 :]
         self.history.append(copy.deepcopy(state))
         self.history_index += 1
-        self._apply_state(self.history[self.history_index], target_page)
+        self._apply_state(
+            self.history[self.history_index], target_page, render=render
+        )
         self._operation_log.record(
             "state_changed",
             outcome="succeeded",
@@ -5849,7 +5859,13 @@ class MainWindow(QMainWindow):
             content_revision=self._content_revision,
         )
 
-    def _apply_state(self, state: EditorState, target_page: int) -> None:
+    def _apply_state(
+        self,
+        state: EditorState,
+        target_page: int,
+        *,
+        render: bool = True,
+    ) -> None:
         current_path = self.engine.path
         source_changed = not self.engine.is_open or self.engine.source_bytes != state.pdf_bytes
         if source_changed:
@@ -5869,7 +5885,12 @@ class MainWindow(QMainWindow):
             self._start_document_inspection()
         self._refresh_annotations_sidebar()
         self._refresh_forms_sidebar()
-        self._select_and_render_page(target_page)
+        if render:
+            self._select_and_render_page(target_page)
+        else:
+            self.current_page = min(
+                max(0, target_page), max(0, self.engine.page_count - 1)
+            )
         self._update_actions()
         self._update_window_title()
         if self.find_bar.isVisible() and self.find_edit.text().strip():
@@ -6517,7 +6538,9 @@ class MainWindow(QMainWindow):
                 payload_bytes=len(payload),
                 outcome="succeeded",
             )
-            if not self.page_view.show_form_preview_signature(field_xref, placement):
+            if not self.page_view.show_form_field_signature(
+                field_xref, placement, temporary=True
+            ):
                 record_signature_trace(
                     "handled_error", context="field", outcome="failed"
                 )
@@ -6540,13 +6563,23 @@ class MainWindow(QMainWindow):
         record_signature_trace(
             "state_push_started", context="field", page_index=field.page_index
         )
-        self._push_state(state, field.page_index)
+        self._push_state(state, field.page_index, render=False)
         record_signature_trace(
             "state_push_finished",
             context="field",
             page_index=field.page_index,
             signature_count=len(state.signatures),
         )
+        if self.page_view.show_form_field_signature(
+            field_xref, placement, temporary=False
+        ):
+            record_signature_trace(
+                "committed_visual_added", context="field", outcome="succeeded"
+            )
+        else:
+            record_signature_trace(
+                "handled_error", context="field", outcome="failed"
+            )
         record_signature_trace("notice_started", context="field")
         QMessageBox.information(
             self,
