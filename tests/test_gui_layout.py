@@ -691,7 +691,6 @@ def test_preview_signature_dialog_creates_temporary_visual_without_pdf_change(
     app.processEvents()
 
     original_scene = window.page_view.scene()
-    original_preview = window.page_view._page_item.pixmap().toImage()
     original_bytes = window.engine.source_bytes
     original_history = window.history_index
     field = window.engine.form_fields()[0]
@@ -718,8 +717,7 @@ def test_preview_signature_dialog_creates_temporary_visual_without_pdf_change(
     assert window.page_view.scene() is original_scene
     app.processEvents()
 
-    assert window.page_view.scene() is not original_scene
-    assert window.page_view._page_item.pixmap().toImage() != original_preview
+    assert window.page_view.scene() is original_scene
     assert (
         window._form_preview_values[field.xref]
         is main_window_module.FORM_VISUAL_SIGNATURE_VALUE
@@ -727,6 +725,10 @@ def test_preview_signature_dialog_creates_temporary_visual_without_pdf_change(
     preview_signature = window._form_preview_signatures[field.xref]
     assert preview_signature.page_index == field.page_index
     assert preview_signature.png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    preview_item = window.page_view._form_preview_signature_items[field.xref]
+    assert preview_item.scene() is original_scene
+    assert preview_item.isVisible()
+    assert not preview_item.pixmap().isNull()
     assert window.signatures == []
     assert window.engine.source_bytes == original_bytes
     assert window.history_index == original_history

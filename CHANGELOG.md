@@ -3,8 +3,8 @@
 ## 0.19.0
 
 - Fixed a native Windows crash when a signature field was clicked in Forms
-  Preview mode. The real signature dialog now opens first and the page scene is
-  rebuilt only after that modal interaction has finished.
+  Preview mode. The temporary signature is inserted into the existing page
+  scene without replacing its active `QGraphicsProxyWidget` hierarchy.
 - Forms Preview now renders the typed or drawn test signature inside its field
   while keeping it temporary, resettable and outside both PDF bytes and Undo.
 - Added synchronously flushed local crash tracing for every visual-signature

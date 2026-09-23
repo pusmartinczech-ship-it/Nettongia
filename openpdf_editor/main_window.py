@@ -1014,6 +1014,8 @@ class PageView(QGraphicsView):
         self._page_item: QGraphicsPixmapItem | None = None
         self._scene_item_refs: list[QGraphicsItem] = []
         self._tile_items: dict[object, QGraphicsPixmapItem] = {}
+        self._form_control_proxies: dict[int, object] = {}
+        self._form_preview_signature_items: dict[int, QGraphicsPixmapItem] = {}
         self.setScene(QGraphicsScene(self))
         self.scene().selectionChanged.connect(self._selection_changed)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -1102,6 +1104,7 @@ class PageView(QGraphicsView):
         new_scene = QGraphicsScene(self)
         new_scene.selectionChanged.connect(self._selection_changed)
         scene_item_refs: list[QGraphicsItem] = []
+        form_control_proxies: dict[int, object] = {}
         try:
             page_item = QGraphicsPixmapItem(pixmap)
             page_item.setZValue(0)
@@ -1261,6 +1264,7 @@ class PageView(QGraphicsView):
                     proxy.setPos(x0 * scale, y0 * scale)
                     proxy.setZValue(90 + order / 1000)
                     scene_item_refs.append(proxy)
+                    form_control_proxies[field.xref] = proxy
             new_scene.setSceneRect(page_rect)
         except BaseException:
             new_scene.deleteLater()
@@ -1273,6 +1277,8 @@ class PageView(QGraphicsView):
             self._page_item = page_item
             self._scene_item_refs = scene_item_refs
             self._tile_items = {}
+            self._form_control_proxies = form_control_proxies
+            self._form_preview_signature_items = {}
             self._inline_proxy = None
             self._inline_editor = None
             self._inline_ref = None
@@ -1327,6 +1333,59 @@ class PageView(QGraphicsView):
         item.setAcceptedMouseButtons(Qt.NoButton)
         self.scene().addItem(item)
         self._tile_items[key] = item
+
+    def show_form_preview_signature(
+        self,
+        field_xref: int,
+        signature: SignaturePlacement,
+    ) -> bool:
+        proxy = self._form_control_proxies.get(field_xref)
+        if proxy is None or proxy.scene() is not self.scene():
+            return False
+        image = QImage.fromData(signature.png_bytes)
+        if image.isNull():
+            return False
+        pixmap = QPixmap.fromImage(image)
+        item = QGraphicsPixmapItem(pixmap)
+        item.setTransformationMode(Qt.SmoothTransformation)
+        item.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
+        x0, y0, x1, y1 = signature.bbox
+        item.setPos(
+            QPointF(
+                (x0 + x1) * self.render_scale / 2,
+                (y0 + y1) * self.render_scale / 2,
+            )
+        )
+        rotated_width, rotated_height = _rotated_outer_size(
+            pixmap.width(), pixmap.height(), signature.rotation_degrees
+        )
+        scale_x = (x1 - x0) * self.render_scale / max(1.0, rotated_width)
+        scale_y = (y1 - y0) * self.render_scale / max(1.0, rotated_height)
+        item.setScale(max(0.0001, min(scale_x, scale_y)))
+        item.setRotation(signature.rotation_degrees)
+        item.setZValue(89)
+        item.setAcceptedMouseButtons(Qt.NoButton)
+        self.scene().addItem(item)
+        proxy.setVisible(False)
+        self._scene_item_refs.append(item)
+        self._form_preview_signature_items[field_xref] = item
+        record_signature_trace(
+            "preview_visual_added", context="field", outcome="succeeded"
+        )
+        return True
+
+    def clear_form_preview_signatures(self) -> None:
+        for item in self._form_preview_signature_items.values():
+            if item.scene() is self.scene():
+                self.scene().removeItem(item)
+            try:
+                self._scene_item_refs.remove(item)
+            except ValueError:
+                pass
+        self._form_preview_signature_items.clear()
+        for proxy in self._form_control_proxies.values():
+            if proxy.scene() is self.scene():
+                proxy.setVisible(True)
 
     def clear_render_tiles(self) -> None:
         for item in tuple(self._tile_items.values()):
@@ -1407,6 +1466,8 @@ class PageView(QGraphicsView):
         self._page_item = None
         self._scene_item_refs = []
         self._tile_items = {}
+        self._form_control_proxies = {}
+        self._form_preview_signature_items = {}
         self.scene().setSceneRect(QRectF())
         self._building_scene = False
         self.selected_signature_key = None
@@ -4590,7 +4651,7 @@ class MainWindow(QMainWindow):
         self._form_preview_values.clear()
         self._form_preview_signatures.clear()
         if self._form_workspace_mode == "preview" and self.engine.is_open:
-            self._render_current_page()
+            self.page_view.clear_form_preview_signatures()
             self.statusBar().showMessage(self.trx("form_preview_reset"), 3500)
 
     def _form_field_for_item(self, item: QListWidgetItem | None) -> FormFieldInfo | None:
@@ -6456,7 +6517,10 @@ class MainWindow(QMainWindow):
                 payload_bytes=len(payload),
                 outcome="succeeded",
             )
-            self._render_current_page()
+            if not self.page_view.show_form_preview_signature(field_xref, placement):
+                record_signature_trace(
+                    "handled_error", context="field", outcome="failed"
+                )
             self.statusBar().showMessage(self.trx("signature_preview_only"), 4500)
             return
         state = self._capture_state()
