@@ -200,6 +200,52 @@ class OutlineEntry:
     _cursor: object = field(repr=False, compare=False)
 
 
+@dataclass(frozen=True)
+class AnnotationInfo:
+    """A stable, user-facing description of one native PDF annotation."""
+
+    xref: int
+    page_index: int
+    type_name: str
+    content: str
+    author: str
+    bbox: tuple[float, float, float, float]
+
+
+@dataclass(frozen=True)
+class FormFieldInfo:
+    """A detached description of one editable AcroForm widget."""
+
+    xref: int
+    page_index: int
+    name: str
+    label: str
+    type_code: int
+    type_name: str
+    value: str
+    choices: tuple[str, ...]
+    bbox: tuple[float, float, float, float]
+    read_only: bool
+    required: bool
+    multiline: bool
+    checked: bool
+    on_value: str
+
+
+@dataclass(frozen=True)
+class FormFieldSpec:
+    """Validated settings for a new interactive AcroForm field."""
+
+    type_code: int
+    name: str
+    label: str = ""
+    value: str = ""
+    choices: tuple[str, ...] = ()
+    read_only: bool = False
+    required: bool = False
+    multiline: bool = False
+
+
 class PdfEngine:
     def __init__(self) -> None:
         self.path: Path | None = None
@@ -282,6 +328,261 @@ class PdfEngine:
     def page_rect(self, page_index: int) -> pymupdf.Rect:
         self._require_open()
         return pymupdf.Rect(self._source[page_index].rect)
+
+    def annotations(self) -> list[AnnotationInfo]:
+        """Return native PDF annotations without keeping PyMuPDF proxies alive."""
+
+        self._require_open()
+        result: list[AnnotationInfo] = []
+        for page_index in range(self._source.page_count):
+            page = self._source[page_index]
+            for annotation in page.annots() or ():
+                info = annotation.info or {}
+                rect = self._view_rect(page, annotation.rect)
+                result.append(
+                    AnnotationInfo(
+                        xref=int(annotation.xref),
+                        page_index=page_index,
+                        type_name=str(annotation.type[1] or "Annotation"),
+                        content=str(info.get("content") or ""),
+                        author=str(info.get("title") or ""),
+                        bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                    )
+                )
+        return result
+
+    def form_fields(self) -> list[FormFieldInfo]:
+        """Return supported AcroForm widgets without retaining PDF proxies."""
+
+        self._require_open()
+        result: list[FormFieldInfo] = []
+        supported = {
+            pymupdf.PDF_WIDGET_TYPE_TEXT,
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
+        }
+        for page_index in range(self._source.page_count):
+            page = self._source[page_index]
+            for widget in page.widgets() or ():
+                field_type = int(widget.field_type or 0)
+                if field_type not in supported:
+                    continue
+                value = str(widget.field_value or "")
+                on_value = ""
+                checked = False
+                if field_type in (
+                    pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                    pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                ):
+                    on_value = str(widget.on_state() or "Yes")
+                    checked = value not in ("", "Off") and value == on_value
+                rect = self._view_rect(page, widget.rect)
+                choices = tuple(str(item) for item in (widget.choice_values or ()))
+                flags = int(widget.field_flags or 0)
+                result.append(
+                    FormFieldInfo(
+                        xref=int(widget.xref),
+                        page_index=page_index,
+                        name=str(widget.field_name or ""),
+                        label=str(widget.field_label or ""),
+                        type_code=field_type,
+                        type_name=str(widget.field_type_string or "Form field"),
+                        value=value,
+                        choices=choices,
+                        bbox=(rect.x0, rect.y0, rect.x1, rect.y1),
+                        read_only=bool(flags & pymupdf.PDF_FIELD_IS_READ_ONLY),
+                        required=bool(flags & pymupdf.PDF_FIELD_IS_REQUIRED),
+                        multiline=bool(
+                            field_type == pymupdf.PDF_WIDGET_TYPE_TEXT
+                            and flags & (1 << 12)
+                        ),
+                        checked=checked,
+                        on_value=on_value,
+                    )
+                )
+        return result
+
+    def bytes_with_form_value(self, field_xref: int, value: str | bool) -> bytes:
+        """Return a PDF with one supported AcroForm widget value changed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    if int(widget.xref) != int(field_xref):
+                        continue
+                    flags = int(widget.field_flags or 0)
+                    if flags & pymupdf.PDF_FIELD_IS_READ_ONLY:
+                        raise ValueError("This form field is read-only.")
+                    field_type = int(widget.field_type or 0)
+                    if field_type == pymupdf.PDF_WIDGET_TYPE_TEXT:
+                        text = str(value)
+                        if len(text) > 10_000:
+                            raise ValueError("The form value is too long.")
+                        widget.field_value = text
+                    elif field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        text = str(value)
+                        choices = tuple(str(item) for item in (widget.choice_values or ()))
+                        if choices and text not in choices:
+                            raise ValueError("The selected form value is unavailable.")
+                        widget.field_value = text
+                    elif field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+                        widget.field_value = str(widget.on_state() or "Yes") if bool(value) else "Off"
+                    elif field_type == pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+                        if not bool(value):
+                            raise ValueError("A radio button can only be selected.")
+                        widget.field_value = str(widget.on_state() or "Yes")
+                    else:
+                        raise ValueError("This form field type is not editable.")
+                    widget.update()
+                    return self._serialize(document)
+            raise ValueError("The form field is no longer available.")
+        finally:
+            document.close()
+
+    def bytes_with_cleared_form_values(self) -> bytes:
+        """Return a PDF with editable AcroForm values reset to an empty state."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        changed = False
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    flags = int(widget.field_flags or 0)
+                    if flags & pymupdf.PDF_FIELD_IS_READ_ONLY:
+                        continue
+                    field_type = int(widget.field_type or 0)
+                    if field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_TEXT,
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        # PyMuPDF intentionally ignores an empty assignment.
+                        # Generate a visually blank appearance with one space,
+                        # then store the canonical AcroForm value as empty.
+                        widget.field_value = " "
+                        widget.update()
+                        document.xref_set_key(widget.xref, "V", "()")
+                    elif field_type in (
+                        pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                        pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                    ):
+                        widget.field_value = "Off"
+                    else:
+                        continue
+                    if field_type not in (
+                        pymupdf.PDF_WIDGET_TYPE_TEXT,
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        widget.update()
+                    changed = True
+            if not changed:
+                raise ValueError("This document has no editable form values.")
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_new_form_field(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+        spec: FormFieldSpec,
+    ) -> bytes:
+        """Return a PDF with one new native AcroForm widget."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        supported = {
+            pymupdf.PDF_WIDGET_TYPE_TEXT,
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
+        }
+        if int(spec.type_code) not in supported:
+            raise ValueError("This form field type cannot be created.")
+        name = spec.name.strip()
+        if not name or len(name) > 200 or any(ord(char) < 32 for char in name):
+            raise ValueError("Enter a valid form field name.")
+        if len(spec.label) > 500 or len(spec.value) > 10_000:
+            raise ValueError("The form field text is too long.")
+        choices = tuple(item.strip() for item in spec.choices if item.strip())
+        if spec.type_code in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        ) and len(choices) < 2:
+            raise ValueError("Choice fields require at least two values.")
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for existing in page.widgets() or ():
+                    if (
+                        str(existing.field_name or "") == name
+                        and int(existing.field_type or 0) != int(spec.type_code)
+                    ):
+                        raise ValueError(
+                            "A field with this name already exists with a different type."
+                        )
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 4.0 or view_rect.height < 4.0:
+                raise ValueError("The selected form field area is too small.")
+            widget = pymupdf.Widget()
+            widget.field_type = int(spec.type_code)
+            widget.field_name = name
+            widget.field_label = spec.label.strip() or name
+            widget.rect = self._page_rect_from_view(page, view_rect)
+            widget.border_color = (0.25, 0.45, 0.75)
+            widget.border_width = 1.0
+            widget.fill_color = (1.0, 1.0, 1.0)
+            widget.text_color = (0.0, 0.0, 0.0)
+            widget.text_font = "Helv"
+            widget.text_fontsize = 11
+            flags = pymupdf.PDF_FIELD_IS_READ_ONLY if spec.read_only else 0
+            if spec.required:
+                flags |= pymupdf.PDF_FIELD_IS_REQUIRED
+            if spec.type_code == pymupdf.PDF_WIDGET_TYPE_TEXT:
+                if spec.multiline:
+                    flags |= pymupdf.PDF_TX_FIELD_IS_MULTILINE
+                widget.field_value = spec.value
+            elif spec.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+                widget.text_font = "ZaDb"
+                widget.text_fontsize = 0
+                if spec.value.lower() in {"1", "true", "yes", "on", "checked"}:
+                    widget.field_value = True
+            elif spec.type_code in (
+                pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+            ):
+                widget.choice_values = list(choices)
+                widget.field_value = spec.value if spec.value in choices else choices[0]
+            widget.field_flags = flags
+            page.add_widget(widget)
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_without_form_field(self, field_xref: int) -> bytes:
+        """Return a PDF with one form widget removed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    if int(widget.xref) == int(field_xref):
+                        page.delete_widget(widget)
+                        return self._serialize(document)
+            raise ValueError("The form field is no longer available.")
+        finally:
+            document.close()
 
     @staticmethod
     def _view_rect(
@@ -801,7 +1102,7 @@ class PdfEngine:
             document.set_metadata(
                 {
                     "creator": "Nettongia PDF Editor",
-                    "producer": "Nettongia PDF Editor 0.19.0",
+                    "producer": "Nettongia PDF Editor 0.20.0",
                 }
             )
             for _ in range(page_count):
@@ -901,6 +1202,166 @@ class PdfEngine:
                 deflate_fonts=True,
                 use_objstms=1,
             )
+        finally:
+            document.close()
+
+    def bytes_with_text_comment(
+        self,
+        page_index: int,
+        point: tuple[float, float],
+        content: str,
+        *,
+        author: str = "",
+    ) -> bytes:
+        """Return a PDF containing a native sticky-note annotation."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        if not content.strip():
+            raise ValueError("A comment cannot be empty.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_point = pymupdf.Point(float(point[0]), float(point[1]))
+            page_point = self._mapped_point(page, view_point, to_view=False)
+            annotation = page.add_text_annot(page_point, content.strip())
+            annotation.set_info(
+                title=author.strip(),
+                content=content.strip(),
+                subject="Nettongia comment",
+            )
+            annotation.update()
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_highlight(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+        *,
+        content: str = "",
+        author: str = "",
+    ) -> bytes:
+        """Return a PDF containing a native yellow highlight annotation."""
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 0.5 or view_rect.height < 0.5:
+                raise ValueError("The selected text area is unavailable.")
+            # A plain Rect loses the text-baseline direction on rotated pages.
+            # Preserve the visible corner order in an explicit Quad so the
+            # highlight remains horizontal to the user.
+            quad = pymupdf.Quad(
+                self._mapped_point(page, view_rect.top_left, to_view=False),
+                self._mapped_point(page, view_rect.top_right, to_view=False),
+                self._mapped_point(page, view_rect.bottom_left, to_view=False),
+                self._mapped_point(page, view_rect.bottom_right, to_view=False),
+            )
+            annotation = page.add_highlight_annot(quad)
+            annotation.set_info(
+                title=author.strip(),
+                content=content.strip(),
+                subject="Nettongia highlight",
+            )
+            annotation.set_colors(stroke=(1.0, 0.82, 0.0))
+            annotation.update(opacity=0.45)
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_redaction(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+    ) -> bytes:
+        """Permanently remove page content inside a visible rectangle.
+
+        The rectangle uses the same rotated, on-screen coordinate system as
+        rendering and selection.  Overlapping annotations and form widgets
+        are removed as well so their values or comments cannot remain hidden
+        behind the black rectangle.
+        """
+
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            view_rect = pymupdf.Rect(bbox) & page.rect
+            if view_rect.is_empty or view_rect.width < 1.0 or view_rect.height < 1.0:
+                raise ValueError("The selected redaction area is too small.")
+            page_rect = self._page_rect_from_view(page, view_rect)
+
+            annotations = list(page.annots() or ())
+            if any(item.type[0] == pymupdf.PDF_ANNOT_REDACT for item in annotations):
+                raise ValueError(
+                    "This page already contains unapplied redaction marks. "
+                    "Remove them before creating a permanent redaction."
+                )
+            for annotation in annotations:
+                if not (pymupdf.Rect(annotation.rect) & page_rect).is_empty:
+                    page.delete_annot(annotation)
+            for widget in list(page.widgets() or ()):
+                if not (pymupdf.Rect(widget.rect) & page_rect).is_empty:
+                    page.delete_widget(widget)
+
+            page.add_redact_annot(
+                page_rect,
+                fill=(0.0, 0.0, 0.0),
+                cross_out=False,
+            )
+            applied = page.apply_redactions(
+                images=pymupdf.PDF_REDACT_IMAGE_PIXELS,
+                graphics=pymupdf.PDF_REDACT_LINE_ART_REMOVE_IF_COVERED,
+                text=pymupdf.PDF_REDACT_TEXT_REMOVE,
+            )
+            if not applied:
+                raise RuntimeError("The redaction could not be applied.")
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_with_annotation_content(
+        self,
+        annotation_xref: int,
+        content: str,
+    ) -> bytes:
+        """Return a PDF with one annotation's comment text changed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for annotation in page.annots() or ():
+                    if int(annotation.xref) != int(annotation_xref):
+                        continue
+                    info = annotation.info or {}
+                    annotation.set_info(
+                        title=str(info.get("title") or ""),
+                        content=content.strip(),
+                        subject=str(info.get("subject") or ""),
+                    )
+                    annotation.update()
+                    return self._serialize(document)
+            raise ValueError("The annotation is no longer available.")
+        finally:
+            document.close()
+
+    def bytes_without_annotation(self, annotation_xref: int) -> bytes:
+        """Return a PDF with one native annotation removed."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for annotation in page.annots() or ():
+                    if int(annotation.xref) == int(annotation_xref):
+                        page.delete_annot(annotation)
+                        return self._serialize(document)
+            raise ValueError("The annotation is no longer available.")
         finally:
             document.close()
 

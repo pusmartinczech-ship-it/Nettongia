@@ -1,7 +1,57 @@
 # Changelog
 
-## 0.19.0
+## 0.20.0
 
+- Fixed a native Windows crash when a signature field was clicked in Forms
+  Preview mode. The temporary signature is inserted into the existing page
+  scene without replacing its active `QGraphicsProxyWidget` hierarchy.
+- Applied the same in-place scene update to committed Fill & Sign signatures;
+  PDF state, recovery and Undo history are updated without destroying the
+  originating proxy control during its event dispatch.
+- Forms Preview now renders the typed or drawn test signature inside its field
+  while keeping it temporary, resettable and outside both PDF bytes and Undo.
+- Added synchronously flushed local crash tracing for every visual-signature
+  stage, Qt diagnostics and native Python fault stacks. Signature text and PDF
+  content are excluded, clean exits remove the trace, and an abnormal run is
+  retained as `crash.log` / `crash.previous.log` for diagnosis.
+- Added native AcroForm signature fields and required-field flags, including
+  canonical field widgets and appearance streams for compatible PDF readers.
+- Added separate Forms Edit and Preview modes. Preview values are temporary and
+  never modify the PDF or its Undo history.
+- Added a Fill & Sign tool with live on-page controls, reversible value changes,
+  one-step form clearing and visual signatures fitted into signature fields.
+- Clearly distinguishes image-based visual signatures from certificate-based
+  digital signatures; native signature fields remain cryptographically unsigned.
+- Replaced the Comments and Forms tabs in the left navigation area with an
+  Acrobat-style collapsible tool rail on the right. Pages and the document
+  tree remain on the left; the right rail is ready for future tools.
+- Added creation and deletion of native AcroForm text fields, check boxes,
+  drop-down lists and list boxes. New fields support names, tooltips, default
+  values, choice lists, multiline text, read-only state, rotated pages and
+  complete Undo/Redo.
+- Added independent validation of the canonical AcroForm field tree, page
+  widgets and appearance streams so created fields remain interactive in
+  compatible PDF readers after saving.
+- Added permanent rectangular redaction from the Edit menu. Selected text,
+  image pixels, vector content, links, comments and form fields are removed
+  before a black replacement area is written, with confirmation and Undo/Redo.
+- Added regressions that inspect extracted text, PDF object streams, rendered
+  pixels, rotated-page geometry and overlapping interactive objects after
+  redaction.
+- Added a Forms sidebar for standard AcroForm text fields, check boxes, radio
+  buttons, combo boxes and list boxes, including protected read-only fields,
+  page navigation, Undo/Redo and saved-value preservation.
+- Fixed update checks for the published v0.19.0 public beta and other official
+  prereleases while continuing to reject drafts and malformed metadata.
+- Made the default local and GitHub Windows build portable-only; installer
+  generation is now an explicit legacy opt-in.
+- Added native PDF sticky-note comments from a page-placement mode and standard
+  yellow highlights from the text-object context menu.
+- Added a Comments sidebar for existing and new annotations, including page
+  navigation, comment editing and deletion.
+- Made comment insertion, editing, deletion and text highlighting reversible
+  Undo/Redo operations, with correct geometry on rotated pages and all 21 UI
+  languages.
 - Added clockwise and counter-clockwise page rotation from the Page menu, the
   thumbnail context menu and keyboard shortcuts.
 - Made page rotation one reversible history operation that keeps page content,

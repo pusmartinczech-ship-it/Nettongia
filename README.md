@@ -1,10 +1,84 @@
-# Nettongia PDF Editor 0.19.0
+# Nettongia PDF Editor 0.20.0
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
+
+### Update checking
+
+On startup the editor checks GitHub's latest stable release in the background,
+at most once per 24 hours. Disable this in **Help > Automatically check for
+updates (GitHub)** for fully offline operation. **Help > Check for updates...**
+always permits a manual check. Offline failures do not interrupt editing;
+manual checks report when the service is unavailable. A new release is announced
+once per version, with an option to open its GitHub release page. Nothing is
+automatically downloaded or installed and your portable copy is never replaced.
+
+This optional request sends no PDF content, filenames, paths or diagnostics.
+GitHub receives normal connection information, including your IP address and a
+generic application user-agent. The last check time, last announced version and
+enabled setting are stored locally with the existing application preferences.
+Disabling checks also suppresses notifications from any request already running.
+The update feature is included in version 0.20.0.
+
+### Comments and highlights
+
+Use **Comments > Add comment...** or `Ctrl+Alt+M`, then click the page and enter
+the note text. Nettongia writes a standard native PDF sticky-note annotation,
+not a flattened picture. The new **Comments** tab lists both newly created and
+existing annotations; double-click an entry to open its page and location, or
+right-click it to edit its comment text or delete it.
+
+Right-click editable source or inserted text and choose **Highlight text** to
+add a standard yellow PDF highlight. Comments, edits, deletions and highlights
+are single Undo/Redo operations, remain visible in other compatible PDF
+readers, and are included when the document is saved. The workflow is
+translated in all 21 interface languages.
+
+### Permanent redaction
+
+Choose **Edit > Permanently redact area...** or press `Ctrl+Shift+R`, then drag
+a rectangle over sensitive page content and confirm the operation. Nettongia
+physically removes intersecting text, image pixels, vector content, links,
+comments and form fields, then fills the selected area in black. The operation
+is reversible with Undo/Redo until the document is saved.
+
+Redaction applies only to the selected area on the current page. It does not
+remove another occurrence elsewhere in the document, document metadata or
+attachments. A confirmation dialog states this scope before the change is
+made. Pages containing unapplied redaction annotations are rejected to avoid
+silently applying marks that the user did not select in Nettongia.
 
 Version 0.19.0 adds reversible page rotation. Rotate the selected page left or right from the **Page** menu, the thumbnail context menu, or the `Ctrl+Shift+Left` / `Ctrl+Shift+Right` shortcuts. The page contents, pending text, images and visual signatures rotate together, and Undo/Redo restores the complete earlier state. Rotated source pages now expose their text and image selection geometry in the visible orientation, so editing remains aligned after a quarter turn.
 
 The reversible page reordering and direct transformation of images already embedded in a PDF from version 0.18.0 remain available. Drag a page thumbnail to a new position in the left **Pages** panel, just as in PowerPoint; bookmarks, internal links and pending editor objects follow their logical page. Click an embedded image directly to select it, then move, resize or freely rotate it with the same controls used for inserted images. The optional **Image > Edit original image** command is useful when the page contains overlapping objects and limits selection to source images. Selecting an original image is non-mutating: its PDF stream and pixels remain untouched until a deliberate transform is committed, including transparency, existing orthogonal rotation and text drawn above the image.
+
+The left sidebar now contains only page thumbnails and the document tree.
+Comments and Forms live in a collapsible Acrobat-style tool rail on the right;
+click a vertical tool icon to open its panel and click it again, or use the
+arrow in the panel header, to return to the compact rail. This right rail is
+the home for additional document tools added in future versions.
+
+Use **Forms > Create form field...**, `Ctrl+Alt+F`, or the plus button in the
+right Forms panel to create a native interactive text field, check box,
+drop-down list, list box or signature field. Configure its name, tooltip,
+default value, choices, required state and other properties, then drag its
+rectangle directly on the page. Multiline and read-only fields are supported,
+and fields with the same name intentionally share their value according to the
+AcroForm standard. Creation and deletion participate in Undo/Redo and remain
+editable in compatible PDF readers after saving.
+
+The Forms panel has separate **Edit** and **Preview** modes. Preview provides
+live controls directly on the page and keeps all test entries temporary, so the
+PDF and Undo history are not changed. The separate **Fill & Sign** tool uses the
+same on-page controls for real values saved into the PDF, supports Undo/Redo and
+can clear editable values in one reversible operation. Existing AcroForm text
+fields, check boxes, radio buttons, combo boxes and list boxes are supported;
+read-only fields are identified and protected.
+
+A visual signature can be fitted into a native signature-field rectangle, but
+it is deliberately identified as an image-based visual signature. It does not
+create a certificate-based digital signature and the native `/Sig` field stays
+cryptographically unsigned. Creation of radio-button groups, XFA forms, push
+buttons and certificate-based signing is not included in version 0.20.0.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete
@@ -260,9 +334,18 @@ For seamless upgrades, Windows recovery data remains at the established `%LOCALA
 
 If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at the established `%LOCALAPPDATA%\OpenPDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
 
+The raw local log also records synchronously flushed, content-free checkpoints
+through visual-signature creation (dialog, rendering, PNG encoding, form-field
+placement and Undo-state update), together with Qt warnings and native Python
+fault traces. Signature text and PDF content are not written to these
+checkpoints. This makes the final completed checkpoint usable even when Windows
+terminates the process abruptly.
+
 The most recent non-empty crash log is preserved across the next start as
 `crash.previous.log`. Its raw content may contain technical paths or exception
 text, so Nettongia PDF Editor never puts it in an exported diagnostic package.
+After reproducing a crash, copy `crash.log` before restarting, or restart once
+and collect the rotated `crash.previous.log`.
 
 ## Anonymized diagnostics
 
@@ -292,27 +375,31 @@ Vector text and graphics remain sharp in all profiles. Lossy profiles are intend
 
 ## Current limitations
 
+- Interactive form filling supports standard AcroForm text, check, radio and
+  choice fields. Dynamic XFA, push-button actions and certificate-signature
+  fields are intentionally not modified.
 - OCR requires the checked-in language bundle; both source and packaged builds use it offline, with no Tesseract installation or model download. A damaged or incomplete bundle is reported by the self-test.
 - Letters converted to vector outlines cannot be treated as text.
 - Deleted images leave a white area. Complex backgrounds may require later retouching support.
 - An existing cryptographic PDF signature becomes invalid after any content edit.
 - Print output is rendered page content rather than a vector-preserving PDF export; very large pages use the same safe render budget as the editor view.
 
-## Build a Windows EXE
+## Build a portable Windows version
 
-Install Python 3.12 and Inno Setup 6, then double-click `build_exe.bat`. The
+Install Python 3.12, then double-click `build_exe.bat`. The
 build uses `requirements-windows.lock`, verifies the five checked-in OCR models
 (it never downloads them), collects dependency license files, includes the
 complete corresponding source and runs the frozen executable self-test before
 creating:
 
-`dist\installer\Nettongia_PDF_Editor_<version>-x64.exe`
+`dist\Nettongia_PDF_Editor_<version>-portable.zip`
 
 The intermediate folder build remains at `dist\NettongiaPDFEditor`. Run
 `dist\NettongiaPDFEditor\NettongiaPDFEditor.exe --self-test result.json` to repeat its
-non-GUI open/render/save/inspection check. The GitHub workflow produces an
-unsigned artifact by default and can submit it to the free SignPath Foundation
-service after the project owner completes the one-time setup in `SIGNING.md`.
+non-GUI open/render/save/inspection check. The GitHub workflow builds, tests and
+publishes only the portable ZIP. An installer can still be built explicitly for
+legacy testing with `tools\build_windows.ps1 -IncludeInstaller` when Inno Setup
+6 is installed.
 
 ## Run the supplied-file tests
 

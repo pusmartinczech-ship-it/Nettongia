@@ -16,6 +16,7 @@ from PySide6.QtCore import (
     QPointF,
     QRect,
     QSettings,
+    QTimer,
     Qt,
 )
 from PySide6.QtGui import (
@@ -35,13 +36,15 @@ from PySide6.QtWidgets import (
     QApplication,
     QFileDialog,
     QGraphicsPixmapItem,
+    QGraphicsProxyWidget,
     QMenu,
     QMessageBox,
+    QPushButton,
     QToolBar,
 )
 
 import openpdf_editor.main_window as main_window_module
-from openpdf_editor.engine import PdfEngine
+from openpdf_editor.engine import FormFieldSpec, PdfEngine
 from openpdf_editor.main_window import (
     FONT_SIZE_PRESETS,
     MainWindow,
@@ -60,6 +63,30 @@ def _application() -> QApplication:
     app.setOrganizationName("Nettongia PDF Editor Tests")
     app.setApplicationName("Nettongia PDF Editor Tests")
     return app
+
+
+def _form_pdf_bytes() -> bytes:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    for field_type, name, label, rect, value, choices in (
+        (fitz.PDF_WIDGET_TYPE_TEXT, "customer", "Customer", (40, 40, 240, 70), "Old", None),
+        (fitz.PDF_WIDGET_TYPE_CHECKBOX, "approved", "Approved", (40, 90, 60, 110), None, None),
+        (fitz.PDF_WIDGET_TYPE_COMBOBOX, "country", "Country", (40, 130, 240, 160), "Czechia", ["Czechia", "Poland"]),
+    ):
+        widget = fitz.Widget()
+        widget.field_type = field_type
+        widget.field_name = name
+        widget.field_label = label
+        widget.rect = fitz.Rect(rect)
+        if value is not None:
+            widget.field_value = value
+        if choices is not None:
+            widget.choice_values = choices
+        page.add_widget(widget)
+    try:
+        return document.tobytes()
+    finally:
+        document.close()
 
 
 def test_text_controls_use_one_toolbar_without_overlap() -> None:
@@ -375,6 +402,677 @@ def test_page_rotation_is_undoable_and_available_from_thumbnail_menu(
     assert window.engine.page_rect(0).width == pytest.approx(420)
     window.redo()
     assert window.engine._source[0].rotation == 90
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_native_comments_and_highlights_are_listed_and_undoable(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((50, 90), "COMMENT TARGET", fontsize=20)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getMultiLineText",
+        lambda *args, **kwargs: ("Verify the drawing note", True),
+    )
+    window.start_add_comment()
+    assert window.page_view.comment_placement_mode
+    window._place_comment(100 * window.render_scale, 120 * window.render_scale)
+    assert len(window.engine.annotations()) == 1
+    assert window.comments_list.count() == 1
+    assert "Verify the drawing note" in window.comments_list.item(0).text()
+    assert window.history_index == 1
+
+    run = window.engine.text_runs(0)[0]
+    window._highlight_text("source", run.key)
+    assert [item.type_name for item in window.engine.annotations()] == ["Text", "Highlight"]
+    assert window.comments_list.count() == 2
+    assert window.history_index == 2
+
+    window.undo()
+    assert [item.type_name for item in window.engine.annotations()] == ["Text"]
+    assert window.comments_list.count() == 1
+    window.redo()
+    assert len(window.engine.annotations()) == 2
+
+    window.comments_list.setCurrentRow(0)
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getMultiLineText",
+        lambda *args, **kwargs: ("Updated review comment", True),
+    )
+    window.edit_selected_comment()
+    assert window.engine.annotations()[0].content == "Updated review comment"
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.comments_list.setCurrentRow(0)
+    window.delete_selected_annotation()
+    assert len(window.engine.annotations()) == 1
+    window.undo()
+    assert len(window.engine.annotations()) == 2
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_acroform_sidebar_edits_fields_with_undo_redo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(_form_pdf_bytes())
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    assert window.forms_list.count() == 3
+    assert window.sidebar_tabs.count() == 2
+    assert window.right_sidebar.isTabEnabled(window.forms_tool_index)
+    assert not window.right_sidebar.isExpanded()
+    window.right_sidebar.setCurrentIndex(window.forms_tool_index)
+    assert window.right_sidebar.isExpanded()
+    app.processEvents()
+    assert window.right_sidebar.width() >= 250
+    window.right_sidebar.collapse()
+    assert not window.right_sidebar.isExpanded()
+    app.processEvents()
+    assert window.right_sidebar.width() == 48
+
+    def select_field(name: str) -> None:
+        field = next(item for item in window.engine.form_fields() if item.name == name)
+        row = next(
+            index
+            for index in range(window.forms_list.count())
+            if int(window.forms_list.item(index).data(Qt.UserRole)) == field.xref
+        )
+        window.forms_list.setCurrentRow(row)
+
+    select_field("customer")
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getText",
+        lambda *args, **kwargs: ("New customer", True),
+    )
+    window.edit_selected_form_field()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "New customer"
+    assert window.history_index == 1
+    window.undo()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "Old"
+    window.redo()
+    assert {item.name: item.value for item in window.engine.form_fields()}["customer"] == "New customer"
+
+    select_field("approved")
+    window.edit_selected_form_field()
+    assert next(item for item in window.engine.form_fields() if item.name == "approved").checked
+
+    select_field("country")
+    monkeypatch.setattr(
+        main_window_module.QInputDialog,
+        "getItem",
+        lambda *args, **kwargs: ("Poland", True),
+    )
+    window.edit_selected_form_field()
+    assert {item.name: item.value for item in window.engine.form_fields()}["country"] == "Poland"
+    assert window.has_unsaved_changes
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_form_field_creation_and_deletion_use_right_sidebar_and_history(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+    spec = FormFieldSpec(
+        fitz.PDF_WIDGET_TYPE_TEXT,
+        "customer_email",
+        "Customer email",
+        "mail@example.com",
+    )
+
+    class AcceptedFormDialog:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return True
+
+        def field_spec(self):
+            return spec
+
+    monkeypatch.setattr(main_window_module, "FormFieldDialog", AcceptedFormDialog)
+    window.start_create_form_field()
+    assert window.page_view.form_field_mode
+    window._create_form_field(
+        (50, 70, 260, 102),
+        window.page_view._page_generation,
+    )
+
+    fields = window.engine.form_fields()
+    assert len(fields) == 1
+    assert fields[0].name == "customer_email"
+    assert fields[0].value == "mail@example.com"
+    assert window.forms_list.count() == 1
+    assert window.right_sidebar.currentIndex() == window.forms_tool_index
+    assert window.right_sidebar.isExpanded()
+    assert window.history_index == 1
+
+    window.undo()
+    assert window.engine.form_fields() == []
+    window.redo()
+    assert len(window.engine.form_fields()) == 1
+
+    window.forms_list.setCurrentRow(0)
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.delete_selected_form_field()
+    assert window.engine.form_fields() == []
+    window.undo()
+    assert len(window.engine.form_fields()) == 1
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_form_preview_is_temporary_and_fill_mode_is_undoable(tmp_path: Path) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(_form_pdf_bytes())
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    assert window.right_sidebar.isTabEnabled(window.fill_sign_tool_index)
+    window.right_sidebar.setCurrentIndex(window.forms_tool_index)
+    window._set_form_workspace_mode("preview")
+    app.processEvents()
+    assert window._form_workspace_mode == "preview"
+    assert any(
+        isinstance(item, QGraphicsProxyWidget)
+        for item in window.page_view.scene().items()
+    )
+
+    customer = next(
+        item for item in window.engine.form_fields() if item.name == "customer"
+    )
+    original_bytes = window.engine.source_bytes
+    original_history = window.history_index
+    window._form_value_edited(customer.xref, "Temporary")
+    assert window._form_preview_values[customer.xref] == "Temporary"
+    assert window.engine.source_bytes == original_bytes
+    assert window.history_index == original_history
+    window.reset_form_preview()
+    assert window._form_preview_values == {}
+
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+    assert window._form_workspace_mode == "fill"
+    customer = next(
+        item for item in window.engine.form_fields() if item.name == "customer"
+    )
+    window._form_value_edited(customer.xref, "Saved value")
+    assert next(
+        item.value for item in window.engine.form_fields() if item.name == "customer"
+    ) == "Saved value"
+    assert window.history_index == original_history + 1
+    window.undo()
+    assert next(
+        item.value for item in window.engine.form_fields() if item.name == "customer"
+    ) == "Old"
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_preview_signature_dialog_creates_temporary_visual_without_pdf_change(
+    tmp_path: Path,
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "preview_signature",
+                "Preview signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.forms_tool_index)
+    window._set_form_workspace_mode("preview")
+    app.processEvents()
+
+    original_scene = window.page_view.scene()
+    original_bytes = window.engine.source_bytes
+    original_history = window.history_index
+    field = window.engine.form_fields()[0]
+    signature_button = next(
+        item.widget()
+        for item in original_scene.items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+
+    def type_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        dialog.type_mode.setChecked(True)
+        dialog.typed_text.setText("Temporary Preview")
+        dialog._validate_and_accept()
+
+    QTimer.singleShot(50, type_and_accept)
+    QTest.mouseClick(signature_button, Qt.LeftButton)
+    assert window.page_view.scene() is original_scene
+    app.processEvents()
+
+    assert window.page_view.scene() is original_scene
+    assert (
+        window._form_preview_values[field.xref]
+        is main_window_module.FORM_VISUAL_SIGNATURE_VALUE
+    )
+    preview_signature = window._form_preview_signatures[field.xref]
+    assert preview_signature.page_index == field.page_index
+    assert preview_signature.png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    preview_item = window.page_view._form_preview_signature_items[field.xref]
+    assert preview_item.scene() is original_scene
+    assert preview_item.isVisible()
+    assert not preview_item.pixmap().isNull()
+    assert window.signatures == []
+    assert window.engine.source_bytes == original_bytes
+    assert window.history_index == original_history
+    preview_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert not any(button.isVisible() for button in preview_buttons)
+
+    window.reset_form_preview()
+    app.processEvents()
+    assert window._form_preview_values == {}
+    assert window._form_preview_signatures == {}
+    signature_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert any(button.isVisible() and button.isEnabled() for button in signature_buttons)
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_visual_signature_fits_native_signature_field_without_signing_it(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from PySide6.QtCore import QBuffer, QIODevice
+
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "customer_signature",
+                "Customer signature",
+                required=True,
+            ),
+        )
+    )
+    image = QImage(160, 40, QImage.Format_ARGB32)
+    image.fill(QColor("#1e4f91"))
+    buffer = QByteArray()
+    device = QBuffer(buffer)
+    assert device.open(QIODevice.WriteOnly)
+    assert image.save(device, "PNG")
+    payload = bytes(buffer)
+
+    class AcceptedSignatureDialog:
+        def __init__(self, *_args, **_kwargs):
+            pass
+
+        def exec(self):
+            return True
+
+        def signature_data(self):
+            return payload, 160.0, 0.0, "Visual signature"
+
+    monkeypatch.setattr(main_window_module, "SignatureDialog", AcceptedSignatureDialog)
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+
+    original_scene = window.page_view.scene()
+    field = window.engine.form_fields()[0]
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+        and item.widget().text() == window.trx("form_signature_button")
+    )
+    signature_button.click()
+    # The scene must not be replaced while the proxy button's click handler is
+    # still executing. Processing the queued signal performs the mutation.
+    assert window.history_index == 0
+    assert window.signatures == []
+    app.processEvents()
+    assert window.page_view.scene() is original_scene
+    assert window.history_index == 1
+    assert len(window.signatures) == 1
+    signature = window.signatures[0]
+    assert signature.page_index == field.page_index
+    assert field.bbox[0] <= signature.bbox[0] < signature.bbox[2] <= field.bbox[2]
+    assert field.bbox[1] <= signature.bbox[1] < signature.bbox[3] <= field.bbox[3]
+    native = window.engine.form_fields()[0]
+    assert native.type_code == fitz.PDF_WIDGET_TYPE_SIGNATURE
+    assert not native.checked
+    assert not native.value
+    assert field.xref not in window._form_preview_values
+    app.processEvents()
+    signature_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert not any(button.isVisible() for button in signature_buttons)
+    signature_layers = [
+        item
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsPixmapItem) and item.zValue() == 89
+    ]
+    assert len(signature_layers) == 1
+    assert not signature_layers[0].pixmap().isNull()
+
+    window.undo()
+    assert window.signatures == []
+    app.processEvents()
+    signature_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert any(
+        button.text() == window.trx("form_signature_button")
+        and button.isEnabled()
+        for button in signature_buttons
+    )
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_visual_signature_button_reports_dialog_errors_without_closing_window(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+
+    errors: list[str] = []
+
+    class BrokenSignatureDialog:
+        def __init__(self, *_args, **_kwargs):
+            raise RuntimeError("signature dialog test failure")
+
+    monkeypatch.setattr(main_window_module, "SignatureDialog", BrokenSignatureDialog)
+    monkeypatch.setattr(
+        QMessageBox,
+        "critical",
+        lambda _parent, _title, message: errors.append(str(message)),
+    )
+    window.add_visual_signature_button.click()
+    app.processEvents()
+    assert errors == ["signature dialog test failure"]
+    assert window.isVisible()
+    assert not window.page_view.placement_mode
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_drawing_signature_from_proxy_button_keeps_editor_alive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "drawn_signature",
+                "Drawn signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+
+    def draw_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        QTest.mousePress(
+            dialog.pad,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPoint(80, 95),
+        )
+        QTest.mouseMove(dialog.pad, QPoint(250, 70), delay=5)
+        QTest.mouseRelease(
+            dialog.pad,
+            Qt.LeftButton,
+            Qt.NoModifier,
+            QPoint(420, 110),
+        )
+        dialog._validate_and_accept()
+
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+    QTimer.singleShot(50, draw_and_accept)
+    signature_button.click()
+    assert window.signatures == []
+    app.processEvents()
+
+    assert window.isVisible()
+    assert len(window.signatures) == 1
+    assert window.history_index == 1
+    assert window.signatures[0].png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_typed_signature_from_proxy_button_keeps_editor_alive(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (60, 80, 260, 130),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "typed_signature",
+                "Typed signature",
+            ),
+        )
+    )
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    window.right_sidebar.setCurrentIndex(window.fill_sign_tool_index)
+    app.processEvents()
+    monkeypatch.setattr(QMessageBox, "information", lambda *args, **kwargs: None)
+
+    def type_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        dialog.type_mode.setChecked(True)
+        dialog.typed_text.setText("Martin Puš")
+        dialog._validate_and_accept()
+
+    signature_button = next(
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    )
+    QTimer.singleShot(50, type_and_accept)
+    signature_button.click()
+    assert window.signatures == []
+    app.processEvents()
+
+    assert window.isVisible()
+    assert len(window.signatures) == 1
+    assert window.history_index == 1
+    payload = window.signatures[0].png_bytes
+    assert payload.startswith(b"\x89PNG\r\n\x1a\n")
+    image = QImage.fromData(payload)
+    assert not image.isNull()
+    assert image.width() <= 4096
+    assert image.height() <= 1024
+    assert image.sizeInBytes() <= 16 * 1024 * 1024
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_area_redaction_is_confirmed_and_supports_undo_redo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((60, 100), "VISIBLE SECRET-97531", fontsize=18)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.show()
+    app.processEvents()
+
+    secret_rect = window.engine._source[0].search_for("SECRET-97531")[0]
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *args, **kwargs: QMessageBox.Yes,
+    )
+    window.start_redact_area()
+    assert window.page_view.redaction_mode
+    window._confirm_redaction(tuple(secret_rect), window.page_view._page_generation)
+
+    assert "SECRET-97531" not in window.engine._source[0].get_text()
+    assert window.history_index == 1
+    assert window.has_unsaved_changes
+    window.undo()
+    assert "SECRET-97531" in window.engine._source[0].get_text()
+    window.redo()
+    assert "SECRET-97531" not in window.engine._source[0].get_text()
 
     window._maybe_save_changes = lambda: True
     window.close()

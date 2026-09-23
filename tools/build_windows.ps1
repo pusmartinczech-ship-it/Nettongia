@@ -1,4 +1,4 @@
-param([switch]$SkipInstaller)
+param([switch]$IncludeInstaller)
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -104,7 +104,7 @@ $SizeReport = [ordered]@{
 $SizeReport | ConvertTo-Json -Depth 3 |
     Set-Content -Encoding utf8 (Join-Path $ProjectRoot "dist\distribution-size.json")
 
-if (-not $SkipInstaller) {
+if ($IncludeInstaller) {
     $IsccCandidates = @(
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "$env:ProgramFiles\Inno Setup 6\ISCC.exe"
@@ -117,6 +117,6 @@ if (-not $SkipInstaller) {
 
 Get-FileHash -Algorithm SHA256 (Join-Path $AppDirectory "NettongiaPDFEditor.exe")
 Get-FileHash -Algorithm SHA256 $PortableArchive
-if (-not $SkipInstaller) {
+if ($IncludeInstaller) {
     Get-FileHash -Algorithm SHA256 (Join-Path $ProjectRoot "dist\installer\Nettongia_PDF_Editor_$Version-x64.exe")
 }

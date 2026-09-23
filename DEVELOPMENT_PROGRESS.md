@@ -1,6 +1,51 @@
 # Nettongia PDF Editor development progress
 
-Updated: 2026-09-17
+Updated: 2026-09-20
+
+## Annotation and comment development checkpoint (version remains 0.19.0)
+
+- Added native PDF sticky-note comments through **Comments > Add comment...**
+  / `Ctrl+Alt+M` and direct placement on the current page.
+- Added a Comments sidebar that discovers existing annotations, navigates to
+  their page and position, and provides editing and deletion commands.
+- Added standard native PDF text highlighting to the right-click menu for
+  original and inserted text. Explicit quadrilateral geometry keeps highlights
+  aligned on pages carrying `/Rotate`.
+- Comment insertion, editing, deletion and highlighting each create one full
+  Undo/Redo state and materialize pending text/image/signature edits first, so
+  no unsaved work is lost or left visually detached.
+- Added privacy-safe diagnostic event categories without recording comment or
+  document content. Added complete translations for all 21 interface languages.
+- Local regression after restoring the integrity-pinned OCR models: **161
+  passed, 21 conditional fixture/platform tests skipped**.
+- Golden-PDF audit passed: all three unchanged pages remained pixel exact and
+  the representative edit changed zero pixels outside its allowed regions.
+- No version bump, ZIP or public release was created. The next gates are the
+  golden-PDF audit and GitHub-hosted Windows package workflow.
+
+## Update-check development checkpoint (version remains 0.19.0)
+
+- Added background GitHub stable-release checking on startup, limited to one
+  attempt per 24 hours, plus a manual Help action and persistent opt-out.
+- No document data is sent; normal connection metadata reaches GitHub. No
+  downloads, installation or replacement of the running application occurs.
+- GUI results are delivered through queued QObject slots, offline automatic
+  failures are silent, late results after close are ignored, and repeated
+  notifications for the same version are suppressed.
+- Corrected the unfinished implementation's initialization placement (it was
+  accidentally inside recovery writing instead of window construction).
+- Targeted update/i18n tests: **25 passed**. Full regression in the isolated
+  update-check worktree: **158 passed, 14 skipped, 7 failed**; all seven
+  failures are missing external PDF fixtures, not assertion failures.
+- Missing fixtures: Test_Word_PDF.pdf, KS_Teil_3_2_04_ROB-KUKA_KL.pdf,
+  0015_001.pdf. OCR assets were restored from a local copy and verified against
+  the repository's SHA-256 manifest before the full run.
+- Golden audit passed: zero changed pixels on all three unchanged pages and
+  zero changed pixels outside allowed edit regions.
+- No new ZIP or version bump. Windows verification and full fixture regression
+  remain pending. Annotations/comments are not implemented by this checkpoint.
+- Next: restore original test PDFs, rerun the complete suite and Windows gate,
+  then prepare a separately versioned portable candidate.
 
 ## 0.19.0 page-rotation and portable-publication candidate
 
@@ -336,11 +381,31 @@ worker-process lifecycle state.
 
 ## Next stage
 
-Complete stage 8: configure the approved free SignPath Foundation project,
-sign the Windows candidate, then run the signed portable package and installer
-acceptance matrix on clean Windows 10 and Windows 11 systems together with the
-long-duration memory and final golden-PDF gates. Do not create a new release
-version unless every material gate passes.
+Continue the portable-only Windows acceptance matrix on clean Windows 10 and
+Windows 11 systems together with the long-duration memory and final golden-PDF
+gates. Do not create a new release version unless every material gate passes.
+
+## Completed checkpoint: public-beta updates and portable-only builds
+
+- Fixed update discovery for published GitHub prereleases such as the official
+  v0.19.0 public beta; draft releases and malformed or untrusted release data
+  remain rejected.
+- Changed the default local and hosted Windows build to create and upload only
+  the tested portable ZIP. Installer generation remains an explicit legacy
+  opt-in and is no longer part of the GitHub workflow.
+
+## Completed checkpoint: AcroForm filling
+
+- Added a Forms sidebar that lists supported fields with page, label, type,
+  current value and read-only status, and navigates directly to field geometry.
+- Added editing for standard text fields, check boxes, radio buttons, combo
+  boxes and list boxes. Each change is materialized as one Undo/Redo state and
+  survives both foreground and isolated background saves.
+- Kept dynamic XFA, push-button actions and certificate-signature fields
+  read-only/out of the editor path; malformed, missing and unavailable values
+  fail without changing the document.
+- Added all 21 interface translations and direct engine/UI regressions for
+  listing, editing, protected fields, saving and Undo/Redo.
 
 ## Completed release candidate: 0.18.0 page and source-image editing
 

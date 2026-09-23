@@ -42,6 +42,11 @@ def test_windows_distribution_files_are_present_and_spec_is_valid_python() -> No
     assert "nettongia.ico" in spec
     assert "NettongiaPDFEditor.exe" in build_script
     assert "Nettongia_PDF_Editor_" in build_script
+    assert "param([switch]$IncludeInstaller)" in build_script
+    assert "choco install innosetup" not in workflow.lower()
+    assert "dist/installer/*.exe" not in workflow
+    assert "signpath/github-action" not in workflow.lower()
+    assert "Nettongia-PDF-Editor-Windows-portable" in workflow
 
 
 def test_packaged_runtime_prefers_bundled_tessdata(tmp_path: Path, monkeypatch) -> None:

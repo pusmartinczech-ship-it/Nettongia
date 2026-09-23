@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from math import ceil
 
 from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QPointF, Qt
-from PySide6.QtGui import QColor, QFont, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QColorDialog,
@@ -17,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QRadioButton,
     QSpinBox,
@@ -26,7 +28,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .engine import TextEdit, TextRun
+from .crash_trace import record_signature_trace
+from .engine import FormFieldSpec, TextEdit, TextRun
 from .i18n import translate
 from .text_layer import clean_pdf_font_name
 
@@ -135,6 +138,146 @@ class NewDocumentDialog(QDialog):
             width_mm * points_per_mm,
             height_mm * points_per_mm,
             self.page_count_box.value(),
+        )
+
+
+class FormFieldDialog(QDialog):
+    """Collect properties for a new standard AcroForm field."""
+
+    def __init__(
+        self,
+        suggested_name: str,
+        parent=None,
+        translator: Translator | None = None,
+    ) -> None:
+        super().__init__(parent)
+        import pymupdf
+
+        self._tr = _translator(translator)
+        self.setWindowTitle(self._tr("create_form_field"))
+        self.setMinimumWidth(480)
+
+        self.type_box = QComboBox()
+        self.type_box.addItem(self._tr("form_type_text"), pymupdf.PDF_WIDGET_TYPE_TEXT)
+        self.type_box.addItem(
+            self._tr("form_type_checkbox"), pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+        )
+        self.type_box.addItem(
+            self._tr("form_type_combo"), pymupdf.PDF_WIDGET_TYPE_COMBOBOX
+        )
+        self.type_box.addItem(
+            self._tr("form_type_list"), pymupdf.PDF_WIDGET_TYPE_LISTBOX
+        )
+        self.type_box.addItem(
+            self._tr("form_type_signature"), pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+        )
+        self.name_edit = QLineEdit(suggested_name)
+        self.name_edit.setClearButtonEnabled(True)
+        self.label_edit = QLineEdit()
+        self.value_edit = QLineEdit()
+        self.choices_edit = QPlainTextEdit()
+        self.choices_edit.setMaximumHeight(90)
+        self.choices_edit.setPlaceholderText(self._tr("form_choices_hint"))
+        self.default_checked = QCheckBox(self._tr("form_default_checked"))
+        self.multiline = QCheckBox(self._tr("form_multiline"))
+        self.read_only = QCheckBox(self._tr("form_read_only"))
+        self.required = QCheckBox(self._tr("form_required"))
+
+        form = QFormLayout()
+        form.addRow(self._tr("form_field_type"), self.type_box)
+        form.addRow(self._tr("form_field_name"), self.name_edit)
+        form.addRow(self._tr("form_field_label"), self.label_edit)
+        form.addRow(self._tr("form_default_value"), self.value_edit)
+        form.addRow(self._tr("form_choices"), self.choices_edit)
+        form.addRow("", self.default_checked)
+        form.addRow("", self.multiline)
+        form.addRow("", self.required)
+        form.addRow("", self.read_only)
+
+        hint = QLabel(self._tr("form_shared_name_hint"))
+        hint.setWordWrap(True)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText(self._tr("create"))
+        buttons.button(QDialogButtonBox.Cancel).setText(self._tr("cancel"))
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(form)
+        layout.addWidget(hint)
+        layout.addWidget(buttons)
+        self.type_box.currentIndexChanged.connect(self._type_changed)
+        self._type_changed()
+        self.name_edit.selectAll()
+        self.name_edit.setFocus()
+
+    def _type_changed(self, *args) -> None:
+        import pymupdf
+
+        field_type = int(self.type_box.currentData())
+        choice = field_type in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        )
+        checkbox = field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX
+        text = field_type == pymupdf.PDF_WIDGET_TYPE_TEXT
+        self.choices_edit.setVisible(choice)
+        label = self.layout().itemAt(0).layout().labelForField(self.choices_edit)
+        if label is not None:
+            label.setVisible(choice)
+        self.value_edit.setVisible(text or choice)
+        label = self.layout().itemAt(0).layout().labelForField(self.value_edit)
+        if label is not None:
+            label.setVisible(text or choice)
+        self.default_checked.setVisible(checkbox)
+        self.multiline.setVisible(text)
+
+    def accept(self) -> None:
+        import pymupdf
+
+        if not self.name_edit.text().strip():
+            QMessageBox.warning(
+                self,
+                self._tr("create_form_field"),
+                self._tr("form_name_required"),
+            )
+            return
+        field_type = int(self.type_box.currentData())
+        if field_type in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        ) and len(self._choices()) < 2:
+            QMessageBox.warning(
+                self,
+                self._tr("create_form_field"),
+                self._tr("form_choices_required"),
+            )
+            return
+        super().accept()
+
+    def _choices(self) -> tuple[str, ...]:
+        return tuple(
+            value.strip()
+            for value in self.choices_edit.toPlainText().splitlines()
+            if value.strip()
+        )
+
+    def field_spec(self) -> FormFieldSpec:
+        import pymupdf
+
+        field_type = int(self.type_box.currentData())
+        value = self.value_edit.text()
+        if field_type == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+            value = "Yes" if self.default_checked.isChecked() else "Off"
+        return FormFieldSpec(
+            type_code=field_type,
+            name=self.name_edit.text().strip(),
+            label=self.label_edit.text().strip(),
+            value=value,
+            choices=self._choices(),
+            read_only=self.read_only.isChecked(),
+            required=self.required.isChecked(),
+            multiline=self.multiline.isChecked(),
         )
 
 
@@ -411,7 +554,7 @@ class SignatureDialog(QDialog):
         self.stack = QStackedWidget()
         self.stack.addWidget(draw_page)
         self.stack.addWidget(type_page)
-        self.draw_mode.toggled.connect(lambda checked: self.stack.setCurrentIndex(0 if checked else 1))
+        self.draw_mode.toggled.connect(self._signature_mode_changed)
 
         self.width_box = QDoubleSpinBox()
         self.width_box.setRange(40, 360)
@@ -438,8 +581,21 @@ class SignatureDialog(QDialog):
         layout.addWidget(self.stack)
         layout.addLayout(size_form)
         layout.addWidget(buttons)
+        record_signature_trace("dialog_initialized", mode=self._signature_mode())
+
+    def _signature_mode(self) -> str:
+        return "drawn" if self.draw_mode.isChecked() else "typed"
+
+    def _signature_mode_changed(self, checked: bool) -> None:
+        self.stack.setCurrentIndex(0 if checked else 1)
+        record_signature_trace("mode_changed", mode=self._signature_mode())
 
     def _validate_and_accept(self) -> None:
+        record_signature_trace(
+            "accept_requested",
+            mode=self._signature_mode(),
+            text_length=len(self.typed_text.text().strip()),
+        )
         if self.draw_mode.isChecked() and not self.pad.has_ink:
             QMessageBox.warning(self, self._tr("empty_signature"), self._tr("empty_draw"))
             return
@@ -449,8 +605,21 @@ class SignatureDialog(QDialog):
         self.accept()
 
     def signature_data(self) -> tuple[bytes, float, float, str]:
+        mode = self._signature_mode()
+        record_signature_trace(
+            "signature_data_started",
+            mode=mode,
+            text_length=len(self.typed_text.text().strip()),
+        )
         if self.draw_mode.isChecked():
+            record_signature_trace("drawn_crop_started", mode=mode)
             image = self.pad.signature_image()
+            record_signature_trace(
+                "drawn_crop_finished",
+                mode=mode,
+                image_width=image.width(),
+                image_height=image.height(),
+            )
             description = self._tr("drawn_signature_desc")
         else:
             image = self._typed_signature_image()
@@ -459,20 +628,62 @@ class SignatureDialog(QDialog):
         return _image_to_png(image), self.width_box.value(), angle, description
 
     def _typed_signature_image(self) -> QImage:
-        image = QImage(1800, 440, QImage.Format_ARGB32_Premultiplied)
-        image.fill(Qt.transparent)
-        painter = QPainter(image)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setRenderHint(QPainter.TextAntialiasing)
+        text = self.typed_text.text().strip()
+        record_signature_trace(
+            "typed_metrics_started", mode="typed", text_length=len(text)
+        )
         font = QFont(self.typed_font.currentFont().family())
         font.setPixelSize(int(self.typed_size.value() * 4))
         font.setBold(self.typed_bold.isChecked())
         font.setItalic(self.typed_italic.isChecked())
+        bounds = QFontMetricsF(font).tightBoundingRect(text)
+        margin = 24
+        max_content_width = 4096 - margin * 2
+        max_content_height = 1024 - margin * 2
+        fit_factor = min(
+            1.0,
+            max_content_width / max(1.0, bounds.width()),
+            max_content_height / max(1.0, bounds.height()),
+        )
+        if fit_factor < 1.0:
+            font.setPixelSize(max(1, int(font.pixelSize() * fit_factor)))
+            bounds = QFontMetricsF(font).tightBoundingRect(text)
+        record_signature_trace("typed_metrics_ready", mode="typed")
+        image = QImage(
+            min(4096, max(2, ceil(bounds.width()) + margin * 2)),
+            min(1024, max(2, ceil(bounds.height()) + margin * 2)),
+            QImage.Format_ARGB32_Premultiplied,
+        )
+        if image.isNull():
+            raise RuntimeError("Unable to allocate the typed signature image.")
+        record_signature_trace(
+            "typed_image_allocated",
+            mode="typed",
+            image_width=image.width(),
+            image_height=image.height(),
+        )
+        image.fill(Qt.transparent)
+        painter = QPainter(image)
+        if not painter.isActive():
+            raise RuntimeError("Unable to render the typed signature image.")
+        record_signature_trace("typed_painter_started", mode="typed")
+        painter.setRenderHint(QPainter.Antialiasing)
+        painter.setRenderHint(QPainter.TextAntialiasing)
         painter.setFont(font)
         painter.setPen(Qt.black)
-        painter.drawText(image.rect().adjusted(24, 12, -24, -12), Qt.AlignCenter, self.typed_text.text().strip())
+        record_signature_trace("typed_draw_started", mode="typed")
+        painter.drawText(
+            QPointF(margin - bounds.left(), margin - bounds.top()),
+            text,
+        )
         painter.end()
-        return _crop_transparent(image)
+        record_signature_trace(
+            "typed_draw_finished",
+            mode="typed",
+            image_width=image.width(),
+            image_height=image.height(),
+        )
+        return image
 
 
 def _crop_transparent(image: QImage, margin: int = 10) -> QImage:
@@ -497,6 +708,11 @@ def _crop_transparent(image: QImage, margin: int = 10) -> QImage:
 
 
 def _image_to_png(image: QImage) -> bytes:
+    record_signature_trace(
+        "png_encode_started",
+        image_width=image.width(),
+        image_height=image.height(),
+    )
     payload = QByteArray()
     buffer = QBuffer(payload)
     if not buffer.open(QIODevice.WriteOnly):
@@ -504,7 +720,14 @@ def _image_to_png(image: QImage) -> bytes:
     if not image.save(buffer, "PNG"):
         raise RuntimeError("Unable to encode signature as PNG.")
     buffer.close()
-    return bytes(payload)
+    result = bytes(payload)
+    record_signature_trace(
+        "png_encode_finished",
+        image_width=image.width(),
+        image_height=image.height(),
+        payload_bytes=len(result),
+    )
+    return result
 
 
 class CompressionDialog(QDialog):

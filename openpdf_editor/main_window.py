@@ -29,7 +29,9 @@ from PySide6.QtCore import (
     QThreadPool,
     QTimer,
     Qt,
+    QUrl,
     Signal,
+    Slot,
 )
 from PySide6.QtGui import (
     QAction,
@@ -47,6 +49,7 @@ from PySide6.QtGui import (
     QPen,
     QPixmap,
     QTransform,
+    QDesktopServices,
 )
 from PySide6.QtPrintSupport import (
     QAbstractPrintDialog,
@@ -59,6 +62,7 @@ from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QCheckBox,
     QColorDialog,
     QComboBox,
     QFileDialog,
@@ -80,7 +84,11 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QProgressDialog,
+    QPlainTextEdit,
+    QPushButton,
+    QRadioButton,
     QSplitter,
+    QStackedWidget,
     QStyle,
     QTabWidget,
     QToolBar,
@@ -92,7 +100,14 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .branding import APP_NAME, LEGACY_APP_NAME
-from .dialogs import CompressionDialog, EditTextDialog, NewDocumentDialog, SignatureDialog
+from .crash_trace import record_signature_trace
+from .dialogs import (
+    CompressionDialog,
+    EditTextDialog,
+    FormFieldDialog,
+    NewDocumentDialog,
+    SignatureDialog,
+)
 from .document_session import DocumentSession, DocumentWriteContext
 from .document_write_coordinator import (
     DocumentWriteCoordinator,
@@ -106,7 +121,10 @@ from .diagnostics import (
     file_size_bucket,
 )
 from .engine import (
+    AnnotationInfo,
     CompressionResult,
+    FormFieldInfo,
+    FormFieldSpec,
     ImageDeletion,
     ImagePlacement,
     OutlineEntry,
@@ -148,6 +166,7 @@ from .ocr_coordinator import OcrContext, OcrCoordinator, OcrOutcome
 from .tile_worker import RenderedTile
 from .tile_render_coordinator import TileRenderCoordinator, TileRenderOutcome
 from .workers import RecoveryTask, SearchTask
+from .version_check import ReleaseInfo, VersionCheckTask, is_newer
 
 
 ASSET_DIR = Path(__file__).resolve().parents[1] / "assets"
@@ -180,6 +199,7 @@ FONT_SIZE_PRESETS = (
     144,
     200,
 )
+FORM_VISUAL_SIGNATURE_VALUE = object()
 MAX_RECENT_FILES = 10
 RECOVERY_DELAY_MS = 1600
 
@@ -923,6 +943,14 @@ class SignatureGraphicsItem(QGraphicsPixmapItem):
         )
 
 
+class FormPlainTextEdit(QPlainTextEdit):
+    editingFinished = Signal()
+
+    def focusOutEvent(self, event) -> None:
+        super().focusOutEvent(event)
+        self.editingFinished.emit()
+
+
 class PageView(QGraphicsView):
     edit_requested = Signal(str)
     inline_edit_requested = Signal(str, str)
@@ -932,11 +960,16 @@ class PageView(QGraphicsView):
     pointer_interaction_finished = Signal()
     page_refresh_requested = Signal()
     new_text_box_requested = Signal(object)
+    redaction_area_requested = Signal(object, int)
+    form_field_area_requested = Signal(object, int)
+    form_value_edited = Signal(int, object)
+    form_signature_requested = Signal(int)
     text_transform_requested = Signal(str, str, object)
     text_selection_changed = Signal(object)
     delete_text_requested = Signal(str, str)
     cancel_requested = Signal()
     placement_clicked = Signal(float, float)
+    comment_placement_clicked = Signal(float, float)
     delete_image_requested = Signal(str, str)
     source_image_edit_requested = Signal(str)
     visual_transform_requested = Signal(str, str, object, float)
@@ -948,9 +981,14 @@ class PageView(QGraphicsView):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._placement_mode = False
+        self._comment_placement_mode = False
         self._delete_image_mode = False
         self._source_image_edit_mode = False
         self._text_box_mode = False
+        self._redaction_mode = False
+        self._form_field_mode = False
+        self._form_field_compact = False
+        self._form_field_signature = False
         self._text_drag_origin: QPointF | None = None
         self._text_drag_item: QGraphicsRectItem | None = None
         self._inline_proxy = None
@@ -976,6 +1014,8 @@ class PageView(QGraphicsView):
         self._page_item: QGraphicsPixmapItem | None = None
         self._scene_item_refs: list[QGraphicsItem] = []
         self._tile_items: dict[object, QGraphicsPixmapItem] = {}
+        self._form_control_proxies: dict[int, object] = {}
+        self._form_preview_signature_items: dict[int, QGraphicsPixmapItem] = {}
         self.setScene(QGraphicsScene(self))
         self.scene().selectionChanged.connect(self._selection_changed)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
@@ -998,8 +1038,20 @@ class PageView(QGraphicsView):
         return self._placement_mode
 
     @property
+    def comment_placement_mode(self) -> bool:
+        return self._comment_placement_mode
+
+    @property
     def text_box_mode(self) -> bool:
         return self._text_box_mode
+
+    @property
+    def redaction_mode(self) -> bool:
+        return self._redaction_mode
+
+    @property
+    def form_field_mode(self) -> bool:
+        return self._form_field_mode
 
     @property
     def inline_editing(self) -> bool:
@@ -1013,9 +1065,12 @@ class PageView(QGraphicsView):
     def special_mode(self) -> bool:
         return (
             self._placement_mode
+            or self._comment_placement_mode
             or self._delete_image_mode
             or self._source_image_edit_mode
             or self._text_box_mode
+            or self._redaction_mode
+            or self._form_field_mode
             or self.inline_editing
         )
 
@@ -1029,6 +1084,12 @@ class PageView(QGraphicsView):
         preview_scale: float | None = None,
         target_size: tuple[float, float] | None = None,
         inserted_images: list[ImagePlacement] | None = None,
+        form_fields: list[FormFieldInfo] | None = None,
+        form_mode: str = "none",
+        form_values: dict[int, object] | None = None,
+        sign_label: str = "Sign",
+        signed_label: str = "Signed",
+        visual_signature_added_label: str = "Visual signature added",
     ) -> None:
         if pixmap.isNull():
             raise ValueError("The rendered PDF page is empty.")
@@ -1043,6 +1104,7 @@ class PageView(QGraphicsView):
         new_scene = QGraphicsScene(self)
         new_scene.selectionChanged.connect(self._selection_changed)
         scene_item_refs: list[QGraphicsItem] = []
+        form_control_proxies: dict[int, object] = {}
         try:
             page_item = QGraphicsPixmapItem(pixmap)
             page_item.setZValue(0)
@@ -1095,6 +1157,113 @@ class PageView(QGraphicsView):
                 scene_item_refs.append(item)
                 if signature.key == selected_key:
                     selected_item = item
+            if form_mode in {"preview", "fill"}:
+                overrides = form_values or {}
+                for order, field in enumerate(form_fields or ()):
+                    value = overrides.get(
+                        field.xref,
+                        field.checked
+                        if field.type_code in (
+                            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                            pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                        )
+                        else field.value,
+                    )
+                    if field.type_code == pymupdf.PDF_WIDGET_TYPE_TEXT:
+                        if field.multiline:
+                            control = FormPlainTextEdit()
+                            control.setPlainText(str(value))
+                            control.editingFinished.connect(
+                                lambda field_xref=field.xref, editor=control:
+                                self.form_value_edited.emit(
+                                    field_xref, editor.toPlainText()
+                                )
+                            )
+                        else:
+                            control = QLineEdit(str(value))
+                            control.editingFinished.connect(
+                                lambda field_xref=field.xref, editor=control:
+                                self.form_value_edited.emit(field_xref, editor.text())
+                            )
+                    elif field.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+                        control = QCheckBox()
+                        control.setChecked(bool(value))
+                        control.toggled.connect(
+                            lambda checked, field_xref=field.xref:
+                            self.form_value_edited.emit(field_xref, checked)
+                        )
+                    elif field.type_code == pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+                        control = QRadioButton()
+                        control.setChecked(bool(value))
+                        control.toggled.connect(
+                            lambda checked, field_xref=field.xref:
+                            checked and self.form_value_edited.emit(field_xref, True)
+                        )
+                    elif field.type_code in (
+                        pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                        pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                    ):
+                        control = QComboBox()
+                        control.addItems(field.choices)
+                        index = control.findText(str(value))
+                        if index >= 0:
+                            control.setCurrentIndex(index)
+                        control.activated.connect(
+                            lambda _index, field_xref=field.xref, editor=control:
+                            self.form_value_edited.emit(
+                                field_xref, editor.currentText()
+                            )
+                        )
+                    elif field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+                        visual_signature_added = value is FORM_VISUAL_SIGNATURE_VALUE
+                        control = QPushButton(
+                            visual_signature_added_label
+                            if visual_signature_added
+                            else signed_label if bool(value) else sign_label
+                        )
+                        control.clicked.connect(
+                            lambda _checked=False, field_xref=field.xref:
+                            self.form_signature_requested.emit(field_xref)
+                        )
+                    else:
+                        continue
+                    control.setEnabled(
+                        not field.read_only
+                        and not (
+                            field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+                            and bool(value)
+                        )
+                    )
+                    tooltip = field.label or field.name
+                    if field.required:
+                        tooltip = f"{tooltip} *" if tooltip else "*"
+                    control.setToolTip(tooltip)
+                    if (
+                        field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+                        and value is FORM_VISUAL_SIGNATURE_VALUE
+                    ):
+                        # The signature is rendered into the page. Do not cover
+                        # it with an opaque proxy button.
+                        control.setVisible(False)
+                    border = "#f59e0b" if field.required else "#2477c9"
+                    background = (
+                        "rgba(255, 250, 225, 235)"
+                        if form_mode == "preview"
+                        else "rgba(236, 248, 255, 240)"
+                    )
+                    control.setStyleSheet(
+                        f"border: 2px solid {border}; background: {background}; "
+                        "color: #101820; border-radius: 3px;"
+                    )
+                    x0, y0, x1, y1 = field.bbox
+                    width = max(22, round((x1 - x0) * scale))
+                    height = max(22, round((y1 - y0) * scale))
+                    control.setFixedSize(width, height)
+                    proxy = new_scene.addWidget(control)
+                    proxy.setPos(x0 * scale, y0 * scale)
+                    proxy.setZValue(90 + order / 1000)
+                    scene_item_refs.append(proxy)
+                    form_control_proxies[field.xref] = proxy
             new_scene.setSceneRect(page_rect)
         except BaseException:
             new_scene.deleteLater()
@@ -1107,6 +1276,8 @@ class PageView(QGraphicsView):
             self._page_item = page_item
             self._scene_item_refs = scene_item_refs
             self._tile_items = {}
+            self._form_control_proxies = form_control_proxies
+            self._form_preview_signature_items = {}
             self._inline_proxy = None
             self._inline_editor = None
             self._inline_ref = None
@@ -1161,6 +1332,62 @@ class PageView(QGraphicsView):
         item.setAcceptedMouseButtons(Qt.NoButton)
         self.scene().addItem(item)
         self._tile_items[key] = item
+
+    def show_form_field_signature(
+        self,
+        field_xref: int,
+        signature: SignaturePlacement,
+        *,
+        temporary: bool,
+    ) -> bool:
+        proxy = self._form_control_proxies.get(field_xref)
+        if proxy is None or proxy.scene() is not self.scene():
+            return False
+        image = QImage.fromData(signature.png_bytes)
+        if image.isNull():
+            return False
+        pixmap = QPixmap.fromImage(image)
+        item = QGraphicsPixmapItem(pixmap)
+        item.setTransformationMode(Qt.SmoothTransformation)
+        item.setOffset(-pixmap.width() / 2, -pixmap.height() / 2)
+        x0, y0, x1, y1 = signature.bbox
+        item.setPos(
+            QPointF(
+                (x0 + x1) * self.render_scale / 2,
+                (y0 + y1) * self.render_scale / 2,
+            )
+        )
+        rotated_width, rotated_height = _rotated_outer_size(
+            pixmap.width(), pixmap.height(), signature.rotation_degrees
+        )
+        scale_x = (x1 - x0) * self.render_scale / max(1.0, rotated_width)
+        scale_y = (y1 - y0) * self.render_scale / max(1.0, rotated_height)
+        item.setScale(max(0.0001, min(scale_x, scale_y)))
+        item.setRotation(signature.rotation_degrees)
+        item.setZValue(89)
+        item.setAcceptedMouseButtons(Qt.NoButton)
+        self.scene().addItem(item)
+        proxy.setVisible(False)
+        self._scene_item_refs.append(item)
+        if temporary:
+            self._form_preview_signature_items[field_xref] = item
+            record_signature_trace(
+                "preview_visual_added", context="field", outcome="succeeded"
+            )
+        return True
+
+    def clear_form_preview_signatures(self) -> None:
+        for item in self._form_preview_signature_items.values():
+            if item.scene() is self.scene():
+                self.scene().removeItem(item)
+            try:
+                self._scene_item_refs.remove(item)
+            except ValueError:
+                pass
+        self._form_preview_signature_items.clear()
+        for proxy in self._form_control_proxies.values():
+            if proxy.scene() is self.scene():
+                proxy.setVisible(True)
 
     def clear_render_tiles(self) -> None:
         for item in tuple(self._tile_items.values()):
@@ -1241,6 +1468,8 @@ class PageView(QGraphicsView):
         self._page_item = None
         self._scene_item_refs = []
         self._tile_items = {}
+        self._form_control_proxies = {}
+        self._form_preview_signature_items = {}
         self.scene().setSceneRect(QRectF())
         self._building_scene = False
         self.selected_signature_key = None
@@ -1368,9 +1597,29 @@ class PageView(QGraphicsView):
     def set_placement_mode(self, enabled: bool) -> None:
         self._placement_mode = enabled
         if enabled:
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
+            self._form_field_mode = False
+        self._refresh_interaction_mode()
+        for item in self.scene().items():
+            if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
+                item.refresh_mode()
+            elif isinstance(item, TextObjectGraphicsItem):
+                item.refresh_visuals()
+
+    def set_comment_placement_mode(self, enabled: bool) -> None:
+        self._comment_placement_mode = enabled
+        if enabled:
+            self._placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self._redaction_mode = False
+            self._form_field_mode = False
+            self.finish_inline_editor(False)
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, (SignatureGraphicsItem, VisualImageItem)):
@@ -1382,8 +1631,11 @@ class PageView(QGraphicsView):
         self._delete_image_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._source_image_edit_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
+            self._form_field_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1397,8 +1649,11 @@ class PageView(QGraphicsView):
         self._source_image_edit_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._text_box_mode = False
+            self._redaction_mode = False
+            self._form_field_mode = False
         self._refresh_interaction_mode()
         for item in self.scene().items():
             if isinstance(item, VisualImageItem):
@@ -1412,8 +1667,11 @@ class PageView(QGraphicsView):
         self._text_box_mode = enabled
         if enabled:
             self._placement_mode = False
+            self._comment_placement_mode = False
             self._delete_image_mode = False
             self._source_image_edit_mode = False
+            self._redaction_mode = False
+            self._form_field_mode = False
             self.finish_inline_editor(False)
         if not enabled:
             self._clear_text_drag()
@@ -1423,6 +1681,42 @@ class PageView(QGraphicsView):
                 item.refresh_mode()
             elif isinstance(item, TextObjectGraphicsItem):
                 item.refresh_visuals()
+
+    def set_redaction_mode(self, enabled: bool) -> None:
+        self._redaction_mode = enabled
+        if enabled:
+            self._placement_mode = False
+            self._comment_placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self._form_field_mode = False
+            self.finish_inline_editor(False)
+        if not enabled:
+            self._clear_text_drag()
+        self._refresh_interaction_mode()
+
+    def set_form_field_mode(
+        self,
+        enabled: bool,
+        *,
+        compact: bool = False,
+        signature: bool = False,
+    ) -> None:
+        self._form_field_mode = enabled
+        self._form_field_compact = bool(compact) if enabled else False
+        self._form_field_signature = bool(signature) if enabled else False
+        if enabled:
+            self._placement_mode = False
+            self._comment_placement_mode = False
+            self._delete_image_mode = False
+            self._source_image_edit_mode = False
+            self._text_box_mode = False
+            self._redaction_mode = False
+            self.finish_inline_editor(False)
+        if not enabled:
+            self._clear_text_drag()
+        self._refresh_interaction_mode()
 
     def _refresh_interaction_mode(self) -> None:
         requested_drag_mode = (
@@ -1439,7 +1733,13 @@ class PageView(QGraphicsView):
         else:
             self._enable_hand_drag_pending = False
             self.setDragMode(requested_drag_mode)
-        if self._placement_mode or self._text_box_mode:
+        if (
+            self._placement_mode
+            or self._comment_placement_mode
+            or self._text_box_mode
+            or self._redaction_mode
+            or self._form_field_mode
+        ):
             cursor = Qt.CrossCursor
         elif self._delete_image_mode or self._source_image_edit_mode:
             cursor = Qt.PointingHandCursor
@@ -1450,15 +1750,25 @@ class PageView(QGraphicsView):
     def mousePressEvent(self, event) -> None:
         if event.button() != Qt.NoButton:
             self._pointer_interaction_active = True
-        if self._text_box_mode and event.button() == Qt.LeftButton:
+        if (
+            self._text_box_mode or self._redaction_mode or self._form_field_mode
+        ) and event.button() == Qt.LeftButton:
             point = self.mapToScene(event.position().toPoint())
             if self.sceneRect().contains(point):
                 self._text_drag_origin = point
                 self._text_drag_item = QGraphicsRectItem(QRectF(point, point))
-                pen = QPen(self.text_accent, 1.8, Qt.DashLine)
+                if self._redaction_mode:
+                    accent = QColor("#e53935")
+                elif self._form_field_mode:
+                    accent = QColor("#7b61ff")
+                else:
+                    accent = self.text_accent
+                pen = QPen(accent, 1.8, Qt.DashLine)
                 pen.setCosmetic(True)
                 self._text_drag_item.setPen(pen)
-                self._text_drag_item.setBrush(QColor(self.text_accent.red(), self.text_accent.green(), self.text_accent.blue(), 30))
+                self._text_drag_item.setBrush(
+                    QColor(accent.red(), accent.green(), accent.blue(), 45)
+                )
                 self._text_drag_item.setZValue(90)
                 self.scene().addItem(self._text_drag_item)
                 event.accept()
@@ -1467,6 +1777,12 @@ class PageView(QGraphicsView):
             point = self.mapToScene(event.position().toPoint())
             if self.sceneRect().contains(point):
                 self.placement_clicked.emit(point.x(), point.y())
+                event.accept()
+                return
+        if self._comment_placement_mode and event.button() == Qt.LeftButton:
+            point = self.mapToScene(event.position().toPoint())
+            if self.sceneRect().contains(point):
+                self.comment_placement_clicked.emit(point.x(), point.y())
                 event.accept()
                 return
         explicit_clear = False
@@ -1498,7 +1814,11 @@ class PageView(QGraphicsView):
         super().mouseDoubleClickEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
-        if self._text_box_mode and self._text_drag_origin is not None and self._text_drag_item is not None:
+        if (
+            (self._text_box_mode or self._redaction_mode or self._form_field_mode)
+            and self._text_drag_origin is not None
+            and self._text_drag_item is not None
+        ):
             point = self.mapToScene(event.position().toPoint())
             rect = QRectF(self._text_drag_origin, point).normalized().intersected(self.sceneRect())
             self._text_drag_item.setRect(rect)
@@ -1509,7 +1829,7 @@ class PageView(QGraphicsView):
     def mouseReleaseEvent(self, event) -> None:
         try:
             if (
-                self._text_box_mode
+                (self._text_box_mode or self._redaction_mode or self._form_field_mode)
                 and self._text_drag_origin is not None
                 and event.button() == Qt.LeftButton
             ):
@@ -1517,9 +1837,19 @@ class PageView(QGraphicsView):
                 rect = QRectF(self._text_drag_origin, end).normalized().intersected(
                     self.sceneRect()
                 )
-                if rect.width() < 16 or rect.height() < 12:
-                    width = min(220.0 * self.render_scale, self.sceneRect().width())
-                    height = min(60.0 * self.render_scale, self.sceneRect().height())
+                redaction = self._redaction_mode
+                form_field = self._form_field_mode
+                if not redaction and (rect.width() < 16 or rect.height() < 12):
+                    if form_field and self._form_field_compact:
+                        default_width, default_height = 24.0, 24.0
+                    elif form_field and self._form_field_signature:
+                        default_width, default_height = 180.0, 52.0
+                    elif form_field:
+                        default_width, default_height = 180.0, 28.0
+                    else:
+                        default_width, default_height = 220.0, 60.0
+                    width = min(default_width * self.render_scale, self.sceneRect().width())
+                    height = min(default_height * self.render_scale, self.sceneRect().height())
                     left = min(
                         max(self.sceneRect().left(), self._text_drag_origin.x()),
                         self.sceneRect().right() - width,
@@ -1536,9 +1866,19 @@ class PageView(QGraphicsView):
                     rect.bottom() / self.render_scale,
                 )
                 self._text_box_mode = False
+                self._redaction_mode = False
+                self._form_field_mode = False
+                self._form_field_compact = False
+                self._form_field_signature = False
                 self._clear_text_drag()
                 self._refresh_interaction_mode()
-                self.new_text_box_requested.emit(bbox)
+                if redaction:
+                    if rect.width() / self.render_scale >= 1.0 and rect.height() / self.render_scale >= 1.0:
+                        self.redaction_area_requested.emit(bbox, self._page_generation)
+                elif form_field:
+                    self.form_field_area_requested.emit(bbox, self._page_generation)
+                else:
+                    self.new_text_box_requested.emit(bbox)
                 event.accept()
                 return
             super().mouseReleaseEvent(event)
@@ -1726,6 +2066,144 @@ class PageView(QGraphicsView):
         self.visible_area_changed.emit()
 
 
+class CollapsibleToolSidebar(QWidget):
+    """Acrobat-style right tool rail with a panel that opens to the left."""
+
+    currentChanged = Signal(int)
+    collapsed = Signal()
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setObjectName("rightToolSidebar")
+        self._buttons: list[QToolButton] = []
+        self._titles: list[str] = []
+        self._current_index = -1
+        self._expanded = False
+
+        self._title = QLabel()
+        self._title.setObjectName("rightToolTitle")
+        title_font = self._title.font()
+        title_font.setBold(True)
+        self._title.setFont(title_font)
+        close_button = QToolButton()
+        close_button.setObjectName("rightToolClose")
+        close_button.setIcon(self.style().standardIcon(QStyle.SP_ArrowRight))
+        close_button.clicked.connect(self.collapse)
+
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(10, 6, 6, 4)
+        title_row.addWidget(self._title, 1)
+        title_row.addWidget(close_button)
+        self._stack = QStackedWidget()
+        self._panel = QWidget()
+        panel_layout = QVBoxLayout(self._panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
+        panel_layout.addLayout(title_row)
+        panel_layout.addWidget(self._stack, 1)
+
+        self._rail = QWidget()
+        self._rail.setObjectName("rightToolRail")
+        self._rail.setFixedWidth(48)
+        self._rail_layout = QVBoxLayout(self._rail)
+        self._rail_layout.setContentsMargins(3, 4, 3, 4)
+        self._rail_layout.setSpacing(3)
+        self._rail_layout.addStretch(1)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._panel, 1)
+        layout.addWidget(self._rail)
+        self.collapse()
+
+    def addTab(self, widget: QWidget, icon: QIcon, title: str) -> int:
+        index = self._stack.addWidget(widget)
+        button = QToolButton(self._rail)
+        button.setObjectName("rightToolButton")
+        button.setCheckable(True)
+        button.setAutoExclusive(False)
+        button.setIcon(icon)
+        button.setIconSize(QPixmap(24, 24).size())
+        button.setFixedSize(42, 42)
+        button.setToolTip(title)
+        button.clicked.connect(lambda _checked=False, tab=index: self._activate(tab))
+        self._rail_layout.insertWidget(self._rail_layout.count() - 1, button)
+        self._buttons.append(button)
+        self._titles.append(title)
+        if self._current_index < 0:
+            self._current_index = index
+            self._stack.setCurrentIndex(index)
+            self._title.setText(title)
+        return index
+
+    def _activate(self, index: int) -> None:
+        if not 0 <= index < len(self._buttons) or not self._buttons[index].isEnabled():
+            return
+        if self._expanded and self._current_index == index:
+            self.collapse()
+            return
+        self.setCurrentIndex(index)
+
+    def setCurrentIndex(self, index: int) -> None:
+        if not 0 <= index < len(self._buttons) or not self._buttons[index].isEnabled():
+            return
+        self._current_index = index
+        self._stack.setCurrentIndex(index)
+        self._title.setText(self._titles[index])
+        self._expanded = True
+        self._panel.show()
+        self.setMinimumWidth(250)
+        self.setMaximumWidth(420)
+        for item, button in enumerate(self._buttons):
+            button.setChecked(item == index)
+        self.currentChanged.emit(index)
+
+    def currentIndex(self) -> int:
+        return self._current_index
+
+    def isExpanded(self) -> bool:
+        return self._expanded
+
+    def collapse(self) -> None:
+        self._expanded = False
+        self._panel.hide()
+        self.setFixedWidth(48)
+        for button in self._buttons:
+            button.setChecked(False)
+        self.collapsed.emit()
+
+    def setTabEnabled(self, index: int, enabled: bool) -> None:
+        if not 0 <= index < len(self._buttons):
+            return
+        self._buttons[index].setEnabled(enabled)
+        self._stack.widget(index).setEnabled(enabled)
+        if not enabled and self._expanded and self._current_index == index:
+            replacement = next(
+                (item for item, button in enumerate(self._buttons) if button.isEnabled()),
+                None,
+            )
+            if replacement is None:
+                self.collapse()
+            else:
+                self.setCurrentIndex(replacement)
+
+    def isTabEnabled(self, index: int) -> bool:
+        return 0 <= index < len(self._buttons) and self._buttons[index].isEnabled()
+
+    def setTabText(self, index: int, title: str) -> None:
+        if not 0 <= index < len(self._buttons):
+            return
+        self._titles[index] = title
+        self._buttons[index].setToolTip(title)
+        if self._current_index == index:
+            self._title.setText(title)
+
+    def setTabToolTip(self, index: int, text: str) -> None:
+        if 0 <= index < len(self._buttons):
+            self._buttons[index].setToolTip(text or self._titles[index])
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -1770,6 +2248,12 @@ class MainWindow(QMainWindow):
         self.history_index = -1
         self._pending_visual: tuple[str, bytes, float, str, float] | None = None
         self._pending_text_box: tuple[str, tuple[float, float, float, float]] | None = None
+        self._redaction_target_page: int | None = None
+        self._pending_form_field: FormFieldSpec | None = None
+        self._form_field_target_page: int | None = None
+        self._form_workspace_mode = "none"
+        self._form_preview_values: dict[int, object] = {}
+        self._form_preview_signatures: dict[int, SignaturePlacement] = {}
         self._syncing_text_toolbar = False
         self._text_toolbar_reference: tuple[str, str] | None = None
         self._text_toolbar_preserved_family: str | None = None
@@ -1835,6 +2319,11 @@ class MainWindow(QMainWindow):
         self._recovery_pool = QThreadPool(self)
         self._recovery_pool.setMaxThreadCount(1)
         self._recovery_pool.setExpiryTimeout(30_000)
+        self._update_pool = QThreadPool(self)
+        self._update_pool.setMaxThreadCount(1)
+        self._update_task: VersionCheckTask | None = None
+        self._update_manual = False
+        self._update_closing = False
         self._document_writer = DocumentWriteCoordinator(self)
         self._document_writer.completed.connect(self._document_write_finished)
         self._write_progress: QProgressDialog | None = None
@@ -1875,6 +2364,38 @@ class MainWindow(QMainWindow):
         self.outline_tree.setAnimated(False)
         self.outline_tree.clicked.connect(self._outline_clicked)
 
+        self.comments_list = QListWidget()
+        self.comments_list.setObjectName("commentsList")
+        self.comments_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.comments_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.comments_list.itemDoubleClicked.connect(self._comment_item_activated)
+        self.comments_list.currentItemChanged.connect(
+            lambda _current, _previous: self._update_actions()
+        )
+        self.comments_list.customContextMenuRequested.connect(
+            self._show_comment_context_menu
+        )
+
+        self.forms_list = QListWidget()
+        self.forms_list.setObjectName("formsList")
+        self.forms_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.forms_list.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.forms_list.itemClicked.connect(self._form_item_selected)
+        self.forms_list.itemDoubleClicked.connect(
+            lambda _item: self.edit_selected_form_field()
+        )
+        self.forms_list.currentItemChanged.connect(
+            lambda _current, _previous: self._update_actions()
+        )
+        self.forms_list.customContextMenuRequested.connect(
+            self._show_form_context_menu
+        )
+
+        self.fill_forms_list = QListWidget()
+        self.fill_forms_list.setObjectName("fillFormsList")
+        self.fill_forms_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.fill_forms_list.itemClicked.connect(self._form_item_selected)
+
         self.sidebar_tabs = QTabWidget()
         self.sidebar_tabs.setObjectName("sidebarTabs")
         self.sidebar_tabs.setDocumentMode(True)
@@ -1892,6 +2413,103 @@ class MainWindow(QMainWindow):
         )
         self.sidebar_tabs.setTabEnabled(self.outline_tab_index, False)
 
+        self.add_comment_side_button = QPushButton("Add comment...")
+        self.edit_comment_side_button = QPushButton("Edit")
+        self.delete_comment_side_button = QPushButton("Delete")
+        self.add_comment_side_button.clicked.connect(self.start_add_comment)
+        self.edit_comment_side_button.clicked.connect(self.edit_selected_comment)
+        self.delete_comment_side_button.clicked.connect(self.delete_selected_annotation)
+        comments_actions = QHBoxLayout()
+        comments_actions.setContentsMargins(6, 4, 6, 4)
+        comments_actions.addWidget(self.add_comment_side_button)
+        comments_actions.addWidget(self.edit_comment_side_button)
+        comments_actions.addWidget(self.delete_comment_side_button)
+        comments_panel = QWidget()
+        comments_layout = QVBoxLayout(comments_panel)
+        comments_layout.setContentsMargins(0, 0, 0, 0)
+        comments_layout.setSpacing(0)
+        comments_layout.addLayout(comments_actions)
+        comments_layout.addWidget(self.comments_list, 1)
+
+        self.create_form_side_button = QPushButton("Create field...")
+        self.edit_form_side_button = QPushButton("Edit")
+        self.delete_form_side_button = QPushButton("Delete")
+        self.create_form_side_button.clicked.connect(self.start_create_form_field)
+        self.edit_form_side_button.clicked.connect(self.edit_selected_form_field)
+        self.delete_form_side_button.clicked.connect(self.delete_selected_form_field)
+        forms_actions = QHBoxLayout()
+        forms_actions.setContentsMargins(6, 4, 6, 4)
+        forms_actions.addWidget(self.create_form_side_button)
+        forms_actions.addWidget(self.edit_form_side_button)
+        forms_actions.addWidget(self.delete_form_side_button)
+        self.form_edit_mode_button = QPushButton("Edit")
+        self.form_edit_mode_button.setCheckable(True)
+        self.form_edit_mode_button.setChecked(True)
+        self.form_preview_mode_button = QPushButton("Preview")
+        self.form_preview_mode_button.setCheckable(True)
+        self.reset_form_preview_button = QPushButton("Reset test data")
+        self.reset_form_preview_button.setVisible(False)
+        self.form_edit_mode_button.clicked.connect(
+            lambda: self._set_form_workspace_mode("edit")
+        )
+        self.form_preview_mode_button.clicked.connect(
+            lambda: self._set_form_workspace_mode("preview")
+        )
+        self.reset_form_preview_button.clicked.connect(self.reset_form_preview)
+        forms_modes = QHBoxLayout()
+        forms_modes.setContentsMargins(6, 4, 6, 4)
+        forms_modes.addWidget(self.form_edit_mode_button)
+        forms_modes.addWidget(self.form_preview_mode_button)
+        forms_panel = QWidget()
+        forms_layout = QVBoxLayout(forms_panel)
+        forms_layout.setContentsMargins(0, 0, 0, 0)
+        forms_layout.setSpacing(0)
+        forms_layout.addLayout(forms_modes)
+        forms_layout.addWidget(self.reset_form_preview_button)
+        forms_layout.addLayout(forms_actions)
+        forms_layout.addWidget(self.forms_list, 1)
+
+        self.fill_forms_hint = QLabel("Fill fields directly on the page.")
+        self.fill_forms_hint.setWordWrap(True)
+        self.fill_forms_hint.setContentsMargins(8, 6, 8, 6)
+        self.clear_form_values_button = QPushButton("Clear form")
+        self.add_visual_signature_button = QPushButton("Add visual signature...")
+        self.clear_form_values_button.clicked.connect(self.clear_form_values)
+        self.add_visual_signature_button.clicked.connect(self.add_signature)
+        fill_actions = QHBoxLayout()
+        fill_actions.setContentsMargins(6, 4, 6, 4)
+        fill_actions.addWidget(self.clear_form_values_button)
+        fill_actions.addWidget(self.add_visual_signature_button)
+        fill_panel = QWidget()
+        fill_layout = QVBoxLayout(fill_panel)
+        fill_layout.setContentsMargins(0, 0, 0, 0)
+        fill_layout.setSpacing(0)
+        fill_layout.addWidget(self.fill_forms_hint)
+        fill_layout.addLayout(fill_actions)
+        fill_layout.addWidget(self.fill_forms_list, 1)
+
+        self.right_sidebar = CollapsibleToolSidebar()
+        self.comments_tool_index = self.right_sidebar.addTab(
+            comments_panel,
+            self.style().standardIcon(QStyle.SP_MessageBoxInformation),
+            "Comments",
+        )
+        self.forms_tool_index = self.right_sidebar.addTab(
+            forms_panel,
+            self.style().standardIcon(QStyle.SP_FileDialogDetailedView),
+            "Forms",
+        )
+        self.fill_sign_tool_index = self.right_sidebar.addTab(
+            fill_panel,
+            self._asset_icon("signature.svg"),
+            "Fill & Sign",
+        )
+        self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.fill_sign_tool_index, False)
+        self.right_sidebar.currentChanged.connect(self._right_tool_changed)
+        self.right_sidebar.collapsed.connect(self._right_tools_collapsed)
+
         self.page_view = PageView()
         self.page_view.edit_requested.connect(self._edit_run)
         self.page_view.inline_edit_requested.connect(self._start_inline_text_edit)
@@ -1901,6 +2519,26 @@ class MainWindow(QMainWindow):
         self.page_view.pointer_interaction_finished.connect(self._resume_deferred_render)
         self.page_view.page_refresh_requested.connect(self._render_current_page)
         self.page_view.new_text_box_requested.connect(self._create_text_box)
+        self.page_view.redaction_area_requested.connect(
+            self._confirm_redaction,
+            Qt.QueuedConnection,
+        )
+        self.page_view.form_field_area_requested.connect(
+            self._create_form_field,
+            Qt.QueuedConnection,
+        )
+        # Form controls live inside QGraphicsProxyWidget items. Their handlers
+        # can rebuild the whole page scene, so defer mutations until the
+        # originating widget's click/focus event has completely returned.
+        # Destroying the active proxy synchronously can crash Qt on Windows.
+        self.page_view.form_value_edited.connect(
+            self._form_value_edited,
+            Qt.QueuedConnection,
+        )
+        self.page_view.form_signature_requested.connect(
+            self._form_signature_requested,
+            Qt.QueuedConnection,
+        )
         self.page_view.text_transform_requested.connect(
             self._transform_text,
             Qt.QueuedConnection,
@@ -1909,6 +2547,10 @@ class MainWindow(QMainWindow):
         self.page_view.delete_text_requested.connect(self._delete_text, Qt.QueuedConnection)
         self.page_view.cancel_requested.connect(self.cancel_special_mode)
         self.page_view.placement_clicked.connect(self._place_visual, Qt.QueuedConnection)
+        self.page_view.comment_placement_clicked.connect(
+            self._place_comment,
+            Qt.QueuedConnection,
+        )
         self.page_view.delete_image_requested.connect(self._delete_visual, Qt.QueuedConnection)
         self.page_view.source_image_edit_requested.connect(
             self._promote_source_image,
@@ -1928,8 +2570,9 @@ class MainWindow(QMainWindow):
         splitter = QSplitter()
         splitter.addWidget(self.sidebar_tabs)
         splitter.addWidget(self.page_view)
+        splitter.addWidget(self.right_sidebar)
         splitter.setStretchFactor(1, 1)
-        splitter.setSizes([280, 1140])
+        splitter.setSizes([280, 1092, 48])
 
         workspace = QWidget(self)
         workspace_layout = QVBoxLayout(workspace)
@@ -2540,6 +3183,23 @@ class MainWindow(QMainWindow):
         self.signature_action = QAction(self._asset_icon("signature.svg"), "Add visual signature...", self)
         self.signature_action.setToolTip("Draw or type a rotatable visual signature")
         self.signature_action.triggered.connect(self.add_signature)
+        self.add_comment_action = QAction("Add comment...", self)
+        self.add_comment_action.setShortcut(QKeySequence("Ctrl+Alt+M"))
+        self.add_comment_action.triggered.connect(self.start_add_comment)
+        self.edit_comment_action = QAction("Edit selected comment...", self)
+        self.edit_comment_action.triggered.connect(self.edit_selected_comment)
+        self.delete_comment_action = QAction("Delete selected annotation", self)
+        self.delete_comment_action.triggered.connect(self.delete_selected_annotation)
+        self.edit_form_action = QAction("Edit selected form field...", self)
+        self.edit_form_action.triggered.connect(self.edit_selected_form_field)
+        self.create_form_action = QAction("Create form field...", self)
+        self.create_form_action.setShortcut(QKeySequence("Ctrl+Alt+F"))
+        self.create_form_action.triggered.connect(self.start_create_form_field)
+        self.delete_form_action = QAction("Delete selected form field", self)
+        self.delete_form_action.triggered.connect(self.delete_selected_form_field)
+        self.redact_area_action = QAction("Permanently redact area...", self)
+        self.redact_area_action.setShortcut(QKeySequence("Ctrl+Shift+R"))
+        self.redact_area_action.triggered.connect(self.start_redact_area)
         self.compress_action = QAction(self._asset_icon("compress.svg"), "Compress PDF...", self)
         self.compress_action.setToolTip("Save an optimized or image-compressed copy")
         self.compress_action.triggered.connect(self.compress_pdf)
@@ -2559,6 +3219,14 @@ class MainWindow(QMainWindow):
         self.export_diagnostics_action.triggered.connect(self.export_diagnostics)
         self.about_action = QAction("About", self)
         self.about_action.triggered.connect(self.show_about)
+        self.check_for_updates_action = QAction("Check for updates...", self)
+        self.check_for_updates_action.triggered.connect(self.check_for_updates)
+        self.automatic_updates_action = QAction(self)
+        self.automatic_updates_action.setCheckable(True)
+        self.automatic_updates_action.setChecked(
+            str(self.settings.value("updates/enabled", "true")).lower() == "true"
+        )
+        self.automatic_updates_action.toggled.connect(self._set_automatic_updates)
 
     def _make_menu(self) -> None:
         self.file_menu = self.menuBar().addMenu("File")
@@ -2587,6 +3255,7 @@ class MainWindow(QMainWindow):
         self.edit_menu.addAction(self.find_previous_action)
         self.edit_menu.addSeparator()
         self.edit_menu.addAction(self.delete_text_action)
+        self.edit_menu.addAction(self.redact_area_action)
 
         self.insert_menu = self.menuBar().addMenu("Insert")
         self.insert_menu.addAction(self.add_text_action)
@@ -2596,6 +3265,7 @@ class MainWindow(QMainWindow):
         self.insert_menu.addSeparator()
         self.insert_menu.addAction(self.add_image_action)
         self.insert_menu.addAction(self.signature_action)
+        self.insert_menu.addAction(self.add_comment_action)
 
         self.page_menu = self.menuBar().addMenu("Page")
         self.page_menu.addAction(self.move_page_up_action)
@@ -2614,6 +3284,17 @@ class MainWindow(QMainWindow):
         self.image_menu.addAction(self.edit_original_image_action)
         self.image_menu.addAction(self.delete_image_action)
 
+        self.comments_menu = self.menuBar().addMenu("Comments")
+        self.comments_menu.addAction(self.add_comment_action)
+        self.comments_menu.addAction(self.edit_comment_action)
+        self.comments_menu.addAction(self.delete_comment_action)
+
+        self.forms_menu = self.menuBar().addMenu("Forms")
+        self.forms_menu.addAction(self.create_form_action)
+        self.forms_menu.addSeparator()
+        self.forms_menu.addAction(self.edit_form_action)
+        self.forms_menu.addAction(self.delete_form_action)
+
         self.view_menu = self.menuBar().addMenu("View")
         self.view_menu.addAction(self.zoom_in_action)
         self.view_menu.addAction(self.zoom_out_action)
@@ -2626,6 +3307,8 @@ class MainWindow(QMainWindow):
 
         self.help_menu = self.menuBar().addMenu("Help")
         self.help_menu.addAction(self.export_diagnostics_action)
+        self.help_menu.addAction(self.check_for_updates_action)
+        self.help_menu.addAction(self.automatic_updates_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
@@ -2877,6 +3560,8 @@ class MainWindow(QMainWindow):
             self.insert_menu: "menu_insert",
             self.page_menu: "menu_page",
             self.image_menu: "menu_image",
+            self.comments_menu: "comments",
+            self.forms_menu: "forms",
             self.view_menu: "menu_view",
             self.appearance_menu: "menu_appearance",
             self.language_menu: "menu_language",
@@ -2919,7 +3604,16 @@ class MainWindow(QMainWindow):
             self.edit_original_image_action: "edit_original_image",
             self.delete_image_action: "delete_image",
             self.signature_action: "add_signature",
+            self.add_comment_action: "add_comment",
+            self.edit_comment_action: "edit_comment",
+            self.delete_comment_action: "delete_annotation",
+            self.edit_form_action: "edit_form_field",
+            self.create_form_action: "create_form_field",
+            self.delete_form_action: "delete_form_field",
+            self.redact_area_action: "redact_area",
             self.export_diagnostics_action: "export_diagnostics",
+            self.check_for_updates_action: "check_for_updates",
+            self.automatic_updates_action: "automatic_updates",
             self.about_action: "about",
         }
         for action, key in action_keys.items():
@@ -2959,10 +3653,41 @@ class MainWindow(QMainWindow):
         self._update_find_controls()
         self.sidebar_tabs.setTabText(self.pages_tab_index, self.trx("sidebar_pages"))
         self.sidebar_tabs.setTabText(self.outline_tab_index, self.trx("sidebar_tree"))
+        self.right_sidebar.setTabText(self.comments_tool_index, self.trx("comments"))
+        self.right_sidebar.setTabText(self.forms_tool_index, self.trx("forms"))
+        self.right_sidebar.setTabText(
+            self.fill_sign_tool_index, self.trx("fill_and_sign")
+        )
         self.sidebar_tabs.setTabToolTip(
             self.outline_tab_index,
             "" if self._outline_model and self._outline_model.has_entries else self.trx("no_document_tree"),
         )
+        self.right_sidebar.setTabToolTip(
+            self.forms_tool_index,
+            "" if self.forms_list.count() else self.trx("no_form_fields"),
+        )
+        self.right_sidebar.setTabToolTip(
+            self.fill_sign_tool_index,
+            "" if self.fill_forms_list.count() else self.trx("no_form_fields"),
+        )
+        self.add_comment_side_button.setText("+")
+        self.add_comment_side_button.setToolTip(self.trx("add_comment"))
+        self.edit_comment_side_button.setText("✎")
+        self.edit_comment_side_button.setToolTip(self.trx("edit_comment"))
+        self.delete_comment_side_button.setText("×")
+        self.delete_comment_side_button.setToolTip(self.trx("delete_annotation"))
+        self.create_form_side_button.setText("+")
+        self.create_form_side_button.setToolTip(self.trx("create_form_field"))
+        self.edit_form_side_button.setText("✎")
+        self.edit_form_side_button.setToolTip(self.trx("edit_form_field"))
+        self.delete_form_side_button.setText("×")
+        self.delete_form_side_button.setToolTip(self.trx("delete_form_field"))
+        self.form_edit_mode_button.setText(self.trx("form_edit_mode"))
+        self.form_preview_mode_button.setText(self.trx("form_preview_mode"))
+        self.reset_form_preview_button.setText(self.trx("reset_test_data"))
+        self.fill_forms_hint.setText(self.trx("fill_form_hint"))
+        self.clear_form_values_button.setText(self.trx("clear_form"))
+        self.add_visual_signature_button.setText(self.trx("add_signature"))
         self.toolbar.setWindowTitle(self.trx("menu_file"))
         self.text_controls_widget.setToolTip(self.trx("font"))
         current_icon = language_icon(self.language_code)
@@ -2974,6 +3699,8 @@ class MainWindow(QMainWindow):
         for index in range(self.page_list.count()):
             self.page_list.item(index).setText(f"{self.trx('page_word')} {index + 1}")
         if self.engine.is_open:
+            self._refresh_annotations_sidebar()
+            self._refresh_forms_sidebar()
             self._render_current_page()
         else:
             self.status_label.setText(self.trx("open_to_begin"))
@@ -3030,9 +3757,30 @@ class MainWindow(QMainWindow):
                 "QWidget#findBar QToolButton:disabled { background: #d2d8df; "
                 "border-color: #aeb7c1; }"
             )
+        if self._effective_dark:
+            right_sidebar_styles = (
+                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #252b32; "
+                "border-left: 1px solid #59636e; }"
+                "QLabel#rightToolTitle { padding: 4px; color: #f2f5f7; }"
+                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
+                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
+                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
+                "QToolButton#rightToolClose:hover { background: #3b424c; border-color: #707b88; }"
+            )
+        else:
+            right_sidebar_styles = (
+                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #edf1f5; "
+                "border-left: 1px solid #aab3bd; }"
+                "QLabel#rightToolTitle { padding: 4px; color: #17212b; }"
+                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
+                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
+                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
+                "QToolButton#rightToolClose:hover { background: #c7e5f8; border-color: #74808d; }"
+            )
         app.setStyleSheet(
             menu_styles
             + find_styles
+            + right_sidebar_styles
             + "QToolTip { background: #fff4ce; color: #392d00; border: 1px solid #b69122; padding: 4px; }"
         )
         if persist:
@@ -3221,6 +3969,10 @@ class MainWindow(QMainWindow):
         self._sync_zoom_display()
         self._load_thumbnails(self.current_page)
         self._load_outline_tree(select_tree=True)
+        self._refresh_annotations_sidebar()
+        self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
+        self._refresh_forms_sidebar()
         self._select_and_render_page(self.current_page)
         self._update_window_title()
         self._update_actions()
@@ -3344,6 +4096,16 @@ class MainWindow(QMainWindow):
         self.history = []
         self.history_index = -1
         self.page_list.clear()
+        self.comments_list.clear()
+        self.forms_list.clear()
+        self.fill_forms_list.clear()
+        self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
+        self._form_workspace_mode = "none"
+        self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.fill_sign_tool_index, False)
+        self.right_sidebar.collapse()
         self._clear_text_toolbar_target()
         self._sync_zoom_display()
         self.status_label.setText(self.trx("open_to_begin"))
@@ -3738,6 +4500,211 @@ class MainWindow(QMainWindow):
         self._select_and_render_page(entry.page_index)
         if entry.target_rect is not None:
             self.page_view.center_on_pdf_rect(entry.target_rect)
+
+    def _refresh_annotations_sidebar(self) -> None:
+        self.comments_list.clear()
+        self.right_sidebar.setTabEnabled(
+            self.comments_tool_index,
+            self.engine.is_open,
+        )
+        if not self.engine.is_open:
+            return
+        try:
+            annotations = self.engine.annotations()
+        except Exception:
+            return
+        for annotation in annotations:
+            content = " ".join(annotation.content.split())
+            summary = content[:72] + ("…" if len(content) > 72 else "")
+            if not summary:
+                summary = self.trx("annotation_without_comment")
+            item = QListWidgetItem(
+                f"{self.trx('page_word')} {annotation.page_index + 1} · "
+                f"{annotation.type_name}\n{summary}"
+            )
+            item.setData(Qt.UserRole, annotation.xref)
+            item.setToolTip(annotation.content or annotation.type_name)
+            self.comments_list.addItem(item)
+
+    def _annotation_for_item(self, item: QListWidgetItem | None) -> AnnotationInfo | None:
+        if item is None or not self.engine.is_open:
+            return None
+        try:
+            xref = int(item.data(Qt.UserRole))
+        except (TypeError, ValueError):
+            return None
+        return next(
+            (annotation for annotation in self.engine.annotations() if annotation.xref == xref),
+            None,
+        )
+
+    def _comment_item_activated(self, item: QListWidgetItem) -> None:
+        annotation = self._annotation_for_item(item)
+        if annotation is None:
+            return
+        if self.current_page != annotation.page_index:
+            self._select_and_render_page(annotation.page_index)
+        self.page_view.center_on_pdf_rect(annotation.bbox)
+
+    def _show_comment_context_menu(self, position) -> None:
+        item = self.comments_list.itemAt(position)
+        if item is None:
+            return
+        self.comments_list.setCurrentItem(item)
+        menu = QMenu(self)
+        edit = menu.addAction(self.trx("edit_comment"))
+        edit.triggered.connect(self.edit_selected_comment)
+        delete = menu.addAction(self.trx("delete_annotation"))
+        delete.triggered.connect(self.delete_selected_annotation)
+        self._exec_context_menu(menu, self.comments_list.mapToGlobal(position))
+
+    @staticmethod
+    def _form_field_summary(field: FormFieldInfo) -> str:
+        if field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+            return "signed" if field.value else "unsigned"
+        if field.type_code in (
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+        ):
+            return "checked" if field.checked else "unchecked"
+        return " ".join(field.value.split())
+
+    def _refresh_forms_sidebar(self) -> None:
+        self.forms_list.clear()
+        self.fill_forms_list.clear()
+        fields: list[FormFieldInfo] = []
+        if self.engine.is_open:
+            try:
+                fields = self.engine.form_fields()
+            except Exception:
+                fields = []
+        for field in fields:
+            name = field.label.strip() or field.name.strip() or self.trx("unnamed_form_field")
+            summary = self._form_field_summary(field)
+            if summary == "checked":
+                summary = self.trx("form_checked")
+            elif summary == "unchecked":
+                summary = self.trx("form_unchecked")
+            elif summary == "signed":
+                summary = self.trx("form_signed")
+            elif summary == "unsigned":
+                summary = self.trx("form_unsigned")
+            if not summary:
+                summary = self.trx("form_empty")
+            read_only = f" · {self.trx('form_read_only')}" if field.read_only else ""
+            item = QListWidgetItem(
+                f"{self.trx('page_word')} {field.page_index + 1} · "
+                f"{name}\n{field.type_name}{read_only} · {summary}"
+            )
+            item.setData(Qt.UserRole, field.xref)
+            item.setToolTip(field.name or name)
+            self.forms_list.addItem(item)
+            fill_item = QListWidgetItem(item.text())
+            fill_item.setData(Qt.UserRole, field.xref)
+            fill_item.setToolTip(item.toolTip())
+            self.fill_forms_list.addItem(fill_item)
+        self.right_sidebar.setTabEnabled(
+            self.forms_tool_index,
+            self.engine.is_open,
+        )
+        self.right_sidebar.setTabToolTip(
+            self.forms_tool_index,
+            "" if fields else self.trx("no_form_fields"),
+        )
+        self.right_sidebar.setTabEnabled(
+            self.fill_sign_tool_index,
+            self.engine.is_open,
+        )
+        self.right_sidebar.setTabToolTip(
+            self.fill_sign_tool_index,
+            "" if fields else self.trx("no_form_fields"),
+        )
+
+    def _right_tool_changed(self, index: int) -> None:
+        if index == self.forms_tool_index:
+            mode = "preview" if self.form_preview_mode_button.isChecked() else "edit"
+            self._set_form_workspace_mode(mode)
+        elif index == self.fill_sign_tool_index:
+            self._set_form_workspace_mode("fill")
+        else:
+            self._set_form_workspace_mode("none")
+
+    def _right_tools_collapsed(self) -> None:
+        self._set_form_workspace_mode("none")
+
+    def _set_form_workspace_mode(self, mode: str) -> None:
+        if mode not in {"none", "edit", "preview", "fill"}:
+            raise ValueError("Unknown form workspace mode.")
+        if not self.engine.is_open:
+            mode = "none"
+        if mode != "preview" and self._form_workspace_mode == "preview":
+            self._form_preview_values.clear()
+            self._form_preview_signatures.clear()
+        self._form_workspace_mode = mode
+        self.form_edit_mode_button.setChecked(mode != "preview")
+        self.form_preview_mode_button.setChecked(mode == "preview")
+        self.reset_form_preview_button.setEnabled(mode == "preview")
+        self.reset_form_preview_button.setVisible(mode == "preview")
+        if self.engine.is_open:
+            self._render_current_page()
+        self._update_actions()
+
+    def reset_form_preview(self) -> None:
+        self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
+        if self._form_workspace_mode == "preview" and self.engine.is_open:
+            self.page_view.clear_form_preview_signatures()
+            self.statusBar().showMessage(self.trx("form_preview_reset"), 3500)
+
+    def _form_field_for_item(self, item: QListWidgetItem | None) -> FormFieldInfo | None:
+        if item is None or not self.engine.is_open:
+            return None
+        try:
+            xref = int(item.data(Qt.UserRole))
+        except (TypeError, ValueError):
+            return None
+        return next(
+            (field for field in self.engine.form_fields() if field.xref == xref),
+            None,
+        )
+
+    @staticmethod
+    def _matching_form_xref(engine: PdfEngine, original: FormFieldInfo) -> int:
+        """Resolve a widget after composition, which may renumber PDF xrefs."""
+
+        candidates = [
+            field
+            for field in engine.form_fields()
+            if field.page_index == original.page_index
+            and field.name == original.name
+            and field.type_code == original.type_code
+        ]
+        if not candidates:
+            raise ValueError("The form field is no longer available.")
+        return min(
+            candidates,
+            key=lambda field: sum(
+                abs(left - right) for left, right in zip(field.bbox, original.bbox)
+            ),
+        ).xref
+
+    def _form_item_selected(self, item: QListWidgetItem) -> None:
+        field = self._form_field_for_item(item)
+        if field is None:
+            return
+        if self.current_page != field.page_index:
+            self._select_and_render_page(field.page_index)
+        self.page_view.center_on_pdf_rect(field.bbox)
+
+    def _show_form_context_menu(self, position) -> None:
+        item = self.forms_list.itemAt(position)
+        if item is None:
+            return
+        self.forms_list.setCurrentItem(item)
+        menu = QMenu(self)
+        menu.addAction(self.edit_form_action)
+        menu.addAction(self.delete_form_action)
+        self._exec_context_menu(menu, self.forms_list.mapToGlobal(position))
 
     def _thumbnail_placeholder_icon(self) -> QIcon:
         pixmap = QPixmap(100, 132)
@@ -4175,11 +5142,18 @@ class MainWindow(QMainWindow):
             page_signatures = [
                 item for item in self.signatures if item.page_index == self.current_page
             ]
+            render_signatures = list(page_signatures)
+            if self._form_workspace_mode == "preview":
+                render_signatures.extend(
+                    item
+                    for item in self._form_preview_signatures.values()
+                    if item.page_index == self.current_page
+                )
             samples, width, height, stride = self.engine.render_page(
                 self.current_page,
                 preview_scale,
                 self.edits.values(),
-                page_signatures,
+                render_signatures,
                 page_images,
                 self.deleted_images,
                 self.inserted_texts,
@@ -4204,6 +5178,26 @@ class MainWindow(QMainWindow):
                 for item in self.engine.image_runs(self.current_page)
                 if item.key not in deleted_keys
             ]
+            form_fields = []
+            if self._form_workspace_mode in {"preview", "fill"}:
+                form_fields = [
+                    field
+                    for field in self.engine.form_fields()
+                    if field.page_index == self.current_page
+                ]
+            form_values = dict(self._form_preview_values)
+            if self._form_workspace_mode == "fill":
+                for field in form_fields:
+                    if field.type_code != pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+                        continue
+                    x0, y0, x1, y1 = field.bbox
+                    if any(
+                        signature.page_index == field.page_index
+                        and x0 <= (signature.bbox[0] + signature.bbox[2]) / 2 <= x1
+                        and y0 <= (signature.bbox[1] + signature.bbox[3]) / 2 <= y1
+                        for signature in self.signatures
+                    ):
+                        form_values[field.xref] = FORM_VISUAL_SIGNATURE_VALUE
             self.page_view.set_page(
                 pixmap,
                 text_objects,
@@ -4216,6 +5210,14 @@ class MainWindow(QMainWindow):
                     float(page_rect.height) * self.render_scale,
                 ),
                 inserted_images=page_images,
+                form_fields=form_fields,
+                form_mode=self._form_workspace_mode,
+                form_values=form_values,
+                sign_label=self.trx("form_signature_button"),
+                signed_label=self.trx("form_signed"),
+                visual_signature_added_label=self.trx(
+                    "form_visual_signature_added"
+                ),
             )
             self._tile_context = (
                 self._document_generation,
@@ -4813,6 +5815,12 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, text_kind=kind, text_key=key:
                 self._delete_text(text_kind, text_key)
             )
+            menu.addSeparator()
+            highlight = menu.addAction(self.trx("highlight_text"))
+            highlight.triggered.connect(
+                lambda _checked=False, text_kind=kind, text_key=key:
+                self._highlight_text(text_kind, text_key)
+            )
         elif category == "visual":
             if kind == "source":
                 edit = menu.addAction(self.trx("edit_original_image"))
@@ -4829,12 +5837,20 @@ class MainWindow(QMainWindow):
             return
         self._exec_context_menu(menu, global_position)
 
-    def _push_state(self, state: EditorState, target_page: int) -> None:
+    def _push_state(
+        self,
+        state: EditorState,
+        target_page: int,
+        *,
+        render: bool = True,
+    ) -> None:
         self._document_session.content_changed(history_index=self.history_index)
         del self.history[self.history_index + 1 :]
         self.history.append(copy.deepcopy(state))
         self.history_index += 1
-        self._apply_state(self.history[self.history_index], target_page)
+        self._apply_state(
+            self.history[self.history_index], target_page, render=render
+        )
         self._operation_log.record(
             "state_changed",
             outcome="succeeded",
@@ -4843,7 +5859,13 @@ class MainWindow(QMainWindow):
             content_revision=self._content_revision,
         )
 
-    def _apply_state(self, state: EditorState, target_page: int) -> None:
+    def _apply_state(
+        self,
+        state: EditorState,
+        target_page: int,
+        *,
+        render: bool = True,
+    ) -> None:
         current_path = self.engine.path
         source_changed = not self.engine.is_open or self.engine.source_bytes != state.pdf_bytes
         if source_changed:
@@ -4861,7 +5883,14 @@ class MainWindow(QMainWindow):
             self._load_thumbnails(target_page)
             self._load_outline_tree(select_tree=tree_was_selected)
             self._start_document_inspection()
-        self._select_and_render_page(target_page)
+        self._refresh_annotations_sidebar()
+        self._refresh_forms_sidebar()
+        if render:
+            self._select_and_render_page(target_page)
+        else:
+            self.current_page = min(
+                max(0, target_page), max(0, self.engine.page_count - 1)
+            )
         self._update_actions()
         self._update_window_title()
         if self.find_bar.isVisible() and self.find_edit.text().strip():
@@ -5218,15 +6247,590 @@ class MainWindow(QMainWindow):
     def add_signature(self) -> None:
         if not self.engine.is_open:
             return
-        dialog = SignatureDialog(self, self.trx)
-        if not dialog.exec():
-            return
         try:
+            record_signature_trace("dialog_opening", context="free")
+            dialog = SignatureDialog(self, self.trx)
+            if not dialog.exec():
+                record_signature_trace("dialog_cancelled", context="free")
+                return
+            record_signature_trace("dialog_accepted", context="free")
             payload, width, rotation, description = dialog.signature_data()
+            image = QImage.fromData(payload)
+            record_signature_trace(
+                "payload_ready",
+                context="free",
+                image_width=image.width(),
+                image_height=image.height(),
+                payload_bytes=len(payload),
+            )
         except Exception as exc:
+            record_signature_trace("handled_error", context="free", outcome="failed")
             QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
             return
-        self._begin_visual_placement("signature", payload, width, description, rotation)
+        try:
+            record_signature_trace("free_placement_started", context="free")
+            self._begin_visual_placement(
+                "signature", payload, width, description, rotation
+            )
+            record_signature_trace("free_placement_ready", context="free")
+        except Exception as exc:
+            record_signature_trace("handled_error", context="free", outcome="failed")
+            self._pending_visual = None
+            self.page_view.set_placement_mode(False)
+            QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
+
+    def start_add_comment(self) -> None:
+        if not self.engine.is_open:
+            return
+        self.cancel_special_mode()
+        self.page_view.set_comment_placement_mode(True)
+        self.statusBar().showMessage(self.trx("comment_place_hint"))
+
+    def start_redact_area(self) -> None:
+        if (
+            not self.engine.is_open
+            or self._write_process is not None
+            or self._ocr_process is not None
+        ):
+            return
+        self.cancel_special_mode()
+        self._redaction_target_page = self.current_page
+        self.page_view.set_redaction_mode(True)
+        self.statusBar().showMessage(self.trx("redaction_draw_hint"))
+
+    def _confirm_redaction(
+        self,
+        bbox: tuple[float, float, float, float],
+        page_generation: int,
+    ) -> None:
+        target_page = self._redaction_target_page
+        self._redaction_target_page = None
+        if (
+            target_page is None
+            or target_page != self.current_page
+            or page_generation != self.page_view._page_generation
+            or not self.engine.is_open
+        ):
+            return
+        answer = QMessageBox.warning(
+            self,
+            self.trx("redaction_title"),
+            self.trx("redaction_confirm"),
+            QMessageBox.Yes | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        if answer != QMessageBox.Yes:
+            self.statusBar().showMessage(self.trx("redaction_cancelled"), 3000)
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_redaction(target_page, bbox),
+            target_page,
+            self.trx("redaction_title"),
+        ):
+            self._operation_log.record(
+                "area_redacted",
+                operation="redact",
+                outcome="succeeded",
+                page_index=target_page,
+            )
+            self.statusBar().showMessage(self.trx("redaction_complete"), 5000)
+
+    def _materialize_pdf_change(
+        self,
+        callback,
+        target_page: int,
+        error_title: str,
+    ) -> bool:
+        """Apply one native PDF mutation as a complete Undo/Redo state."""
+
+        temporary = PdfEngine()
+        try:
+            composed = self.engine.compose_bytes(
+                self.edits.values(),
+                self.signatures,
+                self.inserted_images,
+                self.deleted_images,
+                self.inserted_texts,
+            )
+            temporary.load_bytes(composed)
+            changed_bytes = callback(temporary)
+        except Exception as exc:
+            QMessageBox.critical(self, error_title, str(exc))
+            return False
+        finally:
+            temporary.close()
+        self._push_state(EditorState(changed_bytes, {}, [], [], [], []), target_page)
+        return True
+
+    def _materialize_annotation_change(self, callback, target_page: int) -> bool:
+        return self._materialize_pdf_change(
+            callback,
+            target_page,
+            self.trx("comments"),
+        )
+
+    def start_create_form_field(self) -> None:
+        if (
+            not self.engine.is_open
+            or self._write_process is not None
+            or self._ocr_process is not None
+        ):
+            return
+        try:
+            existing_names = {field.name for field in self.engine.form_fields()}
+        except Exception:
+            existing_names = set()
+        number = 1
+        while f"field_{number}" in existing_names:
+            number += 1
+        dialog = FormFieldDialog(f"field_{number}", self, self.trx)
+        if not dialog.exec():
+            return
+        spec = dialog.field_spec()
+        self.cancel_special_mode()
+        self._pending_form_field = spec
+        self._form_field_target_page = self.current_page
+        self.page_view.set_form_field_mode(
+            True,
+            compact=spec.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+            signature=spec.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
+        )
+        self.statusBar().showMessage(self.trx("form_draw_hint"))
+
+    def _form_value_edited(self, field_xref: int, value: object) -> None:
+        if self._form_workspace_mode not in {"preview", "fill"}:
+            return
+        field = next(
+            (item for item in self.engine.form_fields() if item.xref == field_xref),
+            None,
+        )
+        if field is None or field.read_only:
+            return
+        if self._form_workspace_mode == "preview":
+            self._form_preview_values[field_xref] = value
+            self.statusBar().showMessage(self.trx("form_preview_value_changed"), 1800)
+            return
+        if field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_form_value(
+                self._matching_form_xref(engine, field), value
+            ),
+            field.page_index,
+            self.trx("fill_and_sign"),
+        ):
+            self._operation_log.record(
+                "form_field_updated",
+                operation="form_fill",
+                outcome="succeeded",
+                page_index=field.page_index,
+            )
+            self.statusBar().showMessage(self.trx("form_value_saved"), 3000)
+
+    def clear_form_values(self) -> None:
+        if not self.engine.is_open or self._form_workspace_mode != "fill":
+            return
+        answer = QMessageBox.question(
+            self,
+            self.trx("fill_and_sign"),
+            self.trx("clear_form_question"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_cleared_form_values(),
+            self.current_page,
+            self.trx("fill_and_sign"),
+        ):
+            self._form_preview_values.clear()
+            self._operation_log.record(
+                "form_values_cleared",
+                operation="form_fill",
+                outcome="succeeded",
+            )
+            self.statusBar().showMessage(self.trx("form_values_cleared"), 3500)
+
+    def _form_signature_requested(self, field_xref: int) -> None:
+        record_signature_trace("field_request_received", context="field")
+        field = next(
+            (item for item in self.engine.form_fields() if item.xref == field_xref),
+            None,
+        )
+        if field is None or field.type_code != pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+            record_signature_trace("handled_error", context="field", outcome="failed")
+            return
+        record_signature_trace(
+            "field_resolved",
+            context="field",
+            page_index=field.page_index,
+            read_only=field.read_only,
+            required=field.required,
+        )
+        if self._form_workspace_mode not in {"preview", "fill"} or field.read_only:
+            return
+        try:
+            record_signature_trace(
+                "dialog_opening", context="field", page_index=field.page_index
+            )
+            dialog = SignatureDialog(self, self.trx)
+            if not dialog.exec():
+                record_signature_trace(
+                    "dialog_cancelled", context="field", page_index=field.page_index
+                )
+                return
+            record_signature_trace(
+                "dialog_accepted", context="field", page_index=field.page_index
+            )
+            payload, _width, rotation, description = dialog.signature_data()
+            image = QImage.fromData(payload)
+            if image.isNull():
+                raise ValueError(self.trx("invalid_image_data"))
+            record_signature_trace(
+                "payload_ready",
+                context="field",
+                page_index=field.page_index,
+                image_width=image.width(),
+                image_height=image.height(),
+                payload_bytes=len(payload),
+            )
+        except Exception as exc:
+            record_signature_trace("handled_error", context="field", outcome="failed")
+            QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
+            return
+        x0, y0, x1, y1 = field.bbox
+        available_width = max(1.0, x1 - x0)
+        available_height = max(1.0, y1 - y0)
+        visual_width, visual_height = _rotated_outer_size(
+            image.width(), image.height(), rotation
+        )
+        factor = min(
+            available_width / max(1.0, visual_width),
+            available_height / max(1.0, visual_height),
+        )
+        width = max(1.0, visual_width * factor)
+        height = max(1.0, visual_height * factor)
+        bbox = (
+            x0 + (available_width - width) / 2,
+            y0 + (available_height - height) / 2,
+            x0 + (available_width + width) / 2,
+            y0 + (available_height + height) / 2,
+        )
+        record_signature_trace(
+            "bbox_ready", context="field", page_index=field.page_index
+        )
+        placement = SignaturePlacement(
+            field.page_index,
+            bbox,
+            payload,
+            description,
+            uuid4().hex,
+            _normalized_angle(rotation),
+        )
+        if self._form_workspace_mode == "preview":
+            self._form_preview_values[field_xref] = FORM_VISUAL_SIGNATURE_VALUE
+            self._form_preview_signatures[field_xref] = placement
+            record_signature_trace(
+                "preview_value_stored",
+                context="field",
+                page_index=field.page_index,
+                payload_bytes=len(payload),
+                outcome="succeeded",
+            )
+            if not self.page_view.show_form_field_signature(
+                field_xref, placement, temporary=True
+            ):
+                record_signature_trace(
+                    "handled_error", context="field", outcome="failed"
+                )
+            self.statusBar().showMessage(self.trx("signature_preview_only"), 4500)
+            return
+        state = self._capture_state()
+        record_signature_trace(
+            "state_captured",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
+        state.signatures.append(placement)
+        record_signature_trace(
+            "state_appended",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
+        record_signature_trace(
+            "state_push_started", context="field", page_index=field.page_index
+        )
+        self._push_state(state, field.page_index, render=False)
+        record_signature_trace(
+            "state_push_finished",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
+        if self.page_view.show_form_field_signature(
+            field_xref, placement, temporary=False
+        ):
+            record_signature_trace(
+                "committed_visual_added", context="field", outcome="succeeded"
+            )
+        else:
+            record_signature_trace(
+                "handled_error", context="field", outcome="failed"
+            )
+        record_signature_trace("notice_started", context="field")
+        QMessageBox.information(
+            self,
+            self.trx("visual_signature_title"),
+            self.trx("visual_signature_not_digital"),
+        )
+        record_signature_trace("notice_finished", context="field")
+
+    def _create_form_field(
+        self,
+        bbox: tuple[float, float, float, float],
+        page_generation: int,
+    ) -> None:
+        spec = self._pending_form_field
+        target_page = self._form_field_target_page
+        self._pending_form_field = None
+        self._form_field_target_page = None
+        if (
+            spec is None
+            or target_page is None
+            or target_page != self.current_page
+            or page_generation != self.page_view._page_generation
+            or not self.engine.is_open
+        ):
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_new_form_field(target_page, bbox, spec),
+            target_page,
+            self.trx("forms"),
+        ):
+            self.right_sidebar.setCurrentIndex(self.forms_tool_index)
+            self._operation_log.record(
+                "form_field_created",
+                operation="form_create",
+                outcome="succeeded",
+                page_index=target_page,
+            )
+            self.statusBar().showMessage(self.trx("form_created"), 5000)
+
+    def delete_selected_form_field(self) -> None:
+        field = self._form_field_for_item(self.forms_list.currentItem())
+        if field is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.trx("forms"),
+            self.trx("delete_form_field_question"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_without_form_field(
+                self._matching_form_xref(engine, field)
+            ),
+            field.page_index,
+            self.trx("forms"),
+        ):
+            self._operation_log.record(
+                "form_field_deleted",
+                operation="form_delete",
+                outcome="succeeded",
+                page_index=field.page_index,
+            )
+            self.statusBar().showMessage(self.trx("form_deleted"), 5000)
+
+    def edit_selected_form_field(self) -> None:
+        field = self._form_field_for_item(self.forms_list.currentItem())
+        if field is None:
+            return
+        if field.read_only:
+            QMessageBox.information(
+                self,
+                self.trx("forms"),
+                self.trx("form_read_only_message"),
+            )
+            return
+
+        accepted = True
+        value: str | bool
+        if field.type_code == pymupdf.PDF_WIDGET_TYPE_TEXT:
+            if field.multiline:
+                value, accepted = QInputDialog.getMultiLineText(
+                    self,
+                    self.trx("edit_form_field"),
+                    field.label or field.name or self.trx("form_value"),
+                    field.value,
+                )
+            else:
+                value, accepted = QInputDialog.getText(
+                    self,
+                    self.trx("edit_form_field"),
+                    field.label or field.name or self.trx("form_value"),
+                    QLineEdit.Normal,
+                    field.value,
+                )
+        elif field.type_code == pymupdf.PDF_WIDGET_TYPE_CHECKBOX:
+            value = not field.checked
+        elif field.type_code == pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON:
+            if field.checked:
+                return
+            value = True
+        elif field.type_code in (
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+        ):
+            if not field.choices:
+                QMessageBox.information(
+                    self,
+                    self.trx("forms"),
+                    self.trx("form_no_choices"),
+                )
+                return
+            current = field.choices.index(field.value) if field.value in field.choices else 0
+            value, accepted = QInputDialog.getItem(
+                self,
+                self.trx("edit_form_field"),
+                field.label or field.name or self.trx("form_value"),
+                list(field.choices),
+                current,
+                False,
+            )
+        else:
+            QMessageBox.information(
+                self,
+                self.trx("forms"),
+                self.trx("form_unsupported"),
+            )
+            return
+        if not accepted:
+            return
+        if isinstance(value, str) and value == field.value:
+            return
+        if isinstance(value, bool) and value == field.checked:
+            return
+
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_form_value(
+                self._matching_form_xref(engine, field),
+                value,
+            ),
+            field.page_index,
+            self.trx("forms"),
+        ):
+            self._operation_log.record(
+                "form_field_updated",
+                operation="form_fill",
+                outcome="succeeded",
+                page_index=field.page_index,
+            )
+            self.statusBar().showMessage(self.trx("form_updated"), 4000)
+
+    def _place_comment(self, scene_x: float, scene_y: float) -> None:
+        if not self.engine.is_open or not self.page_view.comment_placement_mode:
+            return
+        content, accepted = QInputDialog.getMultiLineText(
+            self,
+            self.trx("add_comment"),
+            self.trx("comment_text_prompt"),
+        )
+        if not accepted:
+            self.cancel_special_mode()
+            return
+        if not content.strip():
+            QMessageBox.information(
+                self,
+                self.trx("add_comment"),
+                self.trx("comment_empty"),
+            )
+            return
+        page_index = self.current_page
+        point = (scene_x / self.render_scale, scene_y / self.render_scale)
+        self.cancel_special_mode()
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_text_comment(page_index, point, content),
+            page_index,
+        ):
+            self._operation_log.record(
+                "annotation_added",
+                operation="comment_add",
+                outcome="succeeded",
+                page_index=page_index,
+            )
+            self.statusBar().showMessage(self.trx("comment_added"), 4000)
+
+    def _highlight_text(self, kind: str, key: str) -> None:
+        spec = self._text_spec(kind, key)
+        if spec is None:
+            return
+        self.cancel_special_mode()
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_highlight(spec.page_index, spec.bbox),
+            spec.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_added",
+                operation="highlight_add",
+                outcome="succeeded",
+                page_index=spec.page_index,
+            )
+            self.statusBar().showMessage(self.trx("highlight_added"), 4000)
+
+    def edit_selected_comment(self) -> None:
+        annotation = self._annotation_for_item(self.comments_list.currentItem())
+        if annotation is None:
+            return
+        content, accepted = QInputDialog.getMultiLineText(
+            self,
+            self.trx("edit_comment"),
+            self.trx("comment_text_prompt"),
+            annotation.content,
+        )
+        if not accepted or content == annotation.content:
+            return
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_with_annotation_content(annotation.xref, content),
+            annotation.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_updated",
+                operation="annotation_update",
+                outcome="succeeded",
+                page_index=annotation.page_index,
+            )
+            self.statusBar().showMessage(self.trx("comment_updated"), 4000)
+
+    def delete_selected_annotation(self) -> None:
+        annotation = self._annotation_for_item(self.comments_list.currentItem())
+        if annotation is None:
+            return
+        answer = QMessageBox.question(
+            self,
+            self.trx("delete_annotation"),
+            self.trx("delete_annotation_question"),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+        if self._materialize_annotation_change(
+            lambda engine: engine.bytes_without_annotation(annotation.xref),
+            annotation.page_index,
+        ):
+            self._operation_log.record(
+                "annotation_deleted",
+                operation="annotation_delete",
+                outcome="succeeded",
+                page_index=annotation.page_index,
+            )
+            self.statusBar().showMessage(self.trx("annotation_deleted"), 4000)
 
     def _begin_visual_placement(
         self,
@@ -5459,10 +7063,16 @@ class MainWindow(QMainWindow):
             self.page_view.finish_inline_editor(True)
         self._pending_visual = None
         self._pending_text_box = None
+        self._redaction_target_page = None
+        self._pending_form_field = None
+        self._form_field_target_page = None
         self.page_view.set_placement_mode(False)
+        self.page_view.set_comment_placement_mode(False)
         self.page_view.set_delete_image_mode(False)
         self.page_view.set_source_image_edit_mode(False)
         self.page_view.set_text_box_mode(False)
+        self.page_view.set_redaction_mode(False)
+        self.page_view.set_form_field_mode(False)
         self.statusBar().clearMessage()
 
     def step_zoom(self, direction: int) -> None:
@@ -6393,6 +8003,9 @@ class MainWindow(QMainWindow):
             self.add_image_action,
             self.delete_image_action,
             self.signature_action,
+            self.add_comment_action,
+            self.redact_area_action,
+            self.create_form_action,
         ):
             action.setEnabled(opened and not ocr_running)
         self.ocr_page_action.setEnabled(opened and not busy)
@@ -6425,6 +8038,39 @@ class MainWindow(QMainWindow):
             or self._text_toolbar_reference is not None
         )
         self.delete_text_action.setEnabled(opened and selected_text)
+        selected_annotation = self.comments_list.currentItem() is not None
+        self.edit_comment_action.setEnabled(opened and selected_annotation and not busy)
+        self.delete_comment_action.setEnabled(opened and selected_annotation and not busy)
+        selected_form = self.forms_list.currentItem() is not None
+        form_editing = self._form_workspace_mode not in {"preview", "fill"}
+        self.create_form_action.setEnabled(opened and not busy and form_editing)
+        self.edit_form_action.setEnabled(
+            opened and selected_form and not busy and form_editing
+        )
+        self.delete_form_action.setEnabled(
+            opened and selected_form and not busy and form_editing
+        )
+        self.add_comment_side_button.setEnabled(opened and not busy)
+        self.edit_comment_side_button.setEnabled(opened and selected_annotation and not busy)
+        self.delete_comment_side_button.setEnabled(opened and selected_annotation and not busy)
+        self.create_form_side_button.setEnabled(opened and not busy and form_editing)
+        self.edit_form_side_button.setEnabled(
+            opened and selected_form and not busy and form_editing
+        )
+        self.delete_form_side_button.setEnabled(
+            opened and selected_form and not busy and form_editing
+        )
+        self.form_edit_mode_button.setEnabled(opened and not busy)
+        self.form_preview_mode_button.setEnabled(opened and not busy)
+        self.reset_form_preview_button.setEnabled(
+            opened and not busy and self._form_workspace_mode == "preview"
+        )
+        self.clear_form_values_button.setEnabled(
+            opened and not busy and self._form_workspace_mode == "fill"
+        )
+        self.add_visual_signature_button.setEnabled(
+            opened and not busy and self._form_workspace_mode == "fill"
+        )
         if hasattr(self, "text_font_box"):
             for widget in (
                 self.text_font_box,
@@ -6544,6 +8190,93 @@ class MainWindow(QMainWindow):
             "\n".join(body_lines),
         )
 
+    def start_automatic_update_check(self) -> None:
+        """Check at most once per day without delaying application startup."""
+
+        self._start_update_check(manual=False)
+
+    def check_for_updates(self) -> None:
+        """Run an immediate, user-requested release check."""
+
+        self._start_update_check(manual=True)
+
+    def _start_update_check(self, *, manual: bool) -> None:
+        if self._update_closing or self._update_task is not None:
+            return
+        now = int(datetime.now().timestamp())
+        if not manual:
+            if not self.automatic_updates_action.isChecked():
+                return
+            try:
+                last_check = int(self.settings.value("updates/last_check_epoch", 0))
+            except (TypeError, ValueError):
+                last_check = 0
+            if 0 <= now - last_check < 24 * 60 * 60:
+                return
+        self.settings.setValue("updates/last_check_epoch", now)
+        task = VersionCheckTask()
+        self._update_task = task
+        self._update_manual = manual
+        task.signals.finished.connect(self._update_check_finished, Qt.QueuedConnection)
+        task.signals.failed.connect(self._update_check_failed, Qt.QueuedConnection)
+        self._update_pool.start(task)
+
+    @Slot(bool)
+    def _set_automatic_updates(self, enabled: bool) -> None:
+        self.settings.setValue("updates/enabled", enabled)
+
+    @Slot(object)
+    def _update_check_finished(self, release: object) -> None:
+        manual = self._update_manual
+        self._update_task = None
+        if self._update_closing or (not manual and not self.automatic_updates_action.isChecked()):
+            return
+        if not isinstance(release, ReleaseInfo):
+            self._update_check_failed()
+            return
+        if not is_newer(__version__, release.version):
+            if manual:
+                QMessageBox.information(
+                    self,
+                    self.trx("update_check_title"),
+                    self.trx("no_update_available", version=__version__),
+                )
+            return
+        try:
+            last_notified = str(self.settings.value("updates/last_notified_version", ""))
+        except (TypeError, ValueError):
+            last_notified = ""
+        if not manual and last_notified == release.version:
+            return
+        self.settings.setValue("updates/last_notified_version", release.version)
+        prompt = QMessageBox(self)
+        prompt.setIcon(QMessageBox.Information)
+        prompt.setWindowTitle(self.trx("update_check_title"))
+        prompt.setText(
+            self.trx(
+                "update_available",
+                version=release.version,
+                current=__version__,
+            )
+        )
+        open_button = prompt.addButton(
+            self.trx("open_release_page"), QMessageBox.AcceptRole
+        )
+        prompt.addButton(self.trx("cancel"), QMessageBox.RejectRole)
+        prompt.exec()
+        if prompt.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl(release.page_url))
+
+    @Slot()
+    def _update_check_failed(self) -> None:
+        self._update_task = None
+        if self._update_manual and not self._update_closing:
+            QMessageBox.information(
+                self,
+                self.trx("update_check_title"),
+                self.trx("update_check_failed"),
+            )
+
     def closeEvent(self, event) -> None:
         if self._document_write_in_progress():
             event.ignore()
@@ -6551,6 +8284,7 @@ class MainWindow(QMainWindow):
         if self.page_view.inline_editing:
             self.page_view.finish_inline_editor(True)
         if self._maybe_save_changes():
+            self._update_closing = True
             self._clear_recovery(wait=True)
             self._cancel_document_inspection()
             self._cancel_search_task()

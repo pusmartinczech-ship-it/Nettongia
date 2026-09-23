@@ -8,6 +8,7 @@ import pytest
 from PIL import Image, ImageChops, ImageDraw
 
 from openpdf_editor.engine import (
+    FormFieldSpec,
     ImageDeletion,
     ImagePlacement,
     PdfEngine,
@@ -33,6 +34,47 @@ def _encrypted_pdf(password: str = "open-sesame") -> bytes:
             owner_pw="owner-secret",
             user_pw=password,
         )
+    finally:
+        document.close()
+
+
+def _acroform_pdf() -> bytes:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+
+    text = fitz.Widget()
+    text.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    text.field_name = "customer_name"
+    text.field_label = "Customer name"
+    text.field_value = "Old value"
+    text.rect = fitz.Rect(40, 40, 240, 70)
+    page.add_widget(text)
+
+    checkbox = fitz.Widget()
+    checkbox.field_type = fitz.PDF_WIDGET_TYPE_CHECKBOX
+    checkbox.field_name = "approved"
+    checkbox.field_label = "Approved"
+    checkbox.rect = fitz.Rect(40, 90, 60, 110)
+    page.add_widget(checkbox)
+
+    choice = fitz.Widget()
+    choice.field_type = fitz.PDF_WIDGET_TYPE_COMBOBOX
+    choice.field_name = "country"
+    choice.field_label = "Country"
+    choice.choice_values = ["Czechia", "Slovakia", "Poland"]
+    choice.field_value = "Czechia"
+    choice.rect = fitz.Rect(40, 130, 240, 160)
+    page.add_widget(choice)
+
+    locked = fitz.Widget()
+    locked.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    locked.field_name = "locked"
+    locked.field_value = "Do not change"
+    locked.field_flags = fitz.PDF_FIELD_IS_READ_ONLY
+    locked.rect = fitz.Rect(40, 180, 240, 210)
+    page.add_widget(locked)
+    try:
+        return document.tobytes()
     finally:
         document.close()
 
@@ -641,3 +683,358 @@ def test_failed_post_save_validation_preserves_existing_target(
 
     assert target.read_bytes() == original
     assert not list(tmp_path.glob(".existing.pdf.*.tmp"))
+
+
+def test_native_comment_can_be_listed_edited_and_deleted() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+
+    with_comment = engine.bytes_with_text_comment(
+        0,
+        (72, 84),
+        "Check this dimension",
+        author="Reviewer",
+    )
+    engine.load_bytes(with_comment)
+    annotations = engine.annotations()
+    assert len(annotations) == 1
+    comment = annotations[0]
+    assert comment.type_name == "Text"
+    assert comment.content == "Check this dimension"
+    assert comment.author == "Reviewer"
+    assert comment.page_index == 0
+
+    engine.load_bytes(
+        engine.bytes_with_annotation_content(comment.xref, "Dimension verified")
+    )
+    edited = engine.annotations()[0]
+    assert edited.content == "Dimension verified"
+
+    engine.load_bytes(engine.bytes_without_annotation(edited.xref))
+    assert engine.annotations() == []
+
+
+def test_highlight_uses_visible_coordinates_on_rotated_page() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+    bbox = (60.0, 80.0, 160.0, 100.0)
+
+    engine.load_bytes(engine.bytes_with_highlight(0, bbox, content="Important"))
+    annotation = engine.annotations()[0]
+    assert annotation.type_name == "Highlight"
+    assert annotation.content == "Important"
+    assert annotation.bbox[0] == pytest.approx(bbox[0], abs=8)
+    assert annotation.bbox[1] == pytest.approx(bbox[1], abs=8)
+    assert annotation.bbox[2] == pytest.approx(bbox[2], abs=8)
+    assert annotation.bbox[3] == pytest.approx(bbox[3], abs=8)
+
+
+def test_acroform_fields_can_be_listed_changed_and_saved(tmp_path: Path) -> None:
+    engine = PdfEngine()
+    engine.load_bytes(_acroform_pdf())
+
+    fields = {field.name: field for field in engine.form_fields()}
+    assert set(fields) == {"customer_name", "approved", "country", "locked"}
+    assert fields["customer_name"].label == "Customer name"
+    assert fields["customer_name"].value == "Old value"
+    assert fields["approved"].checked is False
+    assert fields["country"].choices == ("Czechia", "Slovakia", "Poland")
+    assert fields["locked"].read_only is True
+
+    engine.load_bytes(
+        engine.bytes_with_form_value(fields["customer_name"].xref, "New value")
+    )
+    fields = {field.name: field for field in engine.form_fields()}
+    engine.load_bytes(engine.bytes_with_form_value(fields["approved"].xref, True))
+    fields = {field.name: field for field in engine.form_fields()}
+    engine.load_bytes(engine.bytes_with_form_value(fields["country"].xref, "Poland"))
+    fields = {field.name: field for field in engine.form_fields()}
+
+    assert fields["customer_name"].value == "New value"
+    assert fields["approved"].checked is True
+    assert fields["country"].value == "Poland"
+    with pytest.raises(ValueError, match="read-only"):
+        engine.bytes_with_form_value(fields["locked"].xref, "Changed")
+    with pytest.raises(ValueError, match="unavailable"):
+        engine.bytes_with_form_value(fields["country"].xref, "Germany")
+
+    output = tmp_path / "filled-form.pdf"
+    engine.save(output, ())
+    reopened = PdfEngine()
+    reopened.open(output)
+    saved = {field.name: field for field in reopened.form_fields()}
+    assert saved["customer_name"].value == "New value"
+    assert saved["approved"].checked is True
+    assert saved["country"].value == "Poland"
+    reopened.close()
+
+
+def test_area_redaction_removes_content_and_overlapping_pdf_objects() -> None:
+    secret = "CUSTOMER-SECRET-48291"
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((45, 70), "Public heading", fontsize=14)
+    page.insert_text((45, 125), secret, fontsize=16)
+    secret_rect = page.search_for(secret)[0]
+    page.draw_rect(secret_rect + (-4, -4, 4, 4), color=(1, 0, 0), width=2)
+    note = page.add_text_annot(secret_rect.top_left, "ANNOTATION-SECRET")
+    note.update()
+    widget = fitz.Widget()
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.field_name = "private_value"
+    widget.field_value = "FORM-SECRET"
+    widget.rect = secret_rect
+    page.add_widget(widget)
+    page.insert_link({"kind": fitz.LINK_URI, "from": secret_rect, "uri": "https://example.invalid/private"})
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    redacted = engine.bytes_with_redaction(0, tuple(secret_rect))
+    result = fitz.open(stream=redacted, filetype="pdf")
+    try:
+        result_page = result[0]
+        extracted = result_page.get_text()
+        assert "Public heading" in extracted
+        assert secret not in extracted
+        assert list(result_page.annots() or ()) == []
+        assert list(result_page.widgets() or ()) == []
+        assert result_page.get_links() == []
+
+        pixmap = result_page.get_pixmap(alpha=False)
+        center = fitz.Point(
+            (secret_rect.x0 + secret_rect.x1) / 2,
+            (secret_rect.y0 + secret_rect.y1) / 2,
+        )
+        pixel = pixmap.pixel(int(center.x), int(center.y))
+        assert max(pixel[:3]) < 20
+
+        searchable = bytearray()
+        for xref in range(1, result.xref_length()):
+            searchable.extend(result.xref_object(xref, compressed=False).encode("utf-8"))
+            stream = result.xref_stream(xref)
+            if stream:
+                searchable.extend(stream)
+        for forbidden in (secret, "ANNOTATION-SECRET", "FORM-SECRET"):
+            assert forbidden.encode() not in searchable
+    finally:
+        result.close()
+
+
+def test_area_redaction_uses_visible_coordinates_on_rotated_page() -> None:
+    secret = "ROTATED-SECRET"
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((80, 110), secret, fontsize=18)
+    page.set_rotation(90)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    page = engine._source[0]
+    visible_rect = page.search_for(secret)[0] * page.rotation_matrix
+    redacted = engine.bytes_with_redaction(0, tuple(visible_rect))
+    result = fitz.open(stream=redacted, filetype="pdf")
+    try:
+        assert secret not in result[0].get_text()
+        pixmap = result[0].get_pixmap(alpha=False)
+        center = fitz.Point(
+            (visible_rect.x0 + visible_rect.x1) / 2,
+            (visible_rect.y0 + visible_rect.y1) / 2,
+        )
+        assert max(pixmap.pixel(int(center.x), int(center.y))[:3]) < 20
+    finally:
+        result.close()
+
+
+def test_area_redaction_rejects_existing_unapplied_redaction_marks() -> None:
+    document = fitz.open()
+    page = document.new_page(width=300, height=200)
+    page.add_redact_annot((20, 20, 80, 50))
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    with pytest.raises(ValueError, match="unapplied redaction"):
+        engine.bytes_with_redaction(0, (100, 100, 180, 150))
+
+
+def test_native_form_fields_can_be_created_validated_and_deleted() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    specs_and_rects = (
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_TEXT,
+                "customer.name",
+                "Customer name",
+                "Alice",
+                multiline=True,
+            ),
+            (40, 40, 240, 82),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_CHECKBOX,
+                "approved",
+                "Approved",
+                "Yes",
+            ),
+            (40, 100, 62, 122),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_COMBOBOX,
+                "country",
+                "Country",
+                "Poland",
+                ("Czechia", "Poland", "Slovakia"),
+            ),
+            (40, 140, 240, 168),
+        ),
+        (
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_LISTBOX,
+                "department",
+                "Department",
+                "Quality",
+                ("Engineering", "Quality"),
+                read_only=True,
+            ),
+            (40, 190, 240, 245),
+        ),
+    )
+    for spec, rect in specs_and_rects:
+        engine.load_bytes(engine.bytes_with_new_form_field(0, rect, spec))
+
+    fields = {field.name: field for field in engine.form_fields()}
+    assert set(fields) == {"customer.name", "approved", "country", "department"}
+    assert fields["customer.name"].value == "Alice"
+    assert fields["customer.name"].multiline
+    assert fields["approved"].checked
+    assert fields["country"].choices == ("Czechia", "Poland", "Slovakia")
+    assert fields["country"].value == "Poland"
+    assert fields["department"].read_only
+
+    document = fitz.open(stream=engine.source_bytes, filetype="pdf")
+    try:
+        field_refs = document.xref_get_key(
+            document.pdf_catalog(), "AcroForm/Fields"
+        )
+        assert field_refs[0] == "array"
+        widgets = list(document[0].widgets() or ())
+        assert len(widgets) == 4
+        assert {widget.field_name for widget in widgets} == {
+            "customer.name",
+            "approved",
+            "country",
+            "department",
+        }
+        customer = next(
+            widget for widget in widgets if widget.field_name == "customer.name"
+        )
+        assert document.xref_get_key(customer.xref, "V") == ("string", "Alice")
+        for widget in widgets:
+            assert document.xref_get_key(widget.xref, "FT")[0] == "name"
+            assert document.xref_get_key(widget.xref, "T")[0] == "string"
+            appearance = document.xref_get_key(widget.xref, "AP/N")
+            assert appearance[0] in {"xref", "dict"}
+            assert appearance[1] not in {"null", "<<>>"}
+    finally:
+        document.close()
+
+    engine.load_bytes(engine.bytes_without_form_field(fields["country"].xref))
+    assert {field.name for field in engine.form_fields()} == {
+        "customer.name",
+        "approved",
+        "department",
+    }
+
+
+def test_form_creation_validates_choices_names_types_and_rotated_geometry() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    with pytest.raises(ValueError, match="field name"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, ""),
+        )
+    with pytest.raises(ValueError, match="at least two"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_COMBOBOX,
+                "choice",
+                choices=("Only",),
+            ),
+        )
+
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 20, 180, 50),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, "shared", value="One"),
+        )
+    )
+    with pytest.raises(ValueError, match="different type"):
+        engine.bytes_with_new_form_field(
+            0,
+            (20, 70, 42, 92),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_CHECKBOX, "shared"),
+        )
+
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+    visible_rect = (70.0, 90.0, 210.0, 122.0)
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            visible_rect,
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, "rotated"),
+        )
+    )
+    rotated = next(field for field in engine.form_fields() if field.name == "rotated")
+    assert rotated.bbox == pytest.approx(visible_rect, abs=1.0)
+
+
+def test_signature_field_is_native_required_and_values_can_be_cleared() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    engine.load_bytes(
+        engine.bytes_with_new_form_field(
+            0,
+            (40, 40, 260, 95),
+            FormFieldSpec(
+                fitz.PDF_WIDGET_TYPE_SIGNATURE,
+                "customer_signature",
+                "Customer signature",
+                required=True,
+            ),
+        )
+    )
+    field = engine.form_fields()[0]
+    assert field.type_code == fitz.PDF_WIDGET_TYPE_SIGNATURE
+    assert field.required
+    assert not field.value
+
+    document = fitz.open(stream=engine.source_bytes, filetype="pdf")
+    try:
+        widget = next(document[0].widgets())
+        assert document.xref_get_key(widget.xref, "FT") == ("name", "/Sig")
+        assert int(document.xref_get_key(widget.xref, "Ff")[1]) & fitz.PDF_FIELD_IS_REQUIRED
+        assert document.xref_get_key(widget.xref, "AP/N")[0] == "xref"
+    finally:
+        document.close()
+
+    engine.load_bytes(_acroform_pdf())
+    engine.load_bytes(engine.bytes_with_cleared_form_values())
+    fields = {item.name: item for item in engine.form_fields()}
+    assert fields["customer_name"].value == ""
+    assert not fields["approved"].checked
+    assert fields["country"].value == ""
+    assert fields["locked"].value == "Do not change"
