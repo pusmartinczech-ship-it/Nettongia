@@ -665,7 +665,7 @@ def test_form_preview_is_temporary_and_fill_mode_is_undoable(tmp_path: Path) -> 
     app.processEvents()
 
 
-def test_preview_signature_click_updates_proxy_without_rebuilding_scene(
+def test_preview_signature_dialog_creates_temporary_visual_without_pdf_change(
     tmp_path: Path,
 ) -> None:
     app = _application()
@@ -691,6 +691,7 @@ def test_preview_signature_click_updates_proxy_without_rebuilding_scene(
     app.processEvents()
 
     original_scene = window.page_view.scene()
+    original_preview = window.page_view._page_item.pixmap().toImage()
     original_bytes = window.engine.source_bytes
     original_history = window.history_index
     field = window.engine.form_fields()[0]
@@ -701,19 +702,53 @@ def test_preview_signature_click_updates_proxy_without_rebuilding_scene(
         and isinstance(item.widget(), QPushButton)
     )
 
+    def type_and_accept() -> None:
+        dialog = next(
+            widget
+            for widget in QApplication.topLevelWidgets()
+            if isinstance(widget, main_window_module.SignatureDialog)
+            and widget.isVisible()
+        )
+        dialog.type_mode.setChecked(True)
+        dialog.typed_text.setText("Temporary Preview")
+        dialog._validate_and_accept()
+
+    QTimer.singleShot(50, type_and_accept)
     QTest.mouseClick(signature_button, Qt.LeftButton)
     assert window.page_view.scene() is original_scene
-    assert signature_button.text() == window.trx("form_visual_signature_added")
-    assert not signature_button.isEnabled()
     app.processEvents()
 
-    assert window.page_view.scene() is original_scene
+    assert window.page_view.scene() is not original_scene
+    assert window.page_view._page_item.pixmap().toImage() != original_preview
     assert (
         window._form_preview_values[field.xref]
         is main_window_module.FORM_VISUAL_SIGNATURE_VALUE
     )
+    preview_signature = window._form_preview_signatures[field.xref]
+    assert preview_signature.page_index == field.page_index
+    assert preview_signature.png_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+    assert window.signatures == []
     assert window.engine.source_bytes == original_bytes
     assert window.history_index == original_history
+    preview_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert not any(button.isVisible() for button in preview_buttons)
+
+    window.reset_form_preview()
+    app.processEvents()
+    assert window._form_preview_values == {}
+    assert window._form_preview_signatures == {}
+    signature_buttons = [
+        item.widget()
+        for item in window.page_view.scene().items()
+        if isinstance(item, QGraphicsProxyWidget)
+        and isinstance(item.widget(), QPushButton)
+    ]
+    assert any(button.isVisible() and button.isEnabled() for button in signature_buttons)
 
     window._maybe_save_changes = lambda: True
     window.close()

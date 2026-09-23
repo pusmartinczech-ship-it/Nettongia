@@ -1219,16 +1219,8 @@ class PageView(QGraphicsView):
                             else signed_label if bool(value) else sign_label
                         )
                         control.clicked.connect(
-                            lambda _checked=False,
-                            field_xref=field.xref,
-                            button=control,
-                            preview=form_mode == "preview":
-                            self._form_signature_control_clicked(
-                                field_xref,
-                                button,
-                                preview,
-                                visual_signature_added_label,
-                            )
+                            lambda _checked=False, field_xref=field.xref:
+                            self.form_signature_requested.emit(field_xref)
                         )
                     else:
                         continue
@@ -1243,6 +1235,14 @@ class PageView(QGraphicsView):
                     if field.required:
                         tooltip = f"{tooltip} *" if tooltip else "*"
                     control.setToolTip(tooltip)
+                    if (
+                        field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+                        and value is FORM_VISUAL_SIGNATURE_VALUE
+                        and form_mode == "preview"
+                    ):
+                        # The temporary signature is rendered into the page
+                        # preview. Do not cover it with an opaque proxy button.
+                        control.setVisible(False)
                     border = "#f59e0b" if field.required else "#2477c9"
                     background = (
                         "rgba(255, 250, 225, 235)"
@@ -1306,21 +1306,6 @@ class PageView(QGraphicsView):
                 state,
             ),
         )
-
-    def _form_signature_control_clicked(
-        self,
-        field_xref: int,
-        button: QPushButton,
-        preview: bool,
-        preview_label: str,
-    ) -> None:
-        if preview:
-            button.setText(preview_label)
-            button.setEnabled(False)
-            record_signature_trace(
-                "preview_control_updated", context="field", outcome="succeeded"
-            )
-        self.form_signature_requested.emit(field_xref)
 
     def set_render_tile(
         self,
@@ -2205,6 +2190,7 @@ class MainWindow(QMainWindow):
         self._form_field_target_page: int | None = None
         self._form_workspace_mode = "none"
         self._form_preview_values: dict[int, object] = {}
+        self._form_preview_signatures: dict[int, SignaturePlacement] = {}
         self._syncing_text_toolbar = False
         self._text_toolbar_reference: tuple[str, str] | None = None
         self._text_toolbar_preserved_family: str | None = None
@@ -3922,6 +3908,7 @@ class MainWindow(QMainWindow):
         self._load_outline_tree(select_tree=True)
         self._refresh_annotations_sidebar()
         self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
         self._refresh_forms_sidebar()
         self._select_and_render_page(self.current_page)
         self._update_window_title()
@@ -4050,6 +4037,7 @@ class MainWindow(QMainWindow):
         self.forms_list.clear()
         self.fill_forms_list.clear()
         self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
         self._form_workspace_mode = "none"
         self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
         self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
@@ -4588,6 +4576,7 @@ class MainWindow(QMainWindow):
             mode = "none"
         if mode != "preview" and self._form_workspace_mode == "preview":
             self._form_preview_values.clear()
+            self._form_preview_signatures.clear()
         self._form_workspace_mode = mode
         self.form_edit_mode_button.setChecked(mode != "preview")
         self.form_preview_mode_button.setChecked(mode == "preview")
@@ -4599,6 +4588,7 @@ class MainWindow(QMainWindow):
 
     def reset_form_preview(self) -> None:
         self._form_preview_values.clear()
+        self._form_preview_signatures.clear()
         if self._form_workspace_mode == "preview" and self.engine.is_open:
             self._render_current_page()
             self.statusBar().showMessage(self.trx("form_preview_reset"), 3500)
@@ -5089,11 +5079,18 @@ class MainWindow(QMainWindow):
             page_signatures = [
                 item for item in self.signatures if item.page_index == self.current_page
             ]
+            render_signatures = list(page_signatures)
+            if self._form_workspace_mode == "preview":
+                render_signatures.extend(
+                    item
+                    for item in self._form_preview_signatures.values()
+                    if item.page_index == self.current_page
+                )
             samples, width, height, stride = self.engine.render_page(
                 self.current_page,
                 preview_scale,
                 self.edits.values(),
-                page_signatures,
+                render_signatures,
                 page_images,
                 self.deleted_images,
                 self.inserted_texts,
@@ -6389,17 +6386,7 @@ class MainWindow(QMainWindow):
             read_only=field.read_only,
             required=field.required,
         )
-        if self._form_workspace_mode == "preview":
-            self._form_preview_values[field_xref] = FORM_VISUAL_SIGNATURE_VALUE
-            record_signature_trace(
-                "preview_value_stored",
-                context="field",
-                page_index=field.page_index,
-                outcome="succeeded",
-            )
-            self.statusBar().showMessage(self.trx("signature_preview_only"), 4500)
-            return
-        if self._form_workspace_mode != "fill" or field.read_only:
+        if self._form_workspace_mode not in {"preview", "fill"} or field.read_only:
             return
         try:
             record_signature_trace(
@@ -6451,6 +6438,27 @@ class MainWindow(QMainWindow):
         record_signature_trace(
             "bbox_ready", context="field", page_index=field.page_index
         )
+        placement = SignaturePlacement(
+            field.page_index,
+            bbox,
+            payload,
+            description,
+            uuid4().hex,
+            _normalized_angle(rotation),
+        )
+        if self._form_workspace_mode == "preview":
+            self._form_preview_values[field_xref] = FORM_VISUAL_SIGNATURE_VALUE
+            self._form_preview_signatures[field_xref] = placement
+            record_signature_trace(
+                "preview_value_stored",
+                context="field",
+                page_index=field.page_index,
+                payload_bytes=len(payload),
+                outcome="succeeded",
+            )
+            self._render_current_page()
+            self.statusBar().showMessage(self.trx("signature_preview_only"), 4500)
+            return
         state = self._capture_state()
         record_signature_trace(
             "state_captured",
@@ -6458,16 +6466,7 @@ class MainWindow(QMainWindow):
             page_index=field.page_index,
             signature_count=len(state.signatures),
         )
-        state.signatures.append(
-            SignaturePlacement(
-                field.page_index,
-                bbox,
-                payload,
-                description,
-                uuid4().hex,
-                _normalized_angle(rotation),
-            )
-        )
+        state.signatures.append(placement)
         record_signature_trace(
             "state_appended",
             context="field",
