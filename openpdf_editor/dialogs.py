@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from .crash_trace import record_signature_trace
 from .engine import FormFieldSpec, TextEdit, TextRun
 from .i18n import translate
 from .text_layer import clean_pdf_font_name
@@ -553,7 +554,7 @@ class SignatureDialog(QDialog):
         self.stack = QStackedWidget()
         self.stack.addWidget(draw_page)
         self.stack.addWidget(type_page)
-        self.draw_mode.toggled.connect(lambda checked: self.stack.setCurrentIndex(0 if checked else 1))
+        self.draw_mode.toggled.connect(self._signature_mode_changed)
 
         self.width_box = QDoubleSpinBox()
         self.width_box.setRange(40, 360)
@@ -580,8 +581,21 @@ class SignatureDialog(QDialog):
         layout.addWidget(self.stack)
         layout.addLayout(size_form)
         layout.addWidget(buttons)
+        record_signature_trace("dialog_initialized", mode=self._signature_mode())
+
+    def _signature_mode(self) -> str:
+        return "drawn" if self.draw_mode.isChecked() else "typed"
+
+    def _signature_mode_changed(self, checked: bool) -> None:
+        self.stack.setCurrentIndex(0 if checked else 1)
+        record_signature_trace("mode_changed", mode=self._signature_mode())
 
     def _validate_and_accept(self) -> None:
+        record_signature_trace(
+            "accept_requested",
+            mode=self._signature_mode(),
+            text_length=len(self.typed_text.text().strip()),
+        )
         if self.draw_mode.isChecked() and not self.pad.has_ink:
             QMessageBox.warning(self, self._tr("empty_signature"), self._tr("empty_draw"))
             return
@@ -591,8 +605,21 @@ class SignatureDialog(QDialog):
         self.accept()
 
     def signature_data(self) -> tuple[bytes, float, float, str]:
+        mode = self._signature_mode()
+        record_signature_trace(
+            "signature_data_started",
+            mode=mode,
+            text_length=len(self.typed_text.text().strip()),
+        )
         if self.draw_mode.isChecked():
+            record_signature_trace("drawn_crop_started", mode=mode)
             image = self.pad.signature_image()
+            record_signature_trace(
+                "drawn_crop_finished",
+                mode=mode,
+                image_width=image.width(),
+                image_height=image.height(),
+            )
             description = self._tr("drawn_signature_desc")
         else:
             image = self._typed_signature_image()
@@ -602,6 +629,9 @@ class SignatureDialog(QDialog):
 
     def _typed_signature_image(self) -> QImage:
         text = self.typed_text.text().strip()
+        record_signature_trace(
+            "typed_metrics_started", mode="typed", text_length=len(text)
+        )
         font = QFont(self.typed_font.currentFont().family())
         font.setPixelSize(int(self.typed_size.value() * 4))
         font.setBold(self.typed_bold.isChecked())
@@ -618,6 +648,7 @@ class SignatureDialog(QDialog):
         if fit_factor < 1.0:
             font.setPixelSize(max(1, int(font.pixelSize() * fit_factor)))
             bounds = QFontMetricsF(font).tightBoundingRect(text)
+        record_signature_trace("typed_metrics_ready", mode="typed")
         image = QImage(
             min(4096, max(2, ceil(bounds.width()) + margin * 2)),
             min(1024, max(2, ceil(bounds.height()) + margin * 2)),
@@ -625,19 +656,33 @@ class SignatureDialog(QDialog):
         )
         if image.isNull():
             raise RuntimeError("Unable to allocate the typed signature image.")
+        record_signature_trace(
+            "typed_image_allocated",
+            mode="typed",
+            image_width=image.width(),
+            image_height=image.height(),
+        )
         image.fill(Qt.transparent)
         painter = QPainter(image)
         if not painter.isActive():
             raise RuntimeError("Unable to render the typed signature image.")
+        record_signature_trace("typed_painter_started", mode="typed")
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setRenderHint(QPainter.TextAntialiasing)
         painter.setFont(font)
         painter.setPen(Qt.black)
+        record_signature_trace("typed_draw_started", mode="typed")
         painter.drawText(
             QPointF(margin - bounds.left(), margin - bounds.top()),
             text,
         )
         painter.end()
+        record_signature_trace(
+            "typed_draw_finished",
+            mode="typed",
+            image_width=image.width(),
+            image_height=image.height(),
+        )
         return image
 
 
@@ -663,6 +708,11 @@ def _crop_transparent(image: QImage, margin: int = 10) -> QImage:
 
 
 def _image_to_png(image: QImage) -> bytes:
+    record_signature_trace(
+        "png_encode_started",
+        image_width=image.width(),
+        image_height=image.height(),
+    )
     payload = QByteArray()
     buffer = QBuffer(payload)
     if not buffer.open(QIODevice.WriteOnly):
@@ -670,7 +720,14 @@ def _image_to_png(image: QImage) -> bytes:
     if not image.save(buffer, "PNG"):
         raise RuntimeError("Unable to encode signature as PNG.")
     buffer.close()
-    return bytes(payload)
+    result = bytes(payload)
+    record_signature_trace(
+        "png_encode_finished",
+        image_width=image.width(),
+        image_height=image.height(),
+        payload_bytes=len(result),
+    )
+    return result
 
 
 class CompressionDialog(QDialog):

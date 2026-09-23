@@ -2,6 +2,10 @@
 
 ## 0.19.0
 
+- Added synchronously flushed local crash tracing for every visual-signature
+  stage, Qt diagnostics and native Python fault stacks. Signature text and PDF
+  content are excluded, clean exits remove the trace, and an abnormal run is
+  retained as `crash.log` / `crash.previous.log` for diagnosis.
 - Added native AcroForm signature fields and required-field flags, including
   canonical field widgets and appearance streams for compatible PDF readers.
 - Added separate Forms Edit and Preview modes. Preview values are temporary and

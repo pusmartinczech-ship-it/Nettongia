@@ -335,9 +335,18 @@ For seamless upgrades, Windows recovery data remains at the established `%LOCALA
 
 If Windows ever terminates the GUI without an error dialog, the editor keeps a local diagnostic at the established `%LOCALAPPDATA%\OpenPDF Editor\crash.log`. A clean run leaves no log file. The diagnostic remains on the computer and is never transmitted automatically.
 
+The raw local log also records synchronously flushed, content-free checkpoints
+through visual-signature creation (dialog, rendering, PNG encoding, form-field
+placement and Undo-state update), together with Qt warnings and native Python
+fault traces. Signature text and PDF content are not written to these
+checkpoints. This makes the final completed checkpoint usable even when Windows
+terminates the process abruptly.
+
 The most recent non-empty crash log is preserved across the next start as
 `crash.previous.log`. Its raw content may contain technical paths or exception
 text, so Nettongia PDF Editor never puts it in an exported diagnostic package.
+After reproducing a crash, copy `crash.log` before restarting, or restart once
+and collect the rotated `crash.previous.log`.
 
 ## Anonymized diagnostics
 

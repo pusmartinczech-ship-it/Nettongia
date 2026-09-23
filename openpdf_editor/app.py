@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TextIO
 
 from .branding import APP_ID, APP_NAME, LEGACY_APP_NAME
+from .crash_trace import install_crash_trace, uninstall_crash_trace
 from .runtime import configure_packaged_runtime
 
 configure_packaged_runtime()
@@ -40,6 +41,7 @@ def _start_local_crash_log() -> tuple[Path | None, TextIO | None, object]:
             os.replace(path, root / "crash.previous.log")
         stream = path.open("w", encoding="utf-8", buffering=1)
         faulthandler.enable(stream, all_threads=True)
+        install_crash_trace(stream, frozen=bool(getattr(sys, "frozen", False)))
 
         def report_exception(exception_type, value, exception_traceback) -> None:
             traceback.print_exception(
@@ -61,15 +63,20 @@ def _finish_local_crash_log(
     path: Path | None,
     stream: TextIO | None,
     previous_hook: object,
+    *,
+    clean_exit: bool = False,
 ) -> None:
     sys.excepthook = previous_hook
     if stream is None:
         return
     try:
+        uninstall_crash_trace()
         if faulthandler.is_enabled():
             faulthandler.disable()
         stream.close()
-        if path is not None and path.exists() and path.stat().st_size == 0:
+        if path is not None and path.exists() and (
+            clean_exit or path.stat().st_size == 0
+        ):
             path.unlink()
     except OSError:
         pass
@@ -107,6 +114,7 @@ def main() -> int:
     if len(sys.argv) == 3 and sys.argv[1] == "--ocr-worker":
         return run_ocr_job(sys.argv[2])
     crash_path, crash_stream, previous_hook = _start_local_crash_log()
+    clean_exit = False
     try:
         _set_application_identity()
         app = QApplication(sys.argv)
@@ -122,14 +130,21 @@ def main() -> int:
                 window.open_pdf(sys.argv[1])
 
         QTimer.singleShot(0, finish_startup)
-        return app.exec()
+        result = app.exec()
+        clean_exit = True
+        return result
     except BaseException:
         if crash_stream is not None:
             traceback.print_exc(file=crash_stream)
             crash_stream.flush()
         raise
     finally:
-        _finish_local_crash_log(crash_path, crash_stream, previous_hook)
+        _finish_local_crash_log(
+            crash_path,
+            crash_stream,
+            previous_hook,
+            clean_exit=clean_exit,
+        )
 
 
 if __name__ == "__main__":

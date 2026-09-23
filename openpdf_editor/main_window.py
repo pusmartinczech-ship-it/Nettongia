@@ -100,6 +100,7 @@ from PySide6.QtWidgets import (
 
 from . import __version__
 from .branding import APP_NAME, LEGACY_APP_NAME
+from .crash_trace import record_signature_trace
 from .dialogs import (
     CompressionDialog,
     EditTextDialog,
@@ -6145,18 +6146,33 @@ class MainWindow(QMainWindow):
         if not self.engine.is_open:
             return
         try:
+            record_signature_trace("dialog_opening", context="free")
             dialog = SignatureDialog(self, self.trx)
             if not dialog.exec():
+                record_signature_trace("dialog_cancelled", context="free")
                 return
+            record_signature_trace("dialog_accepted", context="free")
             payload, width, rotation, description = dialog.signature_data()
+            image = QImage.fromData(payload)
+            record_signature_trace(
+                "payload_ready",
+                context="free",
+                image_width=image.width(),
+                image_height=image.height(),
+                payload_bytes=len(payload),
+            )
         except Exception as exc:
+            record_signature_trace("handled_error", context="free", outcome="failed")
             QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
             return
         try:
+            record_signature_trace("free_placement_started", context="free")
             self._begin_visual_placement(
                 "signature", payload, width, description, rotation
             )
+            record_signature_trace("free_placement_ready", context="free")
         except Exception as exc:
+            record_signature_trace("handled_error", context="free", outcome="failed")
             self._pending_visual = None
             self.page_view.set_placement_mode(False)
             QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
@@ -6335,12 +6351,21 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.trx("form_values_cleared"), 3500)
 
     def _form_signature_requested(self, field_xref: int) -> None:
+        record_signature_trace("field_request_received", context="field")
         field = next(
             (item for item in self.engine.form_fields() if item.xref == field_xref),
             None,
         )
         if field is None or field.type_code != pymupdf.PDF_WIDGET_TYPE_SIGNATURE:
+            record_signature_trace("handled_error", context="field", outcome="failed")
             return
+        record_signature_trace(
+            "field_resolved",
+            context="field",
+            page_index=field.page_index,
+            read_only=field.read_only,
+            required=field.required,
+        )
         if self._form_workspace_mode == "preview":
             self._form_preview_values[field_xref] = FORM_VISUAL_SIGNATURE_VALUE
             self._render_current_page()
@@ -6349,14 +6374,32 @@ class MainWindow(QMainWindow):
         if self._form_workspace_mode != "fill" or field.read_only:
             return
         try:
+            record_signature_trace(
+                "dialog_opening", context="field", page_index=field.page_index
+            )
             dialog = SignatureDialog(self, self.trx)
             if not dialog.exec():
+                record_signature_trace(
+                    "dialog_cancelled", context="field", page_index=field.page_index
+                )
                 return
+            record_signature_trace(
+                "dialog_accepted", context="field", page_index=field.page_index
+            )
             payload, _width, rotation, description = dialog.signature_data()
             image = QImage.fromData(payload)
             if image.isNull():
                 raise ValueError(self.trx("invalid_image_data"))
+            record_signature_trace(
+                "payload_ready",
+                context="field",
+                page_index=field.page_index,
+                image_width=image.width(),
+                image_height=image.height(),
+                payload_bytes=len(payload),
+            )
         except Exception as exc:
+            record_signature_trace("handled_error", context="field", outcome="failed")
             QMessageBox.critical(self, self.trx("unable_create_signature"), str(exc))
             return
         x0, y0, x1, y1 = field.bbox
@@ -6377,7 +6420,16 @@ class MainWindow(QMainWindow):
             x0 + (available_width + width) / 2,
             y0 + (available_height + height) / 2,
         )
+        record_signature_trace(
+            "bbox_ready", context="field", page_index=field.page_index
+        )
         state = self._capture_state()
+        record_signature_trace(
+            "state_captured",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
         state.signatures.append(
             SignaturePlacement(
                 field.page_index,
@@ -6388,12 +6440,29 @@ class MainWindow(QMainWindow):
                 _normalized_angle(rotation),
             )
         )
+        record_signature_trace(
+            "state_appended",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
+        record_signature_trace(
+            "state_push_started", context="field", page_index=field.page_index
+        )
         self._push_state(state, field.page_index)
+        record_signature_trace(
+            "state_push_finished",
+            context="field",
+            page_index=field.page_index,
+            signature_count=len(state.signatures),
+        )
+        record_signature_trace("notice_started", context="field")
         QMessageBox.information(
             self,
             self.trx("visual_signature_title"),
             self.trx("visual_signature_not_digital"),
         )
+        record_signature_trace("notice_finished", context="field")
 
     def _create_form_field(
         self,
