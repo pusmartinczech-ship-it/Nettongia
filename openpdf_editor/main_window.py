@@ -2263,7 +2263,7 @@ class RibbonActionButton(QToolButton):
     """Ribbon button that wraps translated labels instead of eliding them."""
 
     _MIN_WIDTH = 82
-    _MAX_WIDTH = 230
+    _MAX_WIDTH = 320
     _HEIGHT = 90
 
     def __init__(self, action: QAction, parent: QWidget | None = None) -> None:
