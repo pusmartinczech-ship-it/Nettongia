@@ -1503,6 +1503,11 @@ def test_inline_font_change_is_live_and_persists_after_editor_closes() -> None:
     assert window.page_view._inline_editor is not None
     assert window.page_view.inline_editing
     available = QFontDatabase.families()
+    if not available:
+        window.close()
+        window.deleteLater()
+        app.processEvents(QEventLoop.AllEvents, 50)
+        pytest.skip("The Qt platform plugin does not expose any system fonts.")
     target = next(
         (
             family
