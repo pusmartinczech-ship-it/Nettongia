@@ -132,7 +132,7 @@ def test_ribbon_groups_tools_without_overlap_and_can_collapse() -> None:
     app.processEvents()
 
     assert len(window.findChildren(QToolBar)) == 1
-    assert window.toolbar.height() == 173
+    assert window.toolbar.height() == 181
     assert window.ribbon_tabs.count() == 6
     assert [window.ribbon_tabs.tabText(index) for index in range(6)] == [
         "Home",
@@ -275,7 +275,8 @@ def test_ribbon_labels_fit_in_all_supported_languages() -> None:
             buttons = window.ribbon_tabs.currentWidget().findChildren(
                 RibbonActionButton
             )
-            assert all(button.label_fits() for button in buttons), code
+            clipped = [button.text() for button in buttons if not button.label_fits()]
+            assert not clipped, (code, clipped)
         for button in (
             window.ribbon_form_edit_button,
             window.ribbon_form_preview_button,

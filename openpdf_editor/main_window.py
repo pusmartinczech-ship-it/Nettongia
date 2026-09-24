@@ -2263,8 +2263,8 @@ class RibbonActionButton(QToolButton):
     """Ribbon button that wraps translated labels instead of eliding them."""
 
     _MIN_WIDTH = 82
-    _MAX_WIDTH = 220
-    _HEIGHT = 82
+    _MAX_WIDTH = 230
+    _HEIGHT = 90
 
     def __init__(self, action: QAction, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -3675,8 +3675,8 @@ class MainWindow(QMainWindow):
 
     def _set_ribbon_collapsed(self, collapsed: bool) -> None:
         self.ribbon_collapsed = collapsed
-        self.ribbon_tabs.setFixedHeight(31 if collapsed else 130)
-        self.toolbar.setFixedHeight(74 if collapsed else 173)
+        self.ribbon_tabs.setFixedHeight(31 if collapsed else 138)
+        self.toolbar.setFixedHeight(74 if collapsed else 181)
         self.ribbon_collapse_button.setText("⌄" if collapsed else "⌃")
         self.ribbon_collapse_button.setToolTip(
             self.trx("menu_view") if collapsed else self.trx("close_search")
