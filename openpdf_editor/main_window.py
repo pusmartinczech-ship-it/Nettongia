@@ -24,6 +24,7 @@ from PySide6.QtCore import (
     QProcess,
     QRectF,
     QSettings,
+    QSize,
     QSizeF,
     QStandardPaths,
     QThreadPool,
@@ -42,6 +43,7 @@ from PySide6.QtGui import (
     QImage,
     QKeyEvent,
     QKeySequence,
+    QLinearGradient,
     QPageLayout,
     QPageSize,
     QPainter,
@@ -1016,14 +1018,45 @@ class PageView(QGraphicsView):
         self._tile_items: dict[object, QGraphicsPixmapItem] = {}
         self._form_control_proxies: dict[int, object] = {}
         self._form_preview_signature_items: dict[int, QGraphicsPixmapItem] = {}
+        self._welcome_widget: QWidget | None = None
         self.setScene(QGraphicsScene(self))
         self.scene().selectionChanged.connect(self._selection_changed)
         self.setRenderHints(QPainter.Antialiasing | QPainter.SmoothPixmapTransform)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setBackgroundBrush(QColor("#30343a"))
         self.setAlignment(Qt.AlignCenter)
+        self.viewport().installEventFilter(self)
         self.horizontalScrollBar().valueChanged.connect(self.visible_area_changed)
         self.verticalScrollBar().valueChanged.connect(self.visible_area_changed)
+
+    def set_welcome_widget(self, widget: QWidget) -> None:
+        """Attach the lightweight branded empty-state card to the viewport."""
+        self._welcome_widget = widget
+        widget.setParent(self.viewport())
+        widget.show()
+        self._position_welcome_widget()
+
+    def _position_welcome_widget(self) -> None:
+        if self._welcome_widget is None:
+            return
+        self._welcome_widget.adjustSize()
+        viewport_rect = self.viewport().rect()
+        available = QSize(
+            max(240, viewport_rect.width() - 40),
+            max(180, viewport_rect.height() - 40),
+        )
+        size = self._welcome_widget.sizeHint().boundedTo(available)
+        self._welcome_widget.resize(size)
+        size = self._welcome_widget.size()
+        self._welcome_widget.move(
+            max(20, (viewport_rect.width() - size.width()) // 2),
+            max(20, (viewport_rect.height() - size.height()) // 2),
+        )
+
+    def eventFilter(self, watched, event) -> bool:
+        if watched is self.viewport() and event.type() in (QEvent.Resize, QEvent.Show):
+            self._position_welcome_widget()
+        return super().eventFilter(watched, event)
 
     @property
     def delete_image_mode(self) -> bool:
@@ -1093,6 +1126,8 @@ class PageView(QGraphicsView):
     ) -> None:
         if pixmap.isNull():
             raise ValueError("The rendered PDF page is empty.")
+        if self._welcome_widget is not None:
+            self._welcome_widget.hide()
         selected_key = self.selected_signature_key
         selected_text_ref = self.selected_text_ref
         scroll_state = self._scroll_state()
@@ -1475,6 +1510,9 @@ class PageView(QGraphicsView):
         self.selected_signature_key = None
         self.selected_visual_ref = None
         self.selected_text_ref = None
+        if self._welcome_widget is not None:
+            self._welcome_widget.show()
+            self._position_welcome_widget()
 
     def center_on_pdf_rect(self, bbox: tuple[float, float, float, float]) -> None:
         x0, y0, x1, y1 = bbox
@@ -1585,7 +1623,16 @@ class PageView(QGraphicsView):
         event.accept()
 
     def set_theme(self, dark: bool) -> None:
-        self.setBackgroundBrush(QColor("#30343a" if dark else "#cfd5dc"))
+        background = QLinearGradient(0, 0, 1200, 900)
+        if dark:
+            background.setColorAt(0.0, QColor("#13252a"))
+            background.setColorAt(0.55, QColor("#202a31"))
+            background.setColorAt(1.0, QColor("#302820"))
+        else:
+            background.setColorAt(0.0, QColor("#d8f0ef"))
+            background.setColorAt(0.55, QColor("#e9eef4"))
+            background.setColorAt(1.0, QColor("#f5eadc"))
+        self.setBackgroundBrush(background)
         self.signature_accent = QColor("#ffd166" if dark else "#0067b8")
         self.text_accent = QColor("#6ec6ff" if dark else "#0067b8")
         for item in self.scene().items():
@@ -2063,7 +2110,12 @@ class PageView(QGraphicsView):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        self._position_welcome_widget()
         self.visible_area_changed.emit()
+
+    def showEvent(self, event) -> None:
+        super().showEvent(event)
+        QTimer.singleShot(0, self._position_welcome_widget)
 
 
 class CollapsibleToolSidebar(QWidget):
@@ -2568,6 +2620,7 @@ class MainWindow(QMainWindow):
         self.page_view.visible_area_changed.connect(self._schedule_tile_render)
 
         splitter = QSplitter()
+        splitter.setObjectName("workspaceSplitter")
         splitter.addWidget(self.sidebar_tabs)
         splitter.addWidget(self.page_view)
         splitter.addWidget(self.right_sidebar)
@@ -2575,18 +2628,21 @@ class MainWindow(QMainWindow):
         splitter.setSizes([280, 1092, 48])
 
         workspace = QWidget(self)
+        workspace.setObjectName("workspace")
         workspace_layout = QVBoxLayout(workspace)
-        workspace_layout.setContentsMargins(0, 0, 0, 0)
-        workspace_layout.setSpacing(0)
+        workspace_layout.setContentsMargins(8, 8, 8, 6)
+        workspace_layout.setSpacing(6)
         self._make_find_bar(workspace)
         workspace_layout.addWidget(self.find_bar)
         workspace_layout.addWidget(splitter, 1)
         self.setCentralWidget(workspace)
 
         self._make_actions()
+        self._make_welcome_card()
         self._make_menu()
         self._make_toolbar()
         self.status_label = QLabel(self.trx("open_to_begin"))
+        self.status_label.setObjectName("documentStatus")
         self.statusBar().addPermanentWidget(self.status_label)
         self._apply_theme(persist=False)
         self._retranslate_ui()
@@ -3374,6 +3430,55 @@ class MainWindow(QMainWindow):
         self.addToolBar(toolbar)
         self._position_language_button()
 
+    def _make_welcome_card(self) -> None:
+        card = QWidget()
+        card.setObjectName("welcomeCard")
+        card.setMinimumWidth(380)
+        card.setMaximumWidth(460)
+
+        logo = QLabel(card)
+        logo.setObjectName("welcomeMascot")
+        logo.setPixmap(
+            QIcon(str(ASSET_DIR / "nettongia_mascot_pdf.png")).pixmap(170, 170)
+        )
+        logo.setAlignment(Qt.AlignCenter)
+
+        title = QLabel(APP_NAME, card)
+        title.setObjectName("welcomeTitle")
+        title.setAlignment(Qt.AlignCenter)
+
+        hint = QLabel(card)
+        hint.setObjectName("welcomeHint")
+        hint.setAlignment(Qt.AlignCenter)
+        hint.setWordWrap(True)
+
+        self.welcome_new_button = QPushButton(card)
+        self.welcome_new_button.setObjectName("welcomeSecondaryButton")
+        self.welcome_new_button.clicked.connect(self.new_action.trigger)
+        self.welcome_open_button = QPushButton(card)
+        self.welcome_open_button.setObjectName("welcomePrimaryButton")
+        self.welcome_open_button.clicked.connect(self.open_action.trigger)
+
+        buttons = QHBoxLayout()
+        buttons.setSpacing(10)
+        buttons.addStretch(1)
+        buttons.addWidget(self.welcome_new_button)
+        buttons.addWidget(self.welcome_open_button)
+        buttons.addStretch(1)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(38, 30, 38, 30)
+        layout.setSpacing(12)
+        layout.addWidget(logo)
+        layout.addWidget(title)
+        layout.addWidget(hint)
+        layout.addSpacing(4)
+        layout.addLayout(buttons)
+
+        self.welcome_card = card
+        self.welcome_hint = hint
+        self.page_view.set_welcome_widget(card)
+
     def _add_text_controls(self, toolbar: QToolBar) -> None:
         toolbar.addAction(self.add_text_action)
         toolbar.addAction(self.delete_text_action)
@@ -3688,6 +3793,10 @@ class MainWindow(QMainWindow):
         self.fill_forms_hint.setText(self.trx("fill_form_hint"))
         self.clear_form_values_button.setText(self.trx("clear_form"))
         self.add_visual_signature_button.setText(self.trx("add_signature"))
+        self.welcome_hint.setText(self.trx("open_to_begin"))
+        self.welcome_new_button.setText(self.trx("new_pdf"))
+        self.welcome_open_button.setText(self.trx("open"))
+        self.page_view._position_welcome_widget()
         self.toolbar.setWindowTitle(self.trx("menu_file"))
         self.text_controls_widget.setToolTip(self.trx("font"))
         current_icon = language_icon(self.language_code)
@@ -3709,80 +3818,7 @@ class MainWindow(QMainWindow):
         self._effective_dark = self._theme_is_dark(self.theme_mode)
         app = QApplication.instance()
         app.setPalette(self._palette(self._effective_dark))
-        if self._effective_dark:
-            menu_styles = (
-                "QMenuBar { background: #1d2228; color: #f5f7f9; border-bottom: 1px solid #3e4650; }"
-                "QMenuBar::item { background: transparent; color: #f5f7f9; padding: 4px 8px; }"
-                "QMenuBar::item:selected { background: #424a55; color: #ffffff; }"
-                "QMenuBar::item:pressed { background: #8f5a00; color: #ffffff; }"
-                "QMenu { background: #252b32; color: #f5f7f9; border: 1px solid #687380; }"
-                "QMenu::item { color: #f5f7f9; padding: 5px 30px 5px 26px; }"
-                "QMenu::item:selected { background: #8f5a00; color: #ffffff; }"
-                "QMenu::item:disabled { color: #858f9a; }"
-                "QMenu::separator { height: 1px; background: #59636e; margin: 4px 8px; }"
-            )
-            find_styles = (
-                "QWidget#findBar { background: #2b3138; border-bottom: 1px solid #59636e; }"
-                "QWidget#findBar QLabel { color: #f5f7f9; }"
-                "QWidget#findBar QLineEdit { background: #ffffff; color: #111820; "
-                "border: 2px solid #788594; border-radius: 4px; padding: 3px 6px; }"
-                "QWidget#findBar QToolButton { background: #3b424c; color: #ffffff; "
-                "border: 1px solid #707b88; border-radius: 4px; }"
-                "QWidget#findBar QToolButton:hover { background: #9b6200; "
-                "border-color: #ffd166; }"
-                "QWidget#findBar QToolButton:disabled { background: #292e35; "
-                "border-color: #3a414a; }"
-            )
-        else:
-            menu_styles = (
-                "QMenuBar { background: #f3f5f7; color: #111820; border-bottom: 1px solid #aeb7c1; }"
-                "QMenuBar::item { background: transparent; color: #111820; padding: 4px 8px; }"
-                "QMenuBar::item:selected { background: #c7e5f8; color: #0d1821; }"
-                "QMenuBar::item:pressed { background: #a8d5f2; color: #0a141c; }"
-                "QMenu { background: #ffffff; color: #111820; border: 1px solid #8995a2; }"
-                "QMenu::item { color: #111820; padding: 5px 30px 5px 26px; }"
-                "QMenu::item:selected { background: #c7e5f8; color: #0d1821; }"
-                "QMenu::item:disabled { color: #7c8792; }"
-                "QMenu::separator { height: 1px; background: #c2c9d1; margin: 4px 8px; }"
-            )
-            find_styles = (
-                "QWidget#findBar { background: #e7ebf0; border-bottom: 1px solid #aab3bd; }"
-                "QWidget#findBar QLabel { color: #111820; }"
-                "QWidget#findBar QLineEdit { background: #ffffff; color: #111820; "
-                "border: 2px solid #65717e; border-radius: 4px; padding: 3px 6px; }"
-                "QWidget#findBar QToolButton { background: #ffffff; color: #17212b; "
-                "border: 1px solid #74808d; border-radius: 4px; }"
-                "QWidget#findBar QToolButton:hover { background: #ffe3a3; "
-                "border-color: #8a5200; }"
-                "QWidget#findBar QToolButton:disabled { background: #d2d8df; "
-                "border-color: #aeb7c1; }"
-            )
-        if self._effective_dark:
-            right_sidebar_styles = (
-                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #252b32; "
-                "border-left: 1px solid #59636e; }"
-                "QLabel#rightToolTitle { padding: 4px; color: #f2f5f7; }"
-                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
-                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
-                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
-                "QToolButton#rightToolClose:hover { background: #3b424c; border-color: #707b88; }"
-            )
-        else:
-            right_sidebar_styles = (
-                "QWidget#rightToolSidebar, QWidget#rightToolRail { background: #edf1f5; "
-                "border-left: 1px solid #aab3bd; }"
-                "QLabel#rightToolTitle { padding: 4px; color: #17212b; }"
-                "QToolButton#rightToolButton, QToolButton#rightToolClose { background: transparent; "
-                "border: 1px solid transparent; border-radius: 4px; padding: 4px; }"
-                "QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, "
-                "QToolButton#rightToolClose:hover { background: #c7e5f8; border-color: #74808d; }"
-            )
-        app.setStyleSheet(
-            menu_styles
-            + find_styles
-            + right_sidebar_styles
-            + "QToolTip { background: #fff4ce; color: #392d00; border: 1px solid #b69122; padding: 4px; }"
-        )
+        app.setStyleSheet(self._glass_stylesheet(self._effective_dark))
         if persist:
             self.settings.setValue("appearance/theme", self.theme_mode)
         if hasattr(self, "theme_actions"):
@@ -3793,6 +3829,94 @@ class MainWindow(QMainWindow):
             self._refresh_action_icons()
         self.page_view.set_theme(self._effective_dark)
 
+    @staticmethod
+    def _glass_stylesheet(dark: bool) -> str:
+        if dark:
+            text = "#f3f8f8"
+            muted = "#a8b8ba"
+            surface = "rgba(29, 40, 46, 238)"
+            surface_soft = "rgba(39, 53, 60, 218)"
+            surface_hover = "rgba(55, 79, 84, 238)"
+            border = "rgba(167, 214, 211, 92)"
+            border_strong = "rgba(173, 229, 224, 150)"
+            input_bg = "rgba(13, 22, 27, 218)"
+            workspace = "#11191e"
+            selection = "#176f7a"
+            amber = "#f2a23a"
+            tooltip_bg = "#fff2cf"
+            tooltip_text = "#292014"
+        else:
+            text = "#183034"
+            muted = "#607478"
+            surface = "rgba(255, 255, 255, 224)"
+            surface_soft = "rgba(246, 251, 252, 204)"
+            surface_hover = "rgba(221, 244, 242, 235)"
+            border = "rgba(55, 111, 116, 82)"
+            border_strong = "rgba(23, 111, 122, 145)"
+            input_bg = "rgba(255, 255, 255, 238)"
+            workspace = "#dfe8ed"
+            selection = "#176f7a"
+            amber = "#c97718"
+            tooltip_bg = "#fff5d9"
+            tooltip_text = "#352713"
+
+        return f"""
+            QWidget#workspace {{ background: {workspace}; }}
+            QMenuBar {{ background: {surface}; color: {text}; border-bottom: 1px solid {border}; padding: 2px 5px; }}
+            QMenuBar::item {{ background: transparent; border-radius: 7px; padding: 5px 9px; margin: 1px; }}
+            QMenuBar::item:selected {{ background: {surface_hover}; }}
+            QMenuBar::item:pressed {{ background: {selection}; color: #ffffff; }}
+            QMenu {{ background: {surface}; color: {text}; border: 1px solid {border_strong}; border-radius: 10px; padding: 6px; }}
+            QMenu::item {{ border-radius: 6px; padding: 6px 30px 6px 26px; }}
+            QMenu::item:selected {{ background: {selection}; color: #ffffff; }}
+            QMenu::item:disabled {{ color: {muted}; }}
+            QMenu::separator {{ height: 1px; background: {border}; margin: 5px 8px; }}
+
+            QTabWidget#sidebarTabs::pane {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; top: -1px; }}
+            QTabWidget#sidebarTabs QTabBar::tab {{ background: transparent; color: {muted}; border: 0; padding: 8px 12px; margin: 2px; }}
+            QTabWidget#sidebarTabs QTabBar::tab:selected {{ background: {surface_hover}; color: {text}; border-radius: 8px; }}
+            QTabWidget#sidebarTabs QTabBar::tab:hover {{ color: {text}; }}
+            QListWidget, QTreeView {{ background: transparent; color: {text}; border: 0; outline: 0; padding: 5px; }}
+            QListWidget::item, QTreeView::item {{ border-radius: 8px; padding: 5px; margin: 1px; }}
+            QListWidget::item:selected, QTreeView::item:selected {{ background: {selection}; color: #ffffff; }}
+            QListWidget::item:hover, QTreeView::item:hover {{ background: {surface_hover}; }}
+
+            QWidget#rightToolSidebar, QWidget#rightToolRail {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}
+            QWidget#rightToolRail {{ border-left: 0; }}
+            QLabel#rightToolTitle {{ color: {text}; padding: 6px; font-size: 14px; }}
+            QToolButton#rightToolButton, QToolButton#rightToolClose {{ background: transparent; border: 1px solid transparent; border-radius: 10px; padding: 5px; }}
+            QToolButton#rightToolButton:hover, QToolButton#rightToolButton:checked, QToolButton#rightToolClose:hover {{ background: {surface_hover}; border-color: {border_strong}; }}
+            QToolButton#rightToolButton:checked {{ border-color: {amber}; }}
+
+            QWidget#welcomeCard {{ background: {surface}; border: 1px solid {border_strong}; border-radius: 22px; }}
+            QLabel#welcomeTitle {{ color: {text}; font-size: 23px; font-weight: 700; }}
+            QLabel#welcomeHint {{ color: {muted}; font-size: 13px; padding: 2px 14px 5px 14px; }}
+            QPushButton#welcomePrimaryButton {{ background: {selection}; color: #ffffff; border: 1px solid {border_strong}; border-radius: 10px; padding: 9px 18px; font-weight: 600; }}
+            QPushButton#welcomePrimaryButton:hover {{ background: #218793; border-color: #8fd2d0; }}
+            QPushButton#welcomeSecondaryButton {{ background: {surface_soft}; color: {text}; border: 1px solid {border}; border-radius: 10px; padding: 9px 18px; }}
+            QPushButton#welcomeSecondaryButton:hover {{ background: {surface_hover}; border-color: {border_strong}; }}
+
+            QWidget#findBar {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}
+            QWidget#findBar QLabel {{ color: {text}; }}
+            QLineEdit, QComboBox, QFontComboBox, QPlainTextEdit {{ background: {input_bg}; color: {text}; border: 1px solid {border}; border-radius: 8px; padding: 4px 7px; selection-background-color: {selection}; }}
+            QLineEdit:focus, QComboBox:focus, QFontComboBox:focus, QPlainTextEdit:focus {{ border: 1px solid {border_strong}; }}
+            QPushButton {{ background: {surface_soft}; color: {text}; border: 1px solid {border}; border-radius: 8px; padding: 6px 10px; }}
+            QPushButton:hover {{ background: {surface_hover}; border-color: {border_strong}; }}
+            QPushButton:checked {{ background: {selection}; color: #ffffff; border-color: {border_strong}; }}
+            QPushButton:disabled {{ color: {muted}; border-color: {border}; }}
+
+            QSplitter#workspaceSplitter::handle {{ background: transparent; width: 6px; }}
+            QStatusBar {{ background: {surface}; color: {muted}; border-top: 1px solid {border}; }}
+            QStatusBar QLabel {{ color: {muted}; padding: 1px 5px; }}
+            QScrollBar:vertical {{ background: transparent; width: 11px; margin: 2px; }}
+            QScrollBar::handle:vertical {{ background: {border_strong}; min-height: 28px; border-radius: 4px; }}
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}
+            QScrollBar:horizontal {{ background: transparent; height: 11px; margin: 2px; }}
+            QScrollBar::handle:horizontal {{ background: {border_strong}; min-width: 28px; border-radius: 4px; }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{ width: 0; }}
+            QToolTip {{ background: {tooltip_bg}; color: {tooltip_text}; border: 1px solid {amber}; border-radius: 6px; padding: 5px; }}
+        """
+
     def _system_theme_changed(self, *args) -> None:
         if self.theme_mode == "automatic":
             self._apply_theme(persist=False)
@@ -3802,32 +3926,41 @@ class MainWindow(QMainWindow):
             return
         if self._effective_dark:
             stylesheet = (
-                "QToolBar#mainToolbar { background: #20242a; border: 0; spacing: 2px; padding: 4px; }"
-                "QToolBar#mainToolbar QToolButton { background: #3b424c; border: 1px solid #707b88; "
-                "border-radius: 4px; padding: 2px; margin: 1px; }"
-                "QToolBar#mainToolbar QToolButton:hover { background: #9b6200; border-color: #ffd166; }"
-                "QToolBar#mainToolbar QToolButton:pressed { background: #ce8300; }"
-                "QToolBar#mainToolbar QToolButton:disabled { background: #292e35; border-color: #3a414a; }"
-                "QToolBar#mainToolbar QComboBox { background: #ffffff; color: #101317; border: 2px solid #788594; "
-                "border-radius: 4px; padding: 4px 6px; min-height: 24px; }"
-                "QToolBar#mainToolbar QToolButton#textStyleButton:checked { background: #9b6200; "
-                "border-color: #ffd166; color: #ffffff; }"
-                "QToolBar#mainToolbar QToolBarSeparator { background: #65707c; width: 1px; margin: 4px 1px; }"
+                "QToolBar#mainToolbar { background: rgba(26, 38, 44, 242); border: 0; "
+                "border-bottom: 1px solid rgba(167, 214, 211, 92); spacing: 2px; padding: 4px; }"
+                "QToolBar#mainToolbar QLabel#brandMark { background: rgba(255,255,255,18); "
+                "border: 1px solid rgba(167,214,211,70); border-radius: 11px; }"
+                "QToolBar#mainToolbar QToolButton { background: rgba(53, 70, 78, 210); "
+                "border: 1px solid rgba(167, 214, 211, 90); border-radius: 9px; padding: 2px; margin: 1px; }"
+                "QToolBar#mainToolbar QToolButton:hover { background: rgba(34, 111, 122, 225); "
+                "border-color: rgba(173, 229, 224, 170); }"
+                "QToolBar#mainToolbar QToolButton:pressed { background: #176f7a; border-color: #f2a23a; }"
+                "QToolBar#mainToolbar QToolButton:disabled { background: rgba(34,43,48,150); "
+                "border-color: rgba(110,130,132,45); }"
+                "QToolBar#mainToolbar QComboBox { background: rgba(12, 22, 27, 225); color: #f3f8f8; "
+                "border: 1px solid rgba(167, 214, 211, 105); border-radius: 8px; padding: 4px 6px; min-height: 24px; }"
+                "QToolBar#mainToolbar QToolButton#textStyleButton:checked { background: #176f7a; "
+                "border-color: #f2a23a; color: #ffffff; }"
+                "QToolBar#mainToolbar QToolBarSeparator { background: rgba(167,214,211,65); width: 1px; margin: 5px 2px; }"
             )
         else:
             stylesheet = (
-                "QToolBar#mainToolbar { background: #dfe4ea; border-bottom: 1px solid #aab3bd; "
-                "spacing: 2px; padding: 4px; }"
-                "QToolBar#mainToolbar QToolButton { background: #ffffff; border: 1px solid #74808d; "
-                "border-radius: 4px; padding: 2px; margin: 1px; }"
-                "QToolBar#mainToolbar QToolButton:hover { background: #ffe3a3; border-color: #8a5200; }"
-                "QToolBar#mainToolbar QToolButton:pressed { background: #ffc95c; border-color: #6f4200; }"
-                "QToolBar#mainToolbar QToolButton:disabled { background: #d2d8df; border-color: #aeb7c1; }"
-                "QToolBar#mainToolbar QComboBox { background: #ffffff; color: #17212b; border: 2px solid #65717e; "
-                "border-radius: 4px; padding: 4px 6px; min-height: 24px; }"
-                "QToolBar#mainToolbar QToolButton#textStyleButton:checked { background: #b9def5; "
-                "border-color: #0067b8; color: #10202d; }"
-                "QToolBar#mainToolbar QToolBarSeparator { background: #8d98a4; width: 1px; margin: 4px 1px; }"
+                "QToolBar#mainToolbar { background: rgba(255, 255, 255, 230); "
+                "border-bottom: 1px solid rgba(55, 111, 116, 82); spacing: 2px; padding: 4px; }"
+                "QToolBar#mainToolbar QLabel#brandMark { background: rgba(255,255,255,145); "
+                "border: 1px solid rgba(55,111,116,70); border-radius: 11px; }"
+                "QToolBar#mainToolbar QToolButton { background: rgba(255,255,255,185); "
+                "border: 1px solid rgba(55,111,116,80); border-radius: 9px; padding: 2px; margin: 1px; }"
+                "QToolBar#mainToolbar QToolButton:hover { background: rgba(221,244,242,240); "
+                "border-color: rgba(23,111,122,155); }"
+                "QToolBar#mainToolbar QToolButton:pressed { background: #cce8e6; border-color: #c97718; }"
+                "QToolBar#mainToolbar QToolButton:disabled { background: rgba(225,232,234,150); "
+                "border-color: rgba(55,111,116,35); }"
+                "QToolBar#mainToolbar QComboBox { background: rgba(255,255,255,238); color: #183034; "
+                "border: 1px solid rgba(55,111,116,100); border-radius: 8px; padding: 4px 6px; min-height: 24px; }"
+                "QToolBar#mainToolbar QToolButton#textStyleButton:checked { background: #d7efed; "
+                "border-color: #176f7a; color: #102c30; }"
+                "QToolBar#mainToolbar QToolBarSeparator { background: rgba(55,111,116,55); width: 1px; margin: 5px 2px; }"
             )
         stylesheet += (
             "QToolBar#mainToolbar QWidget#textControls { background: transparent; }"

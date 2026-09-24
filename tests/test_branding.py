@@ -35,3 +35,6 @@ def test_brand_and_toolbar_icons_are_valid_svg() -> None:
         assert root.tag.endswith("svg")
         assert root.attrib["viewBox"]
     assert (ROOT / "assets" / "nettongia.ico").stat().st_size > 4096
+    mascot = ROOT / "assets" / "nettongia_mascot_pdf.png"
+    assert mascot.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+    assert mascot.stat().st_size > 100_000

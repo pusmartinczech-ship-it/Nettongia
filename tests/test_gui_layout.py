@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsPixmapItem,
     QGraphicsProxyWidget,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
@@ -87,6 +88,36 @@ def _form_pdf_bytes() -> bytes:
         return document.tobytes()
     finally:
         document.close()
+
+
+def test_branded_welcome_card_is_centered_and_uses_current_mascot() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(1100, 720)
+    window.set_theme("light")
+    window.show()
+    app.processEvents()
+
+    mascot = window.welcome_card.findChild(QLabel, "welcomeMascot")
+    assert window.welcome_card.isVisible()
+    assert mascot is not None
+    assert mascot.pixmap() is not None and not mascot.pixmap().isNull()
+    assert abs(
+        window.welcome_card.geometry().center().x()
+        - window.page_view.viewport().rect().center().x()
+    ) <= 2
+    assert abs(
+        window.welcome_card.geometry().center().y()
+        - window.page_view.viewport().rect().center().y()
+    ) <= 2
+
+    page = QPixmap(320, 450)
+    page.fill(Qt.white)
+    window.page_view.set_page(page, [], [], [], 1.0)
+    assert not window.welcome_card.isVisible()
+    window.page_view.clear_page()
+    assert window.welcome_card.isVisible()
+    window.close()
 
 
 def test_text_controls_use_one_toolbar_without_overlap() -> None:

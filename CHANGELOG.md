@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.21.0
+
+- Introduced a modern liquid-glass-inspired desktop appearance with layered
+  translucent surfaces, subtle gradients, rounded controls and clearer hover,
+  pressed and selected states in both light and dark themes.
+- Added a centered welcome card with direct New PDF and Open actions while
+  keeping the existing compact toolbar usable on narrower windows.
+- Added the new official Nettongia bettong mascot to the welcome card, with a
+  clear PDF mark on the document it holds and a transparent background.
+- Preserved the established Pages/Tree navigation on the left and the
+  collapsible Comments, Forms and Fill & Sign tools on the right.
+- Added regression coverage for mascot loading, welcome-card positioning and
+  the transition between the empty state and an opened document.
+
 ## 0.20.0
 
 - Fixed a native Windows crash when a signature field was clicked in Forms
