@@ -5,10 +5,12 @@ import re
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFocusEvent, QFont, QKeyEvent, QPen
 from PySide6.QtWidgets import (
+    QApplication,
     QGraphicsEllipseItem,
     QGraphicsItem,
     QGraphicsRectItem,
     QPlainTextEdit,
+    QWidget,
 )
 
 
@@ -61,6 +63,7 @@ class InlineTextEditor(QPlainTextEdit):
         underline: bool,
         color: QColor,
         dark: bool,
+        focus_guard: QWidget | None = None,
         parent=None,
     ) -> None:
         super().__init__(parent)
@@ -72,6 +75,8 @@ class InlineTextEditor(QPlainTextEdit):
         self._key_finish_timer.setSingleShot(True)
         self._key_finish_timer.timeout.connect(self._finish_after_key)
         self._key_finish_accept = True
+        self._focus_guard = focus_guard
+        self._dark = dark
         font = QFont(family)
         font.setPixelSize(max(8, round(font_size)))
         font.setBold(bold)
@@ -81,18 +86,40 @@ class InlineTextEditor(QPlainTextEdit):
         self.setPlainText(text)
         self.selectAll()
         self.setTabChangesFocus(False)
+        self._apply_text_style(color)
+        self.setToolTip("Ctrl+Enter: confirm   |   Esc: cancel")
+
+    def apply_format(
+        self,
+        family: str,
+        font_size: float,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        color: QColor,
+    ) -> None:
+        """Keep the live editor synchronized with the ribbon controls."""
+
+        font = QFont(family)
+        font.setPixelSize(max(8, round(font_size)))
+        font.setBold(bold)
+        font.setItalic(italic)
+        font.setUnderline(underline)
+        self.setFont(font)
+        self._apply_text_style(color)
+
+    def _apply_text_style(self, color: QColor) -> None:
         # This editor sits directly over the PDF page, so it should resemble
         # the paper rather than the application chrome even in dark mode.
         background = "rgba(255, 255, 255, 252)"
         foreground = color.name()
-        border = "#0067b8" if not dark else "#174f78"
+        border = "#0067b8" if not self._dark else "#174f78"
         self.setStyleSheet(
             "QPlainTextEdit {"
             f"background: {background}; color: {foreground}; border: 2px solid {border};"
             "border-radius: 3px; padding: 3px; selection-background-color: #168ad4;"
             "selection-color: white; }"
         )
-        self.setToolTip("Ctrl+Enter: confirm   |   Esc: cancel")
 
     def finish(self, accept: bool) -> None:
         if self._finished:
@@ -130,6 +157,14 @@ class InlineTextEditor(QPlainTextEdit):
         super().focusInEvent(event)
 
     def _commit_after_focus_out(self) -> None:
+        focused = QApplication.focusWidget()
+        if self._focus_guard is not None and (
+            focused is self._focus_guard
+            or (focused is not None and self._focus_guard.isAncestorOf(focused))
+            or QApplication.activePopupWidget() is not None
+        ):
+            self._focus_commit_timer.start(50)
+            return
         if not self.hasFocus():
             self.finish(True)
 

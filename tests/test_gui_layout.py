@@ -132,7 +132,7 @@ def test_ribbon_groups_tools_without_overlap_and_can_collapse() -> None:
     app.processEvents()
 
     assert len(window.findChildren(QToolBar)) == 1
-    assert window.toolbar.height() == 181
+    assert window.toolbar.height() == 155
     assert window.ribbon_tabs.count() == 6
     assert [window.ribbon_tabs.tabText(index) for index in range(6)] == [
         "Home",
@@ -261,6 +261,28 @@ def test_ribbon_labels_fit_in_all_supported_languages() -> None:
     window.resize(910, 720)
     window.show()
     app.processEvents()
+
+    assert all(
+        not button.icon().isNull()
+        for button in window.ribbon_tabs.findChildren(RibbonActionButton)
+    )
+    ribbon_buttons = window.ribbon_tabs.findChildren(RibbonActionButton)
+    for theme, expect_bright_pixels in (("light", False), ("dark", True)):
+        window.set_theme(theme)
+        app.processEvents()
+        for button in ribbon_buttons:
+            image = button.icon().pixmap(24, 24).toImage()
+            lightness = [
+                image.pixelColor(x, y).lightness()
+                for y in range(image.height())
+                for x in range(image.width())
+                if image.pixelColor(x, y).alpha() > 40
+            ]
+            assert lightness, (theme, button.text())
+            if expect_bright_pixels:
+                assert max(lightness) >= 180, (theme, button.text())
+            else:
+                assert min(lightness) <= 120, (theme, button.text())
 
     for code in window.language_actions:
         window.set_language(code)
@@ -1454,6 +1476,56 @@ def test_inline_editor_does_not_remove_itself_inside_focus_event() -> None:
     assert accepted == ["Changed text"]
 
     editor.deleteLater()
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+
+def test_inline_font_change_is_live_and_persists_after_editor_closes() -> None:
+    app = _application()
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_text((50, 100), "FONT BEFORE", fontname="helv", fontsize=18)
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    window = MainWindow()
+    window._maybe_save_changes = lambda: True
+    window._activate_document(engine, None, already_saved=False)
+    window.show()
+    app.processEvents()
+
+    run = next(item for item in engine.text_runs(0) if item.text == "FONT BEFORE")
+    window._start_inline_text_edit("source", run.key)
+    assert window.page_view._inline_editor is not None
+    window.text_font_box.setFocus(Qt.OtherFocusReason)
+    app.processEvents(QEventLoop.AllEvents, 100)
+    assert window.page_view._inline_editor is not None
+    assert window.page_view.inline_editing
+    available = QFontDatabase.families()
+    target = next(
+        (
+            family
+            for family in available
+            if any(token in family.lower() for token in ("serif", "times", "courier", "mono"))
+            and family != window.text_font_box.currentFont().family()
+        ),
+        available[-1],
+    )
+    window.text_font_box.setCurrentFont(QFont(target))
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+    selected_family = window.text_font_box.currentFont().family()
+    assert window.page_view._inline_editor.font().family() == selected_family
+    assert window.edits[run.key].font_family == selected_family
+
+    window.page_view.finish_inline_editor(True)
+    app.processEvents(QEventLoop.AllEvents, 100)
+    assert not window.page_view.inline_editing
+    assert window.edits[run.key].font_family == selected_family
+
+    window.close()
+    window.deleteLater()
     app.processEvents(QEventLoop.AllEvents, 50)
 
 

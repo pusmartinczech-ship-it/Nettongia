@@ -954,7 +954,10 @@ class PdfEngine:
                 page_edit = replace(edit, run=page_run, bbox=target_bbox)
                 page_space_edits.append(page_edit)
                 rect = self._redaction_rect(page_run, page.cropbox)
-                page.add_redact_annot(rect, fill=(1, 1, 1), cross_out=False)
+                # Remove only the original text operators. A transparent
+                # redaction preserves vector fills and images behind the text
+                # instead of replacing colored backgrounds with a white box.
+                page.add_redact_annot(rect, fill=False, cross_out=False)
             page.apply_redactions(images=0, graphics=0, text=0)
 
             for ordinal, edit in enumerate(page_space_edits):

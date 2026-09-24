@@ -22,6 +22,7 @@ from PySide6.QtCore import (
     QModelIndex,
     QPointF,
     QProcess,
+    QRect,
     QRectF,
     QSettings,
     QSize,
@@ -999,6 +1000,7 @@ class PageView(QGraphicsView):
         self._inline_proxy = None
         self._inline_editor: InlineTextEditor | None = None
         self._inline_ref: tuple[str, str] | None = None
+        self._inline_focus_guard: QWidget | None = None
         self.render_scale = 1.0
         self.selected_signature_key: str | None = None
         self.selected_visual_ref: tuple[str, str] | None = None
@@ -2007,6 +2009,7 @@ class PageView(QGraphicsView):
             underline,
             QColor((color >> 16) & 255, (color >> 8) & 255, color & 255),
             dark,
+            self._inline_focus_guard,
         )
         x0, y0, x1, y1 = bbox
         width = max(130.0, (x1 - x0) * self.render_scale + 12.0)
@@ -2023,6 +2026,29 @@ class PageView(QGraphicsView):
         editor.rejected.connect(lambda k=kind, item_key=key: self._inline_rejected(k, item_key))
         self._refresh_interaction_mode()
         editor.setFocus(Qt.MouseFocusReason)
+
+    def set_inline_focus_guard(self, widget: QWidget) -> None:
+        self._inline_focus_guard = widget
+
+    def update_inline_editor_format(
+        self,
+        family: str,
+        font_size: float,
+        bold: bool,
+        italic: bool,
+        underline: bool,
+        color: int,
+    ) -> None:
+        if self._inline_editor is None:
+            return
+        self._inline_editor.apply_format(
+            family,
+            font_size * self.render_scale,
+            bold,
+            italic,
+            underline,
+            QColor((color >> 16) & 255, (color >> 8) & 255, color & 255),
+        )
 
     def finish_inline_editor(self, accept: bool) -> None:
         if self._inline_editor is not None:
@@ -2262,39 +2288,46 @@ class CollapsibleToolSidebar(QWidget):
 class RibbonActionButton(QToolButton):
     """Ribbon button that wraps translated labels instead of eliding them."""
 
-    _MIN_WIDTH = 82
+    _MIN_WIDTH = 72
     _MAX_WIDTH = 320
-    _HEIGHT = 90
+    _HEIGHT = 64
+    _TEXT_TOP = 22
 
     def __init__(self, action: QAction, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("ribbonActionButton")
         self.setDefaultAction(action)
         self.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
-        self.setIconSize(QSize(24, 24))
+        self.setIconSize(QSize(18, 18))
         action.changed.connect(self.refresh_label_layout)
         self.refresh_label_layout()
 
     def refresh_label_layout(self) -> None:
         text = self.text().replace("&", "")
         metrics = self.fontMetrics()
-        total_width = metrics.horizontalAdvance(text) + 16
+        total_width = metrics.horizontalAdvance(text) + 14
         longest_word = max(
             (metrics.horizontalAdvance(word) for word in text.split()),
             default=0,
         )
-        width = max(
-            self._MIN_WIDTH,
-            longest_word + 16,
-            min(total_width, 168),
-        )
+        width = max(self._MIN_WIDTH, longest_word + 14)
+        text_height = self._HEIGHT - self._TEXT_TOP - 2
+        while width < min(total_width, self._MAX_WIDTH):
+            bounds = metrics.boundingRect(
+                QRect(0, 0, width - 8, text_height),
+                Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+                text,
+            )
+            if bounds.height() <= metrics.lineSpacing() * 2 + 2:
+                break
+            width += 4
         self.setFixedSize(min(width, self._MAX_WIDTH), self._HEIGHT)
         self.setToolTip(self.defaultAction().toolTip() or text)
         self.update()
 
     def label_fits(self) -> bool:
         text = self.text().replace("&", "")
-        text_rect = self.rect().adjusted(5, 31, -5, -3)
+        text_rect = self.rect().adjusted(4, self._TEXT_TOP, -4, -2)
         bounds = self.fontMetrics().boundingRect(
             text_rect,
             Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
@@ -2318,14 +2351,14 @@ class RibbonActionButton(QToolButton):
         icon_state = QIcon.On if self.isChecked() else QIcon.Off
         pixmap = self.icon().pixmap(self.iconSize(), icon_mode, icon_state)
         icon_x = (self.width() - pixmap.width()) // 2
-        painter.drawPixmap(icon_x, 5, pixmap)
+        painter.drawPixmap(icon_x, 2, pixmap)
 
         text_role = QPalette.ButtonText
         color_group = QPalette.Active if self.isEnabled() else QPalette.Disabled
         painter.setPen(self.palette().color(color_group, text_role))
         painter.setFont(self.font())
         painter.drawText(
-            self.rect().adjusted(5, 31, -5, -3),
+            self.rect().adjusted(4, self._TEXT_TOP, -4, -2),
             Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
             self.text().replace("&", ""),
         )
@@ -3534,6 +3567,7 @@ class MainWindow(QMainWindow):
         self.zoom_combo.activated.connect(self._zoom_entered)
         self.zoom_combo.lineEdit().editingFinished.connect(self._zoom_entered)
         self._add_text_controls()
+        self.page_view.set_inline_focus_guard(self.text_controls_widget)
 
         self._add_ribbon_tab("ribbon_home", (
             self._ribbon_group("menu_file", (self.new_action, self.open_action, self.save_action, self.save_as_action, self.print_action)),
@@ -3675,8 +3709,8 @@ class MainWindow(QMainWindow):
 
     def _set_ribbon_collapsed(self, collapsed: bool) -> None:
         self.ribbon_collapsed = collapsed
-        self.ribbon_tabs.setFixedHeight(31 if collapsed else 138)
-        self.toolbar.setFixedHeight(74 if collapsed else 181)
+        self.ribbon_tabs.setFixedHeight(31 if collapsed else 112)
+        self.toolbar.setFixedHeight(74 if collapsed else 155)
         self.ribbon_collapse_button.setText("⌄" if collapsed else "⌃")
         self.ribbon_collapse_button.setToolTip(
             self.trx("menu_view") if collapsed else self.trx("close_search")
@@ -4315,6 +4349,24 @@ class MainWindow(QMainWindow):
             self.signature_action: "signature.svg",
             self.add_text_action: "text_add.svg",
             self.delete_text_action: "text_remove.svg",
+            self.find_action: "find.svg",
+            self.edit_original_image_action: "image_edit.svg",
+            self.move_page_up_action: "page_up.svg",
+            self.move_page_down_action: "page_down.svg",
+            self.rotate_page_left_action: "rotate_left.svg",
+            self.rotate_page_right_action: "rotate_right.svg",
+            self.add_comment_action: "comment_add.svg",
+            self.edit_comment_action: "comment_edit.svg",
+            self.delete_comment_action: "comment_delete.svg",
+            self.create_form_action: "form_add.svg",
+            self.edit_form_action: "form_edit.svg",
+            self.delete_form_action: "form_delete.svg",
+            self.redact_area_action: "redact.svg",
+            self.compatibility_action: "compatibility.svg",
+            self.ocr_page_action: "ocr_page.svg",
+            self.ocr_document_action: "ocr_document.svg",
+            self.check_for_updates_action: "update.svg",
+            self.about_action: "about.svg",
         }
         for action, name in custom_icons.items():
             action.setIcon(self._asset_icon(name))
@@ -5920,6 +5972,10 @@ class MainWindow(QMainWindow):
         if spec is None or spec.page_index != self.current_page:
             return
         family, size, bold, italic, underline, color = self._toolbar_text_values()
+        if self.page_view._inline_ref == reference:
+            self.page_view.update_inline_editor_format(
+                family, size, bold, italic, underline, color
+            )
         run = self.engine.find_run(key) if kind == "source" else None
         previous = self.edits.get(key) if kind == "source" else None
         if kind == "source":
