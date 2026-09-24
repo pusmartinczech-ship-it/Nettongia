@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QToolBar,
+    QToolButton,
 )
 
 import openpdf_editor.main_window as main_window_module
@@ -50,6 +51,7 @@ from openpdf_editor.main_window import (
     FONT_SIZE_PRESETS,
     MainWindow,
     PageView,
+    RibbonActionButton,
     SignatureGraphicsItem,
     VisualImageItem,
 )
@@ -120,31 +122,47 @@ def test_branded_welcome_card_is_centered_and_uses_current_mascot() -> None:
     window.close()
 
 
-def test_text_controls_use_one_toolbar_without_overlap() -> None:
+def test_ribbon_groups_tools_without_overlap_and_can_collapse() -> None:
     app = _application()
     window = MainWindow()
     window.resize(910, 720)
+    window.set_language("en")
     window.set_theme("dark")
     window.show()
     app.processEvents()
 
     assert len(window.findChildren(QToolBar)) == 1
-    assert window.toolbar.height() < 60
+    assert window.toolbar.height() == 173
+    assert window.ribbon_tabs.count() == 6
+    assert [window.ribbon_tabs.tabText(index) for index in range(6)] == [
+        "Home",
+        "Edit",
+        "Page",
+        "Comments",
+        "Forms",
+        "View",
+    ]
+    assert not window.menuBar().isVisible()
+    window.ribbon_tabs.setCurrentIndex(1)
+    app.processEvents()
     assert window.text_controls_widget.isVisible()
     assert window.language_button.isVisible()
-    assert window.toolbar.widgetForAction(window.print_action).isVisible()
-    assert window.toolbar.width() - 1 - window.language_button.geometry().right() <= 4
     assert len(window.language_actions) == 21
     assert all(not action.icon().isNull() for action in window.language_actions.values())
     assert not window.sidebar_tabs.isTabEnabled(window.outline_tab_index)
 
-    action_order = window.toolbar.actions()
-    assert action_order.index(window.save_action) < action_order.index(
-        window.print_action
-    )
-    assert action_order.index(window.print_action) < action_order.index(
-        window.undo_action
-    )
+    quick_actions = [
+        button.defaultAction()
+        for button in window.toolbar.findChildren(QToolButton)
+        if button.objectName() == "ribbonQuickButton"
+    ]
+    assert quick_actions == [
+        window.new_action,
+        window.open_action,
+        window.save_action,
+        window.undo_action,
+        window.redo_action,
+    ]
     assert window.save_action.shortcut() == QKeySequence(QKeySequence.Save)
     assert window.save_as_action.shortcut() == QKeySequence(QKeySequence.SaveAs)
     assert window.save_copy_action.shortcut() == QKeySequence("Ctrl+Alt+S")
@@ -165,6 +183,15 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     assert window.move_page_down_action in window.page_menu.actions()
     assert window.rotate_page_left_action in window.page_menu.actions()
     assert window.rotate_page_right_action in window.page_menu.actions()
+
+    window._toggle_ribbon()
+    app.processEvents()
+    assert window.ribbon_collapsed
+    assert window.toolbar.height() == 74
+    assert window.ribbon_tabs.height() == 31
+    window._toggle_ribbon()
+    app.processEvents()
+    assert not window.ribbon_collapsed
 
     widgets = (
         window.text_font_box,
@@ -226,8 +253,89 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
 
     editor.deleteLater()
     window.close()
+
+
+def test_ribbon_labels_fit_in_all_supported_languages() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(910, 720)
+    window.show()
+    app.processEvents()
+
+    for code in window.language_actions:
+        window.set_language(code)
+        app.processEvents()
+        assert all(
+            window.ribbon_tabs.tabText(index).strip()
+            for index in range(window.ribbon_tabs.count())
+        )
+        for index in range(window.ribbon_tabs.count()):
+            window.ribbon_tabs.setCurrentIndex(index)
+            app.processEvents()
+            buttons = window.ribbon_tabs.currentWidget().findChildren(
+                RibbonActionButton
+            )
+            assert all(button.label_fits() for button in buttons), code
+        for button in (
+            window.ribbon_form_edit_button,
+            window.ribbon_form_preview_button,
+            window.ribbon_fill_sign_button,
+        ):
+            assert button.width() >= button.sizeHint().width(), (code, button.text())
+
+    window.set_language("zh")
+    assert window.ribbon_fill_sign_button.text() == "填写并签名"
+    window.set_language("hi")
+    assert window.ribbon_form_preview_button.text() == "पूर्वावलोकन"
+    window.set_language("cs")
+    assert window.ribbon_fill_sign_button.text() == "Vyplnit a podepsat"
+    window.close()
     window.deleteLater()
     app.processEvents()
+
+
+def test_right_sidebar_labels_wrap_in_all_supported_languages() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(910, 720)
+    for index in (
+        window.comments_tool_index,
+        window.forms_tool_index,
+        window.fill_sign_tool_index,
+    ):
+        window.right_sidebar.setTabEnabled(index, True)
+    window.show()
+    app.processEvents()
+
+    def label_fits(button: QPushButton) -> bool:
+        lines = button.text().replace("&", "").splitlines()
+        required_width = max(
+            button.fontMetrics().horizontalAdvance(line) for line in lines
+        ) + 18
+        required_height = button.fontMetrics().lineSpacing() * len(lines) + 10
+        return required_width <= button.width() and required_height <= button.height()
+
+    for code in window.language_actions:
+        window.set_language(code)
+        app.processEvents()
+        for index in (
+            window.comments_tool_index,
+            window.forms_tool_index,
+            window.fill_sign_tool_index,
+        ):
+            window.right_sidebar.setCurrentIndex(index)
+            app.processEvents()
+            assert all(
+                label_fits(button)
+                for button in window.right_sidebar.findChildren(QPushButton)
+                if button.isVisible() and button.text()
+            ), code
+
+    window.set_language("ar")
+    assert app.layoutDirection() == Qt.RightToLeft
+    window.set_language("en")
+    assert app.layoutDirection() == Qt.LeftToRight
+    window.close()
 
 
 def test_anonymized_diagnostics_are_reviewed_before_export(
@@ -520,6 +628,12 @@ def test_acroform_sidebar_edits_fields_with_undo_redo(
     app.processEvents()
 
     assert window.forms_list.count() == 3
+    window.set_language("ar")
+    assert "صفحة" in window.forms_list.item(0).text()
+    assert "حقل نص" in window.forms_list.item(0).text()
+    window.set_language("cs")
+    assert "Stránka" in window.forms_list.item(0).text()
+    assert "Textové pole" in window.forms_list.item(0).text()
     assert window.sidebar_tabs.count() == 2
     assert window.right_sidebar.isTabEnabled(window.forms_tool_index)
     assert not window.right_sidebar.isExpanded()

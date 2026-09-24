@@ -9,6 +9,8 @@
   keeping the existing compact toolbar usable on narrower windows.
 - Added the new official Nettongia bettong mascot to the welcome card, with a
   clear PDF mark on the document it holds and a transparent background.
+- Replaced the legacy application and website artwork with that same approved
+  mascot, including a reproducible multi-size Windows EXE icon.
 - Preserved the established Pages/Tree navigation on the left and the
   collapsible Comments, Forms and Fill & Sign tools on the right.
 - Added regression coverage for mascot loading, welcome-card positioning and

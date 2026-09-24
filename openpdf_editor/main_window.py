@@ -89,9 +89,12 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QRadioButton,
+    QScrollArea,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QStyle,
+    QStyleOptionToolButton,
     QTabWidget,
     QToolBar,
     QToolButton,
@@ -2256,6 +2259,78 @@ class CollapsibleToolSidebar(QWidget):
             self._buttons[index].setToolTip(text or self._titles[index])
 
 
+class RibbonActionButton(QToolButton):
+    """Ribbon button that wraps translated labels instead of eliding them."""
+
+    _MIN_WIDTH = 82
+    _MAX_WIDTH = 220
+    _HEIGHT = 82
+
+    def __init__(self, action: QAction, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("ribbonActionButton")
+        self.setDefaultAction(action)
+        self.setToolButtonStyle(Qt.ToolButtonTextUnderIcon)
+        self.setIconSize(QSize(24, 24))
+        action.changed.connect(self.refresh_label_layout)
+        self.refresh_label_layout()
+
+    def refresh_label_layout(self) -> None:
+        text = self.text().replace("&", "")
+        metrics = self.fontMetrics()
+        total_width = metrics.horizontalAdvance(text) + 16
+        longest_word = max(
+            (metrics.horizontalAdvance(word) for word in text.split()),
+            default=0,
+        )
+        width = max(
+            self._MIN_WIDTH,
+            longest_word + 16,
+            min(total_width, 168),
+        )
+        self.setFixedSize(min(width, self._MAX_WIDTH), self._HEIGHT)
+        self.setToolTip(self.defaultAction().toolTip() or text)
+        self.update()
+
+    def label_fits(self) -> bool:
+        text = self.text().replace("&", "")
+        text_rect = self.rect().adjusted(5, 31, -5, -3)
+        bounds = self.fontMetrics().boundingRect(
+            text_rect,
+            Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+            text,
+        )
+        longest_word = max(
+            (self.fontMetrics().horizontalAdvance(word) for word in text.split()),
+            default=0,
+        )
+        return bounds.height() <= text_rect.height() and longest_word <= text_rect.width()
+
+    def paintEvent(self, event) -> None:
+        option = QStyleOptionToolButton()
+        self.initStyleOption(option)
+        option.text = ""
+        option.icon = QIcon()
+        painter = QPainter(self)
+        self.style().drawComplexControl(QStyle.CC_ToolButton, option, painter, self)
+
+        icon_mode = QIcon.Normal if self.isEnabled() else QIcon.Disabled
+        icon_state = QIcon.On if self.isChecked() else QIcon.Off
+        pixmap = self.icon().pixmap(self.iconSize(), icon_mode, icon_state)
+        icon_x = (self.width() - pixmap.width()) // 2
+        painter.drawPixmap(icon_x, 5, pixmap)
+
+        text_role = QPalette.ButtonText
+        color_group = QPalette.Active if self.isEnabled() else QPalette.Disabled
+        painter.setPen(self.palette().color(color_group, text_role))
+        painter.setFont(self.font())
+        painter.drawText(
+            self.rect().adjusted(5, 31, -5, -3),
+            Qt.AlignHCenter | Qt.AlignVCenter | Qt.TextWordWrap,
+            self.text().replace("&", ""),
+        )
+
+
 class MainWindow(QMainWindow):
     def __init__(
         self,
@@ -2389,7 +2464,7 @@ class MainWindow(QMainWindow):
         self._ocr_progress: QProgressDialog | None = None
 
         self.setWindowTitle(APP_NAME)
-        self.setWindowIcon(QIcon(str(ASSET_DIR / "app_logo.svg")))
+        self.setWindowIcon(QIcon(str(ASSET_DIR / "nettongia_mascot_pdf.png")))
         self.resize(1420, 900)
         self.setAcceptDrops(True)
 
@@ -2508,8 +2583,9 @@ class MainWindow(QMainWindow):
             lambda: self._set_form_workspace_mode("preview")
         )
         self.reset_form_preview_button.clicked.connect(self.reset_form_preview)
-        forms_modes = QHBoxLayout()
+        forms_modes = QVBoxLayout()
         forms_modes.setContentsMargins(6, 4, 6, 4)
+        forms_modes.setSpacing(4)
         forms_modes.addWidget(self.form_edit_mode_button)
         forms_modes.addWidget(self.form_preview_mode_button)
         forms_panel = QWidget()
@@ -2528,8 +2604,9 @@ class MainWindow(QMainWindow):
         self.add_visual_signature_button = QPushButton("Add visual signature...")
         self.clear_form_values_button.clicked.connect(self.clear_form_values)
         self.add_visual_signature_button.clicked.connect(self.add_signature)
-        fill_actions = QHBoxLayout()
+        fill_actions = QVBoxLayout()
         fill_actions.setContentsMargins(6, 4, 6, 4)
+        fill_actions.setSpacing(4)
         fill_actions.addWidget(self.clear_form_values_button)
         fill_actions.addWidget(self.add_visual_signature_button)
         fill_panel = QWidget()
@@ -3373,19 +3450,79 @@ class MainWindow(QMainWindow):
         self.toolbar = toolbar
         toolbar.setObjectName("mainToolbar")
         toolbar.setMovable(False)
-        toolbar.setIconSize(QPixmap(24, 24).size())
-        toolbar.setContentsMargins(0, 0, 41, 0)
-        toolbar.installEventFilter(self)
-        self._style_toolbar()
-        toolbar.addAction(self.new_action)
-        toolbar.addAction(self.open_action)
-        toolbar.addAction(self.save_action)
-        toolbar.addAction(self.print_action)
-        toolbar.addSeparator()
-        toolbar.addAction(self.undo_action)
-        toolbar.addAction(self.redo_action)
-        toolbar.addSeparator()
-        toolbar.addAction(self.zoom_out_action)
+        toolbar.setFloatable(False)
+        toolbar.setAllowedAreas(Qt.TopToolBarArea)
+        toolbar.setContentsMargins(0, 0, 0, 0)
+
+        ribbon = QWidget(toolbar)
+        ribbon.setObjectName("ribbonRoot")
+        ribbon.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        ribbon_layout = QVBoxLayout(ribbon)
+        ribbon_layout.setContentsMargins(7, 4, 7, 4)
+        ribbon_layout.setSpacing(3)
+
+        quick_row = QHBoxLayout()
+        quick_row.setContentsMargins(0, 0, 0, 0)
+        quick_row.setSpacing(4)
+        brand = QLabel(APP_NAME, ribbon)
+        brand.setObjectName("ribbonBrand")
+        brand.setPixmap(QIcon(str(ASSET_DIR / "nettongia_mascot_pdf.png")).pixmap(30, 30))
+        brand.setToolTip(APP_NAME)
+        brand.setFixedSize(38, 32)
+        brand.setAlignment(Qt.AlignCenter)
+        quick_row.addWidget(brand)
+
+        self.ribbon_file_button = QToolButton(ribbon)
+        self.ribbon_file_button.setObjectName("ribbonMenuButton")
+        self.ribbon_file_button.setPopupMode(QToolButton.InstantPopup)
+        self.ribbon_file_button.setMenu(self.file_menu)
+        quick_row.addWidget(self.ribbon_file_button)
+        for action in (
+            self.new_action,
+            self.open_action,
+            self.save_action,
+            self.undo_action,
+            self.redo_action,
+        ):
+            quick_row.addWidget(self._ribbon_action_button(action, compact=True))
+        quick_row.addStretch(1)
+
+        self.ribbon_appearance_button = QToolButton(ribbon)
+        self.ribbon_appearance_button.setObjectName("ribbonHeaderButton")
+        self.ribbon_appearance_button.setPopupMode(QToolButton.InstantPopup)
+        self.ribbon_appearance_button.setMenu(self.appearance_menu)
+        quick_row.addWidget(self.ribbon_appearance_button)
+
+        self.ribbon_help_button = QToolButton(ribbon)
+        self.ribbon_help_button.setObjectName("ribbonHeaderButton")
+        self.ribbon_help_button.setPopupMode(QToolButton.InstantPopup)
+        self.ribbon_help_button.setMenu(self.help_menu)
+        quick_row.addWidget(self.ribbon_help_button)
+
+        self.language_button = QToolButton(ribbon)
+        self.language_button.setObjectName("languageButton")
+        self.language_button.setFixedSize(39, 32)
+        self.language_button.setIcon(language_icon(self.language_code))
+        self.language_button.setIconSize(QPixmap(28, 20).size())
+        self.language_button.setPopupMode(QToolButton.InstantPopup)
+        self.language_button.setMenu(QMenu(self.language_button))
+        self.language_button.menu().addActions(self.language_group.actions())
+        quick_row.addWidget(self.language_button)
+
+        self.ribbon_collapse_button = QToolButton(ribbon)
+        self.ribbon_collapse_button.setObjectName("ribbonCollapseButton")
+        self.ribbon_collapse_button.setText("⌃")
+        self.ribbon_collapse_button.setFixedSize(30, 32)
+        self.ribbon_collapse_button.clicked.connect(self._toggle_ribbon)
+        quick_row.addWidget(self.ribbon_collapse_button)
+        ribbon_layout.addLayout(quick_row)
+
+        self.ribbon_tabs = QTabWidget(ribbon)
+        self.ribbon_tabs.setObjectName("ribbonTabs")
+        self.ribbon_tabs.setDocumentMode(True)
+        self.ribbon_tabs.tabBarDoubleClicked.connect(lambda _index: self._toggle_ribbon())
+        self.ribbon_tab_keys: list[str] = []
+        self.ribbon_group_labels: list[tuple[QLabel, str]] = []
 
         self.zoom_combo = QComboBox()
         self.zoom_combo.setEditable(True)
@@ -3396,39 +3533,154 @@ class MainWindow(QMainWindow):
         self.zoom_combo.setToolTip("Current zoom")
         self.zoom_combo.activated.connect(self._zoom_entered)
         self.zoom_combo.lineEdit().editingFinished.connect(self._zoom_entered)
-        toolbar.addWidget(self.zoom_combo)
+        self._add_text_controls()
 
-        toolbar.addAction(self.zoom_in_action)
-        toolbar.addAction(self.fit_width_action)
-        toolbar.addSeparator()
-        self._add_text_controls(toolbar)
+        self._add_ribbon_tab("ribbon_home", (
+            self._ribbon_group("menu_file", (self.new_action, self.open_action, self.save_action, self.save_as_action, self.print_action)),
+            self._ribbon_group("menu_edit", (self.undo_action, self.redo_action, self.find_action)),
+            self._ribbon_group("compress", (self.compress_action, self.compatibility_action)),
+        ))
+        self._add_ribbon_tab("menu_edit", (
+            self._ribbon_group("edit_text", (self.add_text_action, self.delete_text_action), self.text_controls_widget),
+            self._ribbon_group("menu_image", (self.add_image_action, self.edit_original_image_action, self.delete_image_action, self.signature_action)),
+            self._ribbon_group("redact_area", (self.redact_area_action,)),
+        ))
+        self._add_ribbon_tab("menu_page", (
+            self._ribbon_group("menu_insert", (self.add_blank_page_action, self.insert_pdf_action, self.delete_page_action)),
+            self._ribbon_group("menu_page", (self.move_page_up_action, self.move_page_down_action, self.rotate_page_left_action, self.rotate_page_right_action)),
+            self._ribbon_group("ocr_document", (self.ocr_page_action, self.ocr_document_action)),
+        ))
+        self._add_ribbon_tab("comments", (
+            self._ribbon_group("comments", (self.add_comment_action, self.edit_comment_action, self.delete_comment_action)),
+            self._ribbon_group("redact_area", (self.redact_area_action,)),
+        ))
+        self._add_ribbon_tab("forms", (
+            self._ribbon_group("forms", (self.create_form_action, self.edit_form_action, self.delete_form_action)),
+            self._ribbon_group("fill_and_sign", (self.signature_action,), self._make_form_mode_controls()),
+        ))
+        self._add_ribbon_tab("menu_view", (
+            self._ribbon_group("current_zoom", (self.zoom_out_action, self.zoom_in_action, self.fit_width_action), self.zoom_combo),
+            self._ribbon_group("menu_appearance", (), self._make_appearance_controls()),
+            self._ribbon_group("menu_help", (self.check_for_updates_action, self.about_action)),
+        ))
+        ribbon_layout.addWidget(self.ribbon_tabs)
 
-        # Keep the most-used editing controls first. If the window is narrow,
-        # Qt moves these trailing document actions into the overflow menu.
-        toolbar.addAction(self.compress_action)
-        toolbar.addAction(self.add_blank_page_action)
-        toolbar.addAction(self.insert_pdf_action)
-        toolbar.addAction(self.rotate_page_left_action)
-        toolbar.addAction(self.rotate_page_right_action)
-        toolbar.addAction(self.delete_page_action)
-        toolbar.addSeparator()
-        toolbar.addAction(self.add_image_action)
-        toolbar.addAction(self.delete_image_action)
-        toolbar.addAction(self.signature_action)
-
-        # This button is a direct toolbar child instead of a toolbar action.
-        # The reserved right margin keeps it visible even while ordinary
-        # actions move into Qt's overflow menu on narrower windows.
-        self.language_button = QToolButton(toolbar)
-        self.language_button.setObjectName("languageButton")
-        self.language_button.setFixedSize(39, 39)
-        self.language_button.setIcon(language_icon(self.language_code))
-        self.language_button.setIconSize(QPixmap(30, 22).size())
-        self.language_button.setPopupMode(QToolButton.InstantPopup)
-        self.language_button.setMenu(QMenu(self.language_button))
-        self.language_button.menu().addActions(self.language_group.actions())
+        toolbar.addWidget(ribbon)
         self.addToolBar(toolbar)
-        self._position_language_button()
+        self.menuBar().hide()
+        self.ribbon_collapsed = False
+        self._set_ribbon_collapsed(False)
+        self._style_toolbar()
+
+    def _ribbon_action_button(self, action: QAction, compact: bool = False) -> QToolButton:
+        if not compact:
+            return RibbonActionButton(action)
+        button = QToolButton()
+        button.setObjectName("ribbonQuickButton")
+        button.setDefaultAction(action)
+        button.setToolButtonStyle(Qt.ToolButtonIconOnly)
+        button.setIconSize(QSize(20, 20))
+        button.setFixedSize(32, 32)
+        return button
+
+    def _ribbon_group(
+        self,
+        title_key: str,
+        actions: tuple[QAction, ...],
+        extra: QWidget | None = None,
+    ) -> QWidget:
+        group = QWidget()
+        group.setObjectName("ribbonGroup")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(5, 3, 5, 2)
+        layout.setSpacing(1)
+        body = QHBoxLayout()
+        body.setContentsMargins(0, 0, 0, 0)
+        body.setSpacing(3)
+        for action in actions:
+            body.addWidget(self._ribbon_action_button(action))
+        if extra is not None:
+            body.addWidget(extra)
+        layout.addLayout(body, 1)
+        label = QLabel(group)
+        label.setObjectName("ribbonGroupLabel")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        self.ribbon_group_labels.append((label, title_key))
+        return group
+
+    def _add_ribbon_tab(self, title_key: str, groups: tuple[QWidget, ...]) -> None:
+        contents = QWidget()
+        contents.setObjectName("ribbonPage")
+        layout = QHBoxLayout(contents)
+        layout.setContentsMargins(3, 2, 3, 2)
+        layout.setSpacing(4)
+        for group in groups:
+            layout.addWidget(group)
+        layout.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setObjectName("ribbonScroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setWidget(contents)
+        self.ribbon_tabs.addTab(scroll, "")
+        self.ribbon_tab_keys.append(title_key)
+
+    def _make_form_mode_controls(self) -> QWidget:
+        controls = QWidget()
+        controls.setObjectName("ribbonInlineControls")
+        layout = QHBoxLayout(controls)
+        layout.setContentsMargins(2, 1, 2, 1)
+        layout.setSpacing(2)
+        self.ribbon_form_edit_button = QPushButton(controls)
+        self.ribbon_form_preview_button = QPushButton(controls)
+        self.ribbon_fill_sign_button = QPushButton(controls)
+        self.ribbon_form_edit_button.clicked.connect(
+            lambda: self._open_right_tool(self.forms_tool_index, "edit")
+        )
+        self.ribbon_form_preview_button.clicked.connect(
+            lambda: self._open_right_tool(self.forms_tool_index, "preview")
+        )
+        self.ribbon_fill_sign_button.clicked.connect(
+            lambda: self._open_right_tool(self.fill_sign_tool_index, "fill")
+        )
+        layout.addWidget(self.ribbon_form_edit_button)
+        layout.addWidget(self.ribbon_form_preview_button)
+        layout.addWidget(self.ribbon_fill_sign_button)
+        return controls
+
+    def _make_appearance_controls(self) -> QWidget:
+        controls = QWidget()
+        controls.setObjectName("ribbonInlineControls")
+        layout = QHBoxLayout(controls)
+        layout.setContentsMargins(2, 1, 2, 1)
+        layout.setSpacing(2)
+        for mode in ("automatic", "light", "dark"):
+            button = QToolButton(controls)
+            button.setDefaultAction(self.theme_actions[mode])
+            button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            layout.addWidget(button)
+        return controls
+
+    def _open_right_tool(self, index: int, mode: str) -> None:
+        if not self.engine.is_open:
+            return
+        self.right_sidebar.setCurrentIndex(index)
+        self._set_form_workspace_mode(mode)
+
+    def _toggle_ribbon(self) -> None:
+        self._set_ribbon_collapsed(not self.ribbon_collapsed)
+
+    def _set_ribbon_collapsed(self, collapsed: bool) -> None:
+        self.ribbon_collapsed = collapsed
+        self.ribbon_tabs.setFixedHeight(31 if collapsed else 130)
+        self.toolbar.setFixedHeight(74 if collapsed else 173)
+        self.ribbon_collapse_button.setText("⌄" if collapsed else "⌃")
+        self.ribbon_collapse_button.setToolTip(
+            self.trx("menu_view") if collapsed else self.trx("close_search")
+        )
 
     def _make_welcome_card(self) -> None:
         card = QWidget()
@@ -3479,12 +3731,8 @@ class MainWindow(QMainWindow):
         self.welcome_hint = hint
         self.page_view.set_welcome_widget(card)
 
-    def _add_text_controls(self, toolbar: QToolBar) -> None:
-        toolbar.addAction(self.add_text_action)
-        toolbar.addAction(self.delete_text_action)
-        toolbar.addSeparator()
-
-        controls = QWidget(toolbar)
+    def _add_text_controls(self) -> None:
+        controls = QWidget()
         controls.setObjectName("textControls")
         controls_layout = QHBoxLayout(controls)
         controls_layout.setContentsMargins(2, 0, 2, 0)
@@ -3543,7 +3791,6 @@ class MainWindow(QMainWindow):
         self.text_color_button.clicked.connect(self._choose_text_color)
         controls_layout.addWidget(self.text_color_button)
         controls.setFixedSize(controls.sizeHint())
-        toolbar.addWidget(controls)
         self.text_controls_widget = controls
         for widget in (
             controls,
@@ -3787,17 +4034,46 @@ class MainWindow(QMainWindow):
         self.edit_form_side_button.setToolTip(self.trx("edit_form_field"))
         self.delete_form_side_button.setText("×")
         self.delete_form_side_button.setToolTip(self.trx("delete_form_field"))
-        self.form_edit_mode_button.setText(self.trx("form_edit_mode"))
-        self.form_preview_mode_button.setText(self.trx("form_preview_mode"))
+        self._set_wrapped_button_text(
+            self.form_edit_mode_button, self.trx("form_edit_mode"), 165
+        )
+        self._set_wrapped_button_text(
+            self.form_preview_mode_button, self.trx("form_preview_mode"), 165
+        )
         self.reset_form_preview_button.setText(self.trx("reset_test_data"))
         self.fill_forms_hint.setText(self.trx("fill_form_hint"))
-        self.clear_form_values_button.setText(self.trx("clear_form"))
-        self.add_visual_signature_button.setText(self.trx("add_signature"))
+        self._set_wrapped_button_text(
+            self.clear_form_values_button, self.trx("clear_form"), 165
+        )
+        self._set_wrapped_button_text(
+            self.add_visual_signature_button, self.trx("add_signature"), 165
+        )
         self.welcome_hint.setText(self.trx("open_to_begin"))
         self.welcome_new_button.setText(self.trx("new_pdf"))
         self.welcome_open_button.setText(self.trx("open"))
         self.page_view._position_welcome_widget()
         self.toolbar.setWindowTitle(self.trx("menu_file"))
+        for index, key in enumerate(self.ribbon_tab_keys):
+            self.ribbon_tabs.setTabText(index, self.trx(key))
+        for label, key in self.ribbon_group_labels:
+            label.setText(self.trx(key))
+        self.ribbon_file_button.setText(self.trx("menu_file"))
+        self.ribbon_file_button.setToolTip(self.trx("menu_file"))
+        self.ribbon_appearance_button.setText(self.trx("menu_appearance"))
+        self.ribbon_appearance_button.setToolTip(self.trx("menu_appearance"))
+        self.ribbon_help_button.setText(self.trx("menu_help"))
+        self.ribbon_help_button.setToolTip(self.trx("menu_help"))
+        self.ribbon_form_edit_button.setText(self.trx("form_edit_mode"))
+        self.ribbon_form_preview_button.setText(self.trx("form_preview_mode"))
+        self.ribbon_fill_sign_button.setText(self.trx("fill_and_sign"))
+        for button in (
+            self.ribbon_form_edit_button,
+            self.ribbon_form_preview_button,
+            self.ribbon_fill_sign_button,
+        ):
+            button.setMinimumWidth(button.sizeHint().width())
+        for button in self.ribbon_tabs.findChildren(RibbonActionButton):
+            button.refresh_label_layout()
         self.text_controls_widget.setToolTip(self.trx("font"))
         current_icon = language_icon(self.language_code)
         self.language_button.setIcon(current_icon)
@@ -3813,6 +4089,27 @@ class MainWindow(QMainWindow):
             self._render_current_page()
         else:
             self.status_label.setText(self.trx("open_to_begin"))
+
+    @staticmethod
+    def _set_wrapped_button_text(
+        button: QPushButton, text: str, maximum_line_width: int
+    ) -> None:
+        metrics = button.fontMetrics()
+        words = text.split()
+        lines: list[str] = []
+        current = ""
+        for word in words:
+            candidate = f"{current} {word}".strip()
+            if current and metrics.horizontalAdvance(candidate) > maximum_line_width:
+                lines.append(current)
+                current = word
+            else:
+                current = candidate
+        if current or not lines:
+            lines.append(current)
+        button.setText("\n".join(lines))
+        button.setToolTip(text)
+        button.setMinimumHeight(max(30, metrics.lineSpacing() * len(lines) + 12))
 
     def _apply_theme(self, persist: bool) -> None:
         self._effective_dark = self._theme_is_dark(self.theme_mode)
@@ -3963,6 +4260,21 @@ class MainWindow(QMainWindow):
                 "QToolBar#mainToolbar QToolBarSeparator { background: rgba(55,111,116,55); width: 1px; margin: 5px 2px; }"
             )
         stylesheet += (
+            "QToolBar#mainToolbar QWidget#ribbonRoot { background: transparent; }"
+            "QToolBar#mainToolbar QTabWidget#ribbonTabs::pane { border: 0; background: transparent; top: -1px; }"
+            "QToolBar#mainToolbar QTabWidget#ribbonTabs QTabBar::tab { min-width: 72px; padding: 5px 14px; margin: 0 2px; border: 0; border-radius: 8px 8px 0 0; }"
+            "QToolBar#mainToolbar QTabWidget#ribbonTabs QTabBar::tab:selected { background: rgba(23,111,122,120); color: #ffffff; }"
+            "QToolBar#mainToolbar QTabWidget#ribbonTabs QTabBar::tab:hover { background: rgba(23,111,122,75); }"
+            "QToolBar#mainToolbar QWidget#ribbonGroup { border: 1px solid rgba(93,145,148,72); border-radius: 10px; background: rgba(255,255,255,18); }"
+            "QToolBar#mainToolbar QLabel#ribbonGroupLabel { border: 0; background: transparent; padding: 0 5px; font-size: 10px; }"
+            "QToolBar#mainToolbar QLabel#ribbonBrand { border-radius: 9px; background: rgba(255,255,255,25); }"
+            "QToolBar#mainToolbar QToolButton#ribbonActionButton { padding: 2px; font-size: 10px; }"
+            "QToolBar#mainToolbar QToolButton#ribbonQuickButton { padding: 2px; }"
+            "QToolBar#mainToolbar QToolButton#ribbonMenuButton { background: #176f7a; color: #ffffff; padding: 4px 13px; font-weight: 600; }"
+            "QToolBar#mainToolbar QToolButton#ribbonHeaderButton { padding: 4px 9px; }"
+            "QToolBar#mainToolbar QWidget#ribbonInlineControls QPushButton, QToolBar#mainToolbar QWidget#ribbonInlineControls QToolButton { min-height: 18px; padding: 2px 8px; }"
+            "QToolBar#mainToolbar QScrollArea#ribbonScroll { background: transparent; border: 0; }"
+            "QToolBar#mainToolbar QScrollArea#ribbonScroll QWidget#qt_scrollarea_viewport, QToolBar#mainToolbar QWidget#ribbonPage { background: transparent; }"
             "QToolBar#mainToolbar QWidget#textControls { background: transparent; }"
             "QToolBar#mainToolbar QWidget#textControls QComboBox { min-height: 0; padding: 2px 4px; }"
             "QToolBar#mainToolbar QWidget#textControls QToolButton { padding: 1px; margin: 0; }"
@@ -4702,6 +5014,17 @@ class MainWindow(QMainWindow):
             return "checked" if field.checked else "unchecked"
         return " ".join(field.value.split())
 
+    def _form_field_type_label(self, field: FormFieldInfo) -> str:
+        key = {
+            pymupdf.PDF_WIDGET_TYPE_TEXT: "form_type_text",
+            pymupdf.PDF_WIDGET_TYPE_CHECKBOX: "form_type_checkbox",
+            pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON: "form_type_radio",
+            pymupdf.PDF_WIDGET_TYPE_COMBOBOX: "form_type_combo",
+            pymupdf.PDF_WIDGET_TYPE_LISTBOX: "form_type_list",
+            pymupdf.PDF_WIDGET_TYPE_SIGNATURE: "form_type_signature",
+        }.get(field.type_code)
+        return self.trx(key) if key else field.type_name
+
     def _refresh_forms_sidebar(self) -> None:
         self.forms_list.clear()
         self.fill_forms_list.clear()
@@ -4725,9 +5048,10 @@ class MainWindow(QMainWindow):
             if not summary:
                 summary = self.trx("form_empty")
             read_only = f" · {self.trx('form_read_only')}" if field.read_only else ""
+            type_label = self._form_field_type_label(field)
             item = QListWidgetItem(
                 f"{self.trx('page_word')} {field.page_index + 1} · "
-                f"{name}\n{field.type_name}{read_only} · {summary}"
+                f"{name}\n{type_label}{read_only} · {summary}"
             )
             item.setData(Qt.UserRole, field.xref)
             item.setToolTip(field.name or name)
@@ -8090,23 +8414,12 @@ class MainWindow(QMainWindow):
         ):
             self.hide_find_bar()
             return True
-        if watched is getattr(self, "toolbar", None) and event.type() in (
-            QEvent.Resize,
-            QEvent.Show,
-            QEvent.LayoutRequest,
-        ):
-            self._position_language_button()
         return super().eventFilter(watched, event)
 
     def _position_language_button(self) -> None:
-        if not hasattr(self, "language_button"):
-            return
-        right_inset = 4
-        x = max(0, self.toolbar.width() - self.language_button.width() - right_inset)
-        y = max(0, (self.toolbar.height() - self.language_button.height()) // 2)
-        self.language_button.move(x, y)
-        self.language_button.raise_()
-        self.language_button.show()
+        # The ribbon header owns this button through its layout.  Keep the
+        # method for compatibility with older callers and tests.
+        return
 
     def _update_actions(self) -> None:
         opened = self.engine.is_open
@@ -8195,6 +8508,9 @@ class MainWindow(QMainWindow):
         )
         self.form_edit_mode_button.setEnabled(opened and not busy)
         self.form_preview_mode_button.setEnabled(opened and not busy)
+        self.ribbon_form_edit_button.setEnabled(opened and not busy)
+        self.ribbon_form_preview_button.setEnabled(opened and not busy)
+        self.ribbon_fill_sign_button.setEnabled(opened and not busy)
         self.reset_form_preview_button.setEnabled(
             opened and not busy and self._form_workspace_mode == "preview"
         )

@@ -119,7 +119,15 @@ def main() -> int:
         _set_application_identity()
         app = QApplication(sys.argv)
         _set_application_identity()
-        app.setWindowIcon(QIcon(str(Path(__file__).resolve().parents[1] / "assets" / "app_logo.svg")))
+        app.setWindowIcon(
+            QIcon(
+                str(
+                    Path(__file__).resolve().parents[1]
+                    / "assets"
+                    / "nettongia_mascot_pdf.png"
+                )
+            )
+        )
         window = MainWindow()
         window.show()
 

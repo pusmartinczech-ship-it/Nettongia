@@ -4,6 +4,7 @@ EUROPEAN_LANGUAGE_CODES = ("de", "ru", "tr", "it", "nl", "ro", "hu", "uk")
 
 # Every tuple follows EUROPEAN_LANGUAGE_CODES.
 EUROPEAN_ROWS = {
+    "ribbon_home": ("Start", "Главная", "Ana Sayfa", "Home", "Start", "Acasă", "Kezdőlap", "Головна"),
     "automatic_updates": ("Automatisch nach Updates suchen (GitHub)", "Автоматически проверять обновления (GitHub)", "Güncellemeleri otomatik denetle (GitHub)", "Controlla automaticamente gli aggiornamenti (GitHub)", "Automatisch controleren op updates (GitHub)", "Verifică automat actualizările (GitHub)", "Frissítések automatikus keresése (GitHub)", "Автоматично перевіряти оновлення (GitHub)"),
     "menu_file": ("Datei", "Файл", "Dosya", "File", "Bestand", "Fișier", "Fájl", "Файл"),
     "menu_edit": ("Bearbeiten", "Правка", "Düzenle", "Modifica", "Bewerken", "Editare", "Szerkesztés", "Редагування"),
@@ -172,6 +173,7 @@ EUROPEAN_ROWS.update({
     "delete_form_field": ("Ausgewähltes Formularfeld löschen", "Удалить выбранное поле формы", "Seçili form alanını sil", "Elimina campo modulo selezionato", "Geselecteerd formulierveld verwijderen", "Șterge câmpul de formular selectat", "Kijelölt űrlapmező törlése", "Видалити вибране поле форми"),
     "form_type_text": ("Textfeld", "Текстовое поле", "Metin alanı", "Campo di testo", "Tekstveld", "Câmp text", "Szövegmező", "Текстове поле"),
     "form_type_checkbox": ("Kontrollkästchen", "Флажок", "Onay kutusu", "Casella di controllo", "Selectievakje", "Casetă de selectare", "Jelölőnégyzet", "Прапорець"),
+    "form_type_radio": ("Optionsfeld", "Переключатель", "Radyo düğmesi", "Pulsante di opzione", "Keuzerondje", "Buton radio", "Választógomb", "Перемикач"),
     "form_type_combo": ("Dropdown-Liste", "Раскрывающийся список", "Açılır liste", "Elenco a discesa", "Keuzelijst", "Listă derulantă", "Legördülő lista", "Розкривний список"),
     "form_type_list": ("Listenfeld", "Поле списка", "Liste kutusu", "Casella di riepilogo", "Lijstvak", "Casetă listă", "Listamező", "Поле списку"),
     "form_field_type": ("Feldtyp:", "Тип поля:", "Alan türü:", "Tipo di campo:", "Veldtype:", "Tip câmp:", "Mezőtípus:", "Тип поля:"),
