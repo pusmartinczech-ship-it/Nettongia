@@ -292,6 +292,33 @@ def test_inserted_text_box_is_real_pdf_text(tmp_path: Path) -> None:
         assert document[0].search_for("NEW DIRECT TEXT")
 
 
+def test_deleting_text_preserves_colored_vector_background() -> None:
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    background = (0.15, 0.55, 0.8)
+    page.draw_rect((30, 50, 300, 130), color=None, fill=background)
+    page.insert_text((55, 100), "REMOVE FROM BLUE", fontsize=18, color=(0, 0, 0))
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    run = next(item for item in engine.text_runs(0) if "REMOVE FROM BLUE" in item.text)
+    result = engine.build_document(
+        [TextEdit(run=run, new_text="", font_size=run.font_size)]
+    )
+    try:
+        assert "REMOVE FROM BLUE" not in result[0].get_text()
+        pixmap = result[0].get_pixmap(alpha=False)
+        x = round((run.bbox[0] + run.bbox[2]) / 2)
+        y = round((run.bbox[1] + run.bbox[3]) / 2)
+        red, green, blue = pixmap.pixel(x, y)
+        assert blue > green > red
+        assert max(red, green, blue) < 245
+    finally:
+        result.close()
+
+
 def test_existing_text_can_move_and_resize(tmp_path: Path) -> None:
     if not SAMPLES.exists():
         pytest.skip("Set OPENPDF_TEST_SAMPLES to the folder containing the supplied PDF fixtures.")

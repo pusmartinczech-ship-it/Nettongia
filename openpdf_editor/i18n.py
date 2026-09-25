@@ -45,6 +45,7 @@ _ROW_LANGUAGE_CODES = ("en", "zh", "hi", "es", "fr", "ar", "bn", "pt", "id", "ur
 
 
 BASE = {
+    "ribbon_home": "Home",
     "menu_file": "File",
     "menu_edit": "Edit",
     "menu_insert": "Insert",
@@ -217,6 +218,7 @@ BASE = {
     "delete_form_field": "Delete selected form field",
     "form_type_text": "Text field",
     "form_type_checkbox": "Check box",
+    "form_type_radio": "Radio button",
     "form_type_combo": "Drop-down list",
     "form_type_list": "List box",
     "form_type_signature": "Signature field",
@@ -343,6 +345,7 @@ BASE = {
 # Each row follows _ROW_LANGUAGE_CODES. The first value is English and is
 # intentionally repeated so the table can be validated and inspected easily.
 _ROWS = {
+    "ribbon_home": ("Home", "主页", "होम", "Inicio", "Accueil", "الرئيسية", "হোম", "Início", "Beranda", "ہوم", "Domů", "Domov", "Start"),
     "automatic_updates": ("Automatically check for updates (GitHub)", "自动检查更新 (GitHub)", "स्वचालित अपडेट जाँच (GitHub)", "Buscar actualizaciones automáticamente (GitHub)", "Vérifier automatiquement les mises à jour (GitHub)", "التحقق تلقائيًا من التحديثات (GitHub)", "স্বয়ংক্রিয়ভাবে আপডেট পরীক্ষা করুন (GitHub)", "Verificar atualizações automaticamente (GitHub)", "Periksa pembaruan otomatis (GitHub)", "اپ ڈیٹس خودکار طور پر چیک کریں (GitHub)", "Automaticky kontrolovat aktualizace (GitHub)", "Automaticky kontrolovať aktualizácie (GitHub)", "Automatycznie sprawdzaj aktualizacje (GitHub)"),
     "menu_file": ("File", "文件", "फ़ाइल", "Archivo", "Fichier", "ملف", "ফাইল", "Ficheiro", "Файл", "فائل", "Soubor", "Súbor", "Plik"),
     "menu_edit": ("Edit", "编辑", "संपादन", "Editar", "Édition", "تحرير", "সম্পাদনা", "Editar", "Правка", "ترمیم", "Úpravy", "Upraviť", "Edycja"),
@@ -888,6 +891,22 @@ _ROWS.update({
 
 
 _ROWS.update({
+    "fill_and_sign": ("Fill & Sign", "填写并签名", "भरें और हस्ताक्षर करें", "Rellenar y firmar", "Remplir et signer", "تعبئة وتوقيع", "পূরণ ও স্বাক্ষর", "Preencher e assinar", "Isi & tanda tangan", "پُر کریں اور دستخط کریں", "Vyplnit a podepsat", "Vyplniť a podpísať", "Wypełnij i podpisz"),
+    "form_edit_mode": ("Edit", "编辑", "संपादित करें", "Editar", "Modifier", "تحرير", "সম্পাদনা", "Editar", "Edit", "ترمیم", "Upravit", "Upraviť", "Edytuj"),
+    "form_preview_mode": ("Preview", "预览", "पूर्वावलोकन", "Vista previa", "Aperçu", "معاينة", "পূর্বরূপ", "Pré-visualizar", "Pratinjau", "پیش منظر", "Vyzkoušet", "Vyskúšať", "Podgląd"),
+    "reset_test_data": ("Reset test data", "重置测试数据", "परीक्षण डेटा रीसेट करें", "Restablecer datos de prueba", "Réinitialiser les données de test", "إعادة تعيين بيانات الاختبار", "পরীক্ষার ডেটা রিসেট করুন", "Repor dados de teste", "Atur ulang data uji", "ٹیسٹ ڈیٹا دوبارہ ترتیب دیں", "Vymazat testovací data", "Vymazať testovacie údaje", "Wyczyść dane testowe"),
+    "fill_form_hint": ("Fill fields directly on the page. Changes are saved in the PDF and support Undo/Redo.", "直接在页面上填写字段。更改将保存到 PDF，并支持撤销/重做。", "पृष्ठ पर सीधे फ़ील्ड भरें। परिवर्तन PDF में सहेजे जाते हैं और पूर्ववत/फिर से करें का समर्थन करते हैं।", "Rellene los campos directamente en la página. Los cambios se guardan en el PDF y admiten Deshacer/Rehacer.", "Remplissez les champs directement sur la page. Les modifications sont enregistrées dans le PDF et peuvent être annulées/rétablies.", "املأ الحقول مباشرة على الصفحة. تُحفظ التغييرات في ملف PDF وتدعم التراجع/الإعادة.", "পৃষ্ঠায় সরাসরি ক্ষেত্র পূরণ করুন। পরিবর্তনগুলি PDF-এ সংরক্ষিত হয় এবং পূর্বাবস্থা/পুনরায় করা সমর্থন করে।", "Preencha os campos diretamente na página. As alterações são guardadas no PDF e suportam Anular/Refazer.", "Isi bidang langsung di halaman. Perubahan disimpan ke PDF dan mendukung Urungkan/Ulangi.", "صفحے پر براہ راست فیلڈ پُر کریں۔ تبدیلیاں PDF میں محفوظ ہوتی ہیں اور کالعدم/دوبارہ کی سہولت رکھتی ہیں۔", "Vyplňujte pole přímo na stránce. Změny se zapisují do PDF a podporují Zpět/Znovu.", "Vypĺňajte polia priamo na strane. Zmeny sa ukladajú do PDF a podporujú Späť/Znova.", "Wypełniaj pola bezpośrednio na stronie. Zmiany są zapisywane w PDF i obsługują Cofnij/Ponów."),
+    "clear_form": ("Clear form", "清空表单", "फ़ॉर्म साफ़ करें", "Borrar formulario", "Effacer le formulaire", "مسح النموذج", "ফর্ম সাফ করুন", "Limpar formulário", "Kosongkan formulir", "فارم صاف کریں", "Vymazat formulář", "Vymazať formulár", "Wyczyść formularz"),
+    "page_word": ("Page", "页", "पृष्ठ", "Página", "Page", "صفحة", "পৃষ্ঠা", "Página", "Halaman", "صفحہ", "Stránka", "Strana", "Strona"),
+    "form_signed": ("Signed", "已签名", "हस्ताक्षरित", "Firmado", "Signé", "موقّع", "স্বাক্ষরিত", "Assinado", "Ditandatangani", "دستخط شدہ", "Podepsáno", "Podpísané", "Podpisano"),
+    "form_unsigned": ("Unsigned", "未签名", "हस्ताक्षरित नहीं", "Sin firmar", "Non signé", "غير موقّع", "স্বাক্ষরিত নয়", "Não assinado", "Belum ditandatangani", "غیر دستخط شدہ", "Nepodepsáno", "Nepodpísané", "Niepodpisano"),
+    "form_type_radio": ("Radio button", "单选按钮", "रेडियो बटन", "Botón de opción", "Bouton radio", "زر اختيار", "রেডিও বোতাম", "Botão de opção", "Tombol radio", "ریڈیو بٹن", "Přepínač", "Prepínač", "Przycisk opcji"),
+    "form_type_signature": ("Signature field", "签名字段", "हस्ताक्षर फ़ील्ड", "Campo de firma", "Champ de signature", "حقل توقيع", "স্বাক্ষর ক্ষেত্র", "Campo de assinatura", "Bidang tanda tangan", "دستخط فیلڈ", "Podpisové pole", "Podpisové pole", "Pole podpisu"),
+    "editable_text": ("editable text", "可编辑文本", "संपादन योग्य पाठ", "texto editable", "texte modifiable", "نص قابل للتحرير", "সম্পাদনাযোগ্য লেখা", "texto editável", "teks yang dapat diedit", "قابل تدوین متن", "upravitelný text", "upraviteľný text", "edytowalny tekst"),
+    "ocr_required": ("image-only page - OCR required", "仅图像页面 - 需要 OCR", "केवल-छवि पृष्ठ - OCR आवश्यक", "página solo de imagen - se requiere OCR", "page composée uniquement d’images - OCR requis", "صفحة صور فقط - يلزم OCR", "শুধু-ছবির পৃষ্ঠা - OCR প্রয়োজন", "página apenas de imagem - OCR necessário", "halaman hanya gambar - OCR diperlukan", "صرف تصویری صفحہ - OCR درکار ہے", "stránka je pouze obraz - je vyžadováno OCR", "stránka obsahuje iba obraz - vyžaduje sa OCR", "strona zawiera tylko obraz - wymagane OCR"),
+    "images": ("images", "图像", "छवियाँ", "imágenes", "images", "صور", "ছবি", "imagens", "gambar", "تصاویر", "obrázky", "obrázky", "obrazy"),
+    "signatures": ("signatures", "签名", "हस्ताक्षर", "firmas", "signatures", "تواقيع", "স্বাক্ষর", "assinaturas", "tanda tangan", "دستخط", "podpisy", "podpisy", "podpisy"),
+    "text_boxes": ("text objects", "文本对象", "टेक्स्ट ऑब्जेक्ट", "objetos de texto", "objets texte", "كائنات نصية", "টেক্সট অবজেক্ট", "objetos de texto", "objek teks", "متنی اشیاء", "textové objekty", "textové objekty", "obiekty tekstowe"),
     "redact_area": ("Permanently redact area...", "永久遮盖区域...", "क्षेत्र को स्थायी रूप से संशोधित करें...", "Censurar área permanentemente...", "Masquer définitivement une zone...", "حجب منطقة نهائيًا...", "এলাকা স্থায়ীভাবে গোপন করুন...", "Ocultar área permanentemente...", "Redaksi area secara permanen...", "علاقہ مستقل طور پر حذف کریں...", "Trvale začernit oblast...", "Trvalo začierniť oblasť...", "Trwale zredaguj obszar..."),
     "redaction_draw_hint": ("Drag a rectangle over the sensitive content. Press Esc to cancel.", "在敏感内容上拖出矩形。按 Esc 取消。", "संवेदनशील सामग्री पर आयत खींचें। रद्द करने के लिए Esc दबाएँ।", "Arrastre un rectángulo sobre el contenido sensible. Pulse Esc para cancelar.", "Tracez un rectangle sur le contenu sensible. Appuyez sur Échap pour annuler.", "اسحب مستطيلاً فوق المحتوى الحساس. اضغط Esc للإلغاء.", "সংবেদনশীল বিষয়বস্তুর উপর একটি আয়তক্ষেত্র টানুন। বাতিল করতে Esc চাপুন।", "Arraste um retângulo sobre o conteúdo sensível. Prima Esc para cancelar.", "Seret kotak di atas konten sensitif. Tekan Esc untuk batal.", "حساس مواد پر مستطیل کھینچیں۔ منسوخ کرنے کے لیے Esc دبائیں۔", "Tažením označte citlivý obsah. Klávesou Esc akci zrušíte.", "Ťahaním označte citlivý obsah. Klávesom Esc akciu zrušíte.", "Przeciągnij prostokąt nad poufną zawartością. Naciśnij Esc, aby anulować."),
     "redaction_title": ("Permanent redaction", "永久遮盖", "स्थायी संशोधन", "Censura permanente", "Masquage définitif", "حجب نهائي", "স্থায়ী গোপনকরণ", "Ocultação permanente", "Redaksi permanen", "مستقل حذف", "Trvalé začernění", "Trvalé začiernenie", "Trwała redakcja"),
