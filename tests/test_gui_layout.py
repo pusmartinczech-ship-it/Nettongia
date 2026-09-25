@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QPalette,
     QPixmap,
+    QTextCursor,
 )
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -1522,6 +1523,9 @@ def test_inline_font_change_is_live_and_persists_after_editor_closes() -> None:
 
     selected_family = window.text_font_box.currentFont().family()
     assert window.page_view._inline_editor.font().family() == selected_family
+    document_cursor = window.page_view._inline_editor.textCursor()
+    document_cursor.select(QTextCursor.Document)
+    assert document_cursor.charFormat().fontFamily() == selected_family
     assert window.edits[run.key].font_family == selected_family
 
     window.page_view.finish_inline_editor(True)

@@ -3,7 +3,15 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFocusEvent, QFont, QKeyEvent, QPen
+from PySide6.QtGui import (
+    QColor,
+    QFocusEvent,
+    QFont,
+    QKeyEvent,
+    QPen,
+    QTextCharFormat,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsEllipseItem,
@@ -106,6 +114,23 @@ class InlineTextEditor(QPlainTextEdit):
         font.setItalic(italic)
         font.setUnderline(underline)
         self.setFont(font)
+        # QPlainTextEdit can retain a character format created when the
+        # editor was opened. Updating only the widget font then leaves the
+        # existing text rendered in the old family until the editor is
+        # recreated. Apply the new font to the current document as well.
+        cursor = self.textCursor()
+        position = cursor.position()
+        anchor = cursor.anchor()
+        cursor.select(QTextCursor.Document)
+        char_format = QTextCharFormat()
+        char_format.setFont(font)
+        cursor.mergeCharFormat(char_format)
+        if anchor != position:
+            cursor.setPosition(anchor)
+            cursor.setPosition(position, QTextCursor.KeepAnchor)
+        else:
+            cursor.setPosition(position)
+        self.setTextCursor(cursor)
         self._apply_text_style(color)
 
     def _apply_text_style(self, color: QColor) -> None:
