@@ -29,7 +29,7 @@ function setLanguage(language) {
 buttons.forEach((button) => button.addEventListener("click", () => setLanguage(button.dataset.language)));
 let stored = "";
 try { stored = localStorage.getItem("nettongia-language") || ""; } catch (_) {}
-setLanguage(stored || "en");
+if (buttons.length) setLanguage(stored || "en");
 
 async function counterRequest(method = "GET", event = "") {
   const options = { method, headers: { Accept: "application/json" } };
