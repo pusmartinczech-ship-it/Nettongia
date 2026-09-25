@@ -3,3 +3,11 @@
 .community{padding-block:0 46px}.counter-grid{display:flex;flex-wrap:wrap;justify-content:center;gap:10px}.counter-card{display:flex;align-items:baseline;gap:8px;background:var(--white);border:1px solid var(--line);border-radius:10px;padding:8px 14px}.counter-card strong{color:var(--teal);font-size:1.15rem;line-height:1;font-variant-numeric:tabular-nums}.counter-card span{color:var(--muted);font-size:.75rem;font-weight:650}.counter-status{width:100%;text-align:center;color:var(--muted);font-size:.76rem;margin:0}.counter-status[hidden]{display:none}
 @media(max-width:580px){.community{padding-bottom:32px}}
 @media(prefers-color-scheme:dark){:root{--ink:#e6f1f1;--muted:#adc0c2;--teal:#58c4ce;--teal-dark:#0d2023;--mint:#142d30;--cream:#091416;--white:#102326;--line:#2b4448;--shadow:0 22px 70px rgba(0,0,0,.35)}body{background:linear-gradient(180deg,#0b181a 0,#091416 42rem,#0d1c1f 42rem)}.skip,.secondary,.features article,.legal article,.counter-card{background:#102326}.primary{color:#061315}.secondary{color:var(--teal)}.language{background:#173236}.language button{color:#b7c9cb}.language button[aria-pressed=true]{color:#061315}.privacy-band{background:#142d30}.privacy-grid>div:last-child,.legal p,.legal li{color:#b7c9cb}.privacy-grid a{color:var(--teal)}.notice{background:#282418}.download-card{background:#071315}.page{background:#fff;color:#132a2e}.page h2{color:#132a2e}.thumb{background:#fefefe}.footer-grid .brand{color:#fff}}
+
+.nav nav.language{display:flex;gap:1px;margin-left:0;flex-shrink:0}
+.nav .language a{display:block;padding:7px 9px;border-radius:999px;color:var(--muted);font-size:.78rem;font-weight:800;text-decoration:none}
+.nav .language a[aria-current="page"]{background:var(--teal);color:#fff}
+.nav .language a:focus-visible{outline:2px solid var(--amber);outline-offset:2px}
+@media(max-width:900px){.nav nav:not(.language){display:none}.nav nav.language{margin-left:auto}}
+@media(max-width:520px){.nav{height:auto;min-height:68px;flex-wrap:wrap;justify-content:center;padding:10px 0;gap:5px}.nav nav.language{margin-left:0}.nav .language a{padding:6px 8px}}
+@media(prefers-color-scheme:dark){.nav .language a[aria-current="page"]{color:#061315}}

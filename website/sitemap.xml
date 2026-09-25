@@ -2,16 +2,52 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" xmlns:xhtml="http://www.w3.org/1999/xhtml">
   <url>
     <loc>https://nettongia.com/</loc>
-    <lastmod>2026-09-23</lastmod>
+    <lastmod>2026-09-25</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/"/>
     <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/"/>
+    <xhtml:link rel="alternate" hreflang="de" href="https://nettongia.com/de/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://nettongia.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://nettongia.com/fr/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
   </url>
   <url>
     <loc>https://nettongia.com/cs/</loc>
-    <lastmod>2026-09-23</lastmod>
+    <lastmod>2026-09-25</lastmod>
     <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/"/>
     <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/"/>
+    <xhtml:link rel="alternate" hreflang="de" href="https://nettongia.com/de/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://nettongia.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://nettongia.com/fr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
+  </url>
+  <url>
+    <loc>https://nettongia.com/de/</loc>
+    <lastmod>2026-09-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/"/>
+    <xhtml:link rel="alternate" hreflang="de" href="https://nettongia.com/de/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://nettongia.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://nettongia.com/fr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
+  </url>
+  <url>
+    <loc>https://nettongia.com/es/</loc>
+    <lastmod>2026-09-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/"/>
+    <xhtml:link rel="alternate" hreflang="de" href="https://nettongia.com/de/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://nettongia.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://nettongia.com/fr/"/>
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
+  </url>
+  <url>
+    <loc>https://nettongia.com/fr/</loc>
+    <lastmod>2026-09-25</lastmod>
+    <xhtml:link rel="alternate" hreflang="en" href="https://nettongia.com/"/>
+    <xhtml:link rel="alternate" hreflang="cs" href="https://nettongia.com/cs/"/>
+    <xhtml:link rel="alternate" hreflang="de" href="https://nettongia.com/de/"/>
+    <xhtml:link rel="alternate" hreflang="es" href="https://nettongia.com/es/"/>
+    <xhtml:link rel="alternate" hreflang="fr" href="https://nettongia.com/fr/"/>
     <xhtml:link rel="alternate" hreflang="x-default" href="https://nettongia.com/"/>
   </url>
   <url>
