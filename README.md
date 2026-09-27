@@ -2,6 +2,17 @@
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
+Edited horizontal text now reflows inside its frame instead of silently
+shrinking to fit one line. When a longer replacement needs more lines, the
+frame grows downward within the page while retaining the selected font size.
+The resize handle can then be used to choose a different width and reflow.
+Consecutive lines from the same uniformly formatted PDF text block are opened
+as one paragraph; line-end hyphenation is removed when the following line
+continues with a lower-case letter. Lists, tables and mixed-format blocks stay
+separate to avoid merging unrelated content.
+Vertical and freely rotated source text keeps its original direction and uses
+the established non-wrapping behavior.
+
 ### Update checking
 
 On startup the editor checks GitHub's latest stable release in the background,
@@ -19,17 +30,19 @@ enabled setting are stored locally with the existing application preferences.
 Disabling checks also suppresses notifications from any request already running.
 The update feature is included in version 0.20.0.
 
-### Comments and highlights
+### Comments and text markup
 
 Use **Comments > Add comment...** or `Ctrl+Alt+M`, then click the page and enter
 the note text. Nettongia writes a standard native PDF sticky-note annotation,
 not a flattened picture. The new **Comments** tab lists both newly created and
-existing annotations; double-click an entry to open its page and location, or
+existing annotations in the right tool panel; double-click an entry to open its page and location, or
 right-click it to edit its comment text or delete it.
 
-Right-click editable source or inserted text and choose **Highlight text** to
-add a standard yellow PDF highlight. Comments, edits, deletions and highlights
-are single Undo/Redo operations, remain visible in other compatible PDF
+Right-click source or inserted text and choose **Highlight text**, **Underline text**
+or **Strike out text** to add a native PDF annotation. Multi-line source text
+is marked along each line rather than across the blank space between lines.
+Comments, edits, deletions and text markup are single Undo/Redo operations,
+remain visible in other compatible PDF
 readers, and are included when the document is saved. The workflow is
 translated in all 21 interface languages.
 
@@ -66,6 +79,13 @@ and fields with the same name intentionally share their value according to the
 AcroForm standard. Creation and deletion participate in Undo/Redo and remain
 editable in compatible PDF readers after saving.
 
+In the Forms panel, select a field and use **Label** to edit its descriptive
+tooltip for screen readers. Use the ↑ and ↓ buttons to set the Tab traversal
+order among fields on the same page; this order is stored in the PDF and can be
+undone. **Check form** reports missing labels, missing explicit Tab order and
+basic AcroForm structure or appearance problems. It is a focused form check,
+not a full PDF accessibility certification.
+
 The Forms panel has separate **Edit** and **Preview** modes. Preview provides
 live controls directly on the page and keeps all test entries temporary, so the
 PDF and Undo history are not changed. The separate **Fill & Sign** tool uses the
@@ -77,8 +97,9 @@ read-only fields are identified and protected.
 A visual signature can be fitted into a native signature-field rectangle, but
 it is deliberately identified as an image-based visual signature. It does not
 create a certificate-based digital signature and the native `/Sig` field stays
-cryptographically unsigned. Creation of radio-button groups, XFA forms, push
-buttons and certificate-based signing is not included in version 0.20.0.
+cryptographically unsigned. Certificate-based signing is a separate operation
+described below. Creation of radio-button groups, XFA forms and push buttons is
+not included.
 
 The Pages panel also supports an unmodified **Delete** key for the selected
 thumbnail. Right-click a thumbnail for move-earlier, move-later, and delete
@@ -89,7 +110,7 @@ signatures offer **Delete image**. Opening a menu or selecting its target does
 not create a history entry; choosing a command uses the same undoable state and
 recovery path as the toolbar and menus.
 
-Version 0.17.0 adds process-isolated optical character recognition for the current page or the complete document. Image-only pages receive an invisible searchable text layer while their original page pixels, links, bookmarks, and document structure remain intact. Pages that already contain searchable text are deliberately skipped. The OCR result is validated and applied as one undoable document change.
+Version 0.17.0 added process-isolated optical character recognition for the current page or the complete document. Image-only and mixed-content pages receive an invisible searchable text layer while their original page pixels, links, bookmarks, and document structure remain intact. Existing PDF text is retained and overlapping OCR results are ignored. The OCR result is validated and applied as one undoable document change. Recognized lines are now grouped into editable blocks: double-click a block and edit it with the normal text tools. Committing an OCR edit clears the corresponding source pixels locally before drawing the replacement, so the scanned lettering does not remain underneath it.
 
 Inserted images are now interactive after placement. Click an image to select it, drag it to move it, use the lower handle to resize it, and use the upper handle to rotate it freely. Geometry and rotation survive Undo/Redo, crash recovery, tile rendering, printing, and saving.
 
@@ -98,6 +119,16 @@ Version 0.16.0 moves production high-detail tile rasterisation into a dedicated 
 Version 0.15.0 adds a process-isolated compatibility inspection. After a document opens, a separate helper scans its structure and performs low-memory preflight renders of the first, middle, and last pages while the editor remains responsive. A crash in that inspection process is reported without terminating the editor. The result is available from **File > Document compatibility**.
 
 Existing signed digital signatures, forms/XFA, JavaScript, attachments, layers, portfolios, tagged structure, encryption, annotations, and unusually large pages are identified. Saving a document with an existing signed signature requires explicit confirmation. Every save is also reopened and its representative pages rendered before the completed temporary file is allowed to atomically replace the destination.
+
+Certificate-based signatures are also listed in the collapsible **Digital
+signatures** panel on the right. Validation runs in the same isolated inspection
+process and reports cryptographic integrity, signed revision coverage, changes
+after signing, certificate subject and issuer, validity dates, algorithms,
+fingerprint and embedded timestamp status. Integrity is deliberately shown
+separately from certificate trust. Trust-chain checks use the bundled CA store
+without network access, so the panel explicitly states that current revocation
+status was not queried and never presents a sound hash alone as a trusted
+signature.
 
 Version 0.14.1 hardens progressive tiled rendering for sustained use with large engineering PDFs. Unedited pages now use one PDF document handle instead of two, obsolete queued work is removed during rapid navigation, and revision-keyed tiles remain reusable across page and zoom changes in the bounded 96 MB LRU cache. The included profiler records preview latency, detail latency, cache behaviour, and process memory as JSON.
 
@@ -152,7 +183,57 @@ For documents with hundreds of pages, the page list appears immediately with pla
 
 Open a protected PDF normally. Nettongia PDF Editor asks for its password in a masked field and allows another attempt if the password is incorrect. The same workflow is available when importing pages from another protected PDF.
 
-The password is used only to unlock the source and is not retained in the editor state or recovery data. The working document is decrypted in memory, and edited or recovered copies are saved without password protection. The status bar reports this behavior after a protected document is opened.
+The password is used only to unlock the source and is not retained in the editor state or recovery data. The working document is decrypted in memory, and ordinary edited or recovered copies are saved without password protection. The status bar reports this behavior after a protected document is opened.
+
+Use **File > Add password protection...** to create a separate AES-256 encrypted
+copy of the current working document, including pending edits. The password must
+contain at least eight characters, is confirmed before saving, and is passed only
+to the isolated write process; it is not written to settings, recovery snapshots
+or diagnostics. When a protected PDF has been opened, **File > Remove password
+protection...** becomes available and writes a separate unencrypted copy. Neither
+operation changes the identity or unsaved state of the document currently open in
+the editor.
+
+## Compare PDF documents
+
+Choose **File > Compare with PDF...** to compare the current working document
+with another PDF. Pending text, image, page and signature edits are materialized
+inside an isolated process, so the comparison reflects what would be saved
+without first changing the active file. Password-protected comparison files are
+supported through the normal masked password prompt.
+
+The result lists every page as identical, changed, present in only one document,
+or using different page geometry. Selecting a row shows the current and selected
+pages side by side, plus a third preview where changed pixels are highlighted in
+red. Rendering is bounded for unusually large pages, and changing the active
+document while comparison is running safely discards the stale result.
+
+## Headers, footers, and watermarks
+
+Choose **Page > Header, footer & watermark...** to add left, center, or right
+header and footer text and an optional diagonal text watermark. The dialog
+shows a live page preview and supports `{page}`, `{pages}`, `{date}`, and
+`{title}` tokens. Decorations can target all, odd, or even pages, optionally
+skipping the first page. Font, size, color, margin, watermark angle, opacity,
+and foreground/background placement are configurable.
+
+Nettongia tags only the content streams it creates. Opening the same dialog
+later therefore allows those decorations to be replaced or removed without
+deleting the page's original text, graphics, or images. Applying and removing
+decorations are normal document edits and support Undo/Redo.
+
+## Voluntary development support
+
+Nettongia remains free and does not restrict features based on financial
+support. After five successful saves of genuinely changed documents, the
+editor may show one optional support message. It is never displayed at startup.
+Choosing **Maybe later** postpones it for at least ten more successful saves;
+choosing **Don't ask again** disables it permanently. The same support link is
+always available in **Help > Support development...**.
+
+Only the bounded save counter and reminder preference are stored in local
+application settings. No document information is collected, and the approved
+Stripe support page is opened only after an explicit user click.
 
 ## Public PDF corpus audit
 
@@ -190,7 +271,15 @@ Entering an empty replacement deletes the selected source text. Editing currentl
 
 ## Optical character recognition (OCR)
 
-Choose **Page > OCR current page** or **Page > OCR document**, then select one of the five models bundled in `vendor/ocr/tessdata`: Czech, Slovak, Polish, German or English. OCR runs in a separate process and can be cancelled without changing the open document. It processes only pages that do not already contain usable text, adds an invisible searchable layer, and reports the number of recognized pages and words.
+Choose **Page > OCR current page** or **Page > OCR document**, then select one of the models bundled in `vendor/ocr/tessdata`. OCR runs in a separate process and can be cancelled without changing the open document. It handles image-only pages as well as scans mixed with native PDF text, ignores OCR words that overlap existing text, adds an invisible searchable layer, and reports the number of recognized pages and words.
+
+OCR text is also editable. Hover or double-click a recognized block just like
+ordinary PDF text; replacements support reflow, formatting and Undo/Redo. The
+original scan image remains embedded when a block is edited. The invisible
+recognized text is removed, and a transparent overlay repairs only pixels
+identified as scanned lettering before inserting real PDF text. Original line
+breaks remain editable. Gradients and surrounding texture are retained where
+possible; lettering over detailed photographs may still need manual cleanup.
 
 Release and checkpoint archives already contain all OCR models and never need
 network access at runtime. After a clean Git checkout, run
@@ -256,12 +345,16 @@ The new document is shown as `Untitled.pdf *` until it is saved for the first ti
 
 ## Printing
 
-Choose **File > Print**, click the printer icon between Save and Undo, or press **Ctrl+P**. Nettongia PDF Editor first shows its own complete print preview. Use the printer button in that window to open the editor-owned printer settings dialog. It lists the installed printers and supports all pages, the current page, or a selected page range; available driver properties remain accessible through the printer settings. Because this dialog belongs to Nettongia PDF Editor, its title no longer inherits `Python` from `pythonw.exe`. Unsaved text, image, page, and signature changes are included in both the preview and the print job.
+Choose **File > Print**, click the printer icon between Save and Undo, or press **Ctrl+P**. Nettongia PDF Editor first shows its own complete print preview. Use the printer button in that window to open the editor-owned printer settings dialog. It lists the installed printers and supports all pages, the current page, or a selected page range; available driver properties remain accessible through the printer settings. Because this dialog belongs to Nettongia PDF Editor, its title no longer inherits `Python` from `pythonw.exe`. Unsaved text, image, page, and signature changes are included in both the preview and the print job. Vector drawings and text outlines are retained when printing ordinary PDF pages, including to a PDF printer; pages with annotations or form widgets use raster rendering to keep their appearance. Saving or extracting pages as PDF keeps the original PDF drawing objects.
 
 ## Pages
 
 - **Insert > Add blank page** adds a blank page of the same size after the current page.
-- **Insert > Insert pages from PDF** inserts every page from another PDF after the current page.
+- **Insert > Insert pages from PDF** inserts pages from another PDF after the current page. Enter `1-` for every page or a selection such as `1,3-5`.
+- In the Pages sidebar, select several thumbnails with `Ctrl` or `Shift`, then use **Page > Extract selected pages** to save those pages to a separate PDF. Pending edits on those pages are included; the open document stays intact.
+- **Page > Split PDF into parts** saves consecutive groups of a specified number of pages as numbered PDFs in a chosen folder. Existing output files are never overwritten.
+- **Page > Crop pages** sets independent margins in millimetres for the current page, selected thumbnails, or every page. Cropping follows the visible orientation of rotated pages and is non-destructive: hidden content remains in the PDF.
+- **Page > Resize pages** changes the physical page size using A4/A3/A5, Letter, Legal, current-size, or custom dimensions. Choose proportional content fitting to avoid distortion, or change only the centred canvas while preserving the content's visual size. The operation can target the current page, selected thumbnails, or the whole document.
 - **Page > Delete current page** removes the selected page.
 - Select a thumbnail in the left **Pages** panel and press **Delete** to remove
   that exact page; right-click a thumbnail for the same delete command and for
@@ -299,6 +392,55 @@ After insertion, click a signature to select it:
 - use Undo/Redo to step through every completed transformation.
 
 The signature is stored with a transparent background. It is visible page content, not a certificate-based digital signature, and does not verify identity.
+
+## Certificate-based digital signatures
+
+Choose **Sign with certificate...** in the Forms ribbon or the right **Digital
+signatures** panel. Select a PKCS#12 certificate (`.p12` or `.pfx`), enter its
+password, choose an existing unsigned signature field or create a new invisible
+field, and optionally provide a reason, location and contact. You can also
+choose **Create a visible signature on a page** to place a certificate signature
+stamp near the bottom right of a selected page. The stamp carries a signing
+date, while the Digital signatures panel shows the verified certificate owner.
+The visible stamp is part of the cryptographic signature, distinct from the
+handwritten visual signature tool.
+
+For a verifiable signing time, enable **Add a trusted timestamp (RFC 3161)**
+and enter the HTTPS endpoint supplied by your timestamp authority. The address
+is used only for that signing operation and is not remembered. The standard TSA
+request sends a cryptographic digest, not the PDF itself. A bounded network
+timeout prevents an unavailable service from leaving the operation waiting
+indefinitely.
+
+To include available revocation evidence, enable **Include available revocation
+responses** and provide a timestamp server. The isolated signing process
+contacts the OCSP/CRL endpoints advertised by the certificates; those requests
+can disclose certificate identifiers to the certificate authority, but never
+upload the PDF. It checks the chain against bundled public trust roots, stores
+the responses in the PDF document security store (DSS), and verifies that a
+signature-specific VRI entry actually refers to OCSP or CRL evidence before
+publishing the signed copy. If certificate trust or revocation evidence is
+unavailable, the requested copy is not published. Embedded data supports
+future validation but does not guarantee long-term trust or replace renewed
+archive timestamps.
+
+Signing and post-sign verification run in a dedicated child process. The
+certificate password is supplied only through that process environment and is
+not written to settings, recovery data, the job descriptor or diagnostics. The
+operation always writes a separate PDF and refuses to overwrite the currently
+open document. Pending editor changes are materialized before signing, and the
+finished copy is accepted only when its new signature passes a cryptographic
+integrity check. When a timestamp was requested, its embedded token must also
+be cryptographically valid. The result distinguishes a TSA certificate chain
+trusted by the bundled offline store from a valid token whose chain is not in
+that store; current revocation status is not queried. A failure, incorrect
+password or invalid TSA response leaves an existing target untouched.
+
+An unchanged document that already contains certificate signatures can be
+signed again. Nettongia appends the new signature as an incremental PDF
+revision instead of rewriting the signed bytes. Pending editor changes must be
+saved or discarded first. The output is accepted only when the new signature
+and every earlier signature pass cryptographic integrity verification.
 
 ## Appearance
 
@@ -376,13 +518,22 @@ Vector text and graphics remain sharp in all profiles. Lossy profiles are intend
 ## Current limitations
 
 - Interactive form filling supports standard AcroForm text, check, radio and
-  choice fields. Dynamic XFA, push-button actions and certificate-signature
-  fields are intentionally not modified.
+  choice fields. Dynamic XFA and push-button actions are intentionally not
+  modified.
+- Certificate signing currently supports local PKCS#12 files. Windows
+  certificate-store keys, smart cards and remote signatures are not included
+  yet. Sequential signatures are supported only on an unchanged signed
+  revision; content editing between approval signatures is intentionally
+  blocked to avoid invalidating earlier signatures.
+  RFC 3161 timestamp servers are supported through a user-supplied HTTPS URL;
+  TSA authentication credentials and recurring archive timestamps are not
+  included. Revocation evidence requires reachable certificate-authority
+  services and a chain trusted by the bundled trust roots.
 - OCR requires the checked-in language bundle; both source and packaged builds use it offline, with no Tesseract installation or model download. A damaged or incomplete bundle is reported by the self-test.
 - Letters converted to vector outlines cannot be treated as text.
-- Deleted images leave a white area. Complex backgrounds may require later retouching support.
+- Deleting an original image preserves underlying page content. When the same image object is reused elsewhere, individual removal is currently blocked to protect the other copies.
 - An existing cryptographic PDF signature becomes invalid after any content edit.
-- Print output is rendered page content rather than a vector-preserving PDF export; very large pages use the same safe render budget as the editor view.
+- Printing keeps vector paths on supported pages. Pages with annotations or form widgets and pages whose SVG representation is too large use raster rendering with the same safe memory budget as the editor view. Printing through Qt may convert text to outlines, so use Save or Extract Pages when searchable text is required in an exported PDF.
 
 ## Build a portable Windows version
 
@@ -412,8 +563,17 @@ Markdown results are written below `reports/golden_pdf` by default.
 
 ## License note
 
-This project depends on PyMuPDF, which is distributed under the GNU Affero
-General Public License or commercial terms. The free distribution therefore
-remains AGPL-3.0-or-later and includes corresponding source. See
-`DEPENDENCY_POLICY.md`, `THIRD_PARTY_NOTICES.md` and the collected `licenses`
-directory before publishing a binary.
+Nettongia PDF Editor's application source is licensed under
+**AGPL-3.0-or-later**. The complete license text is in `LICENSE`; the
+corresponding source is supplied alongside released binaries. You may fork,
+modify, redistribute or sell a copy under that license, provided you meet its
+terms, including the applicable source and copyright-notice requirements.
+The Nettongia name and mascot identify the original project; permission to use
+the source code does not itself grant rights to its branding.
+
+PyMuPDF / MuPDF is a **separate dependency** offered by its owner, Artifex,
+under AGPLv3 or an Artifex commercial agreement. Nettongia does not grant an
+Artifex commercial license to its own code or to PyMuPDF. A proprietary version
+would require independently resolving the rights to every relevant component
+and contribution. See `DEPENDENCY_POLICY.md`, `THIRD_PARTY_NOTICES.md` and
+the bundled dependency licenses before publishing a binary.

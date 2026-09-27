@@ -11,13 +11,15 @@ from PIL import Image, ImageDraw, ImageFont
 from PySide6.QtCore import QEventLoop
 from PySide6.QtWidgets import QApplication
 
-from openpdf_editor.engine import ImagePlacement, PdfEngine, TextPlacement
+from openpdf_editor.engine import ImagePlacement, PdfEngine, TextEdit, TextPlacement
 from openpdf_editor.main_window import MainWindow, SignatureGraphicsItem
 from openpdf_editor.ocr_worker import (
     available_ocr_languages,
     prepare_ocr_job,
     read_ocr_result,
     run_ocr_job,
+    _filter_words_over_existing_text,
+    _insert_invisible_block,
 )
 
 
@@ -81,6 +83,185 @@ def test_ocr_worker_adds_invisible_searchable_text_without_visual_change(
         assert "OPENPDF" in document[0].get_text()
         after = bytes(document[0].get_pixmap(alpha=False).samples)
     assert after == before
+
+
+def test_ocr_block_is_exposed_as_an_editable_invisible_text_block() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    words = [
+        (50, 50, 95, 68, "First", 0, 0, 0),
+        (100, 50, 145, 68, "line", 0, 0, 1),
+        (50, 75, 110, 93, "Second", 0, 1, 0),
+        (115, 75, 155, 93, "line", 0, 1, 1),
+    ]
+    assert _insert_invisible_block(page, words, None) == 4
+    payload = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    try:
+        runs = engine.text_runs(0)
+        assert len(runs) == 1
+        assert runs[0].is_ocr
+        assert runs[0].text == "First line\nSecond line"
+        assert len(runs[0].source_bboxes) == 2
+        edited = engine.build_document(
+            [TextEdit(runs[0], "New first\nNew second", runs[0].font_size,
+                      bbox=runs[0].bbox)]
+        )
+        try:
+            text = edited[0].get_text()
+            assert "New first" in text and "New second" in text
+            assert "First line" not in text and "Second line" not in text
+        finally:
+            edited.close()
+    finally:
+        engine.close()
+
+
+def test_adjacent_ocr_columns_remain_separate_editable_blocks() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=480, height=300)
+    for x, prefix in ((35, "Left"), (275, "Right")):
+        words = [
+            (x, 60, x + 45, 76, prefix, 0, 0, 0),
+            (x, 86, x + 45, 102, prefix, 0, 1, 0),
+        ]
+        assert _insert_invisible_block(page, words, None) == 2
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        runs = engine.text_runs(0)
+        assert len(runs) == 2
+        assert sorted(run.text for run in runs) == ["Left\nLeft", "Right\nRight"]
+    finally:
+        engine.close()
+
+
+def test_editing_ocr_text_blanks_the_original_scan_area() -> None:
+    image = Image.new("RGB", (420, 300), "white")
+    ImageDraw.Draw(image).rectangle((45, 50, 210, 82), fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    assert _insert_invisible_block(
+        page,
+        [(50, 54, 200, 78, "ORIGINAL", 0, 0, 0)],
+        None,
+    ) == 1
+    payload = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    run = engine.text_runs(0)[0]
+    assert run.is_ocr
+    edited = engine.build_document(
+        [TextEdit(run, "I", run.font_size, bbox=run.bbox)]
+    )
+    try:
+        pixmap = edited[0].get_pixmap(alpha=False)
+        sample_x = max(round(run.bbox[0]), round(run.bbox[2] - 2))
+        sample_y = round((run.bbox[1] + run.bbox[3]) / 2)
+        red, green, blue = pixmap.pixel(sample_x, sample_y)
+        assert min(red, green, blue) > 240
+        assert "ORIGINAL" not in edited[0].get_text()
+        assert "I" in edited[0].get_text()
+    finally:
+        edited.close()
+        engine.close()
+
+
+def test_editing_ocr_text_uses_the_surrounding_background_colour() -> None:
+    background = (62, 133, 191)
+    image = Image.new("RGB", (420, 300), background)
+    ImageDraw.Draw(image).rectangle((50, 54, 200, 78), fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    assert _insert_invisible_block(
+        page,
+        [(50, 54, 200, 78, "ORIGINAL", 0, 0, 0)],
+        None,
+    ) == 1
+    payload = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    run = engine.text_runs(0)[0]
+    edited = engine.build_document(
+        [TextEdit(run, "I", run.font_size, bbox=run.bbox)]
+    )
+    try:
+        pixmap = edited[0].get_pixmap(alpha=False)
+        sample_x = max(round(run.bbox[0]), round(run.bbox[2] - 2))
+        sample_y = round((run.bbox[1] + run.bbox[3]) / 2)
+        pixel = pixmap.pixel(sample_x, sample_y)[:3]
+        assert pixel == pytest.approx(background, abs=4)
+    finally:
+        edited.close()
+        engine.close()
+
+
+def test_editing_ocr_preserves_original_scan_and_gradient_background() -> None:
+    image = Image.new("RGB", (420, 300))
+    for x in range(image.width):
+        colour = (70 + x // 5, 120 + x // 7, 155 + x // 9)
+        for y in range(image.height):
+            image.putpixel((x, y), colour)
+    ImageDraw.Draw(image).rectangle((75, 55, 195, 78), fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    assert _insert_invisible_block(
+        page, [(75, 55, 195, 78, "ORIGINAL", 0, 0, 0)], None
+    ) == 1
+    source_image = document.extract_image(page.get_images()[0][0])["image"]
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        run = engine.text_runs(0)[0]
+        edited = engine.build_document([TextEdit(run, "I", run.font_size, bbox=run.bbox)])
+        try:
+            assert edited.extract_image(edited[0].get_images()[0][0])["image"] == source_image
+            pixmap = edited[0].get_pixmap(alpha=False)
+            y = round((run.bbox[1] + run.bbox[3]) / 2)
+            for x in (105, 120, 135):
+                expected = image.getpixel((x, y - 40))
+                actual = pixmap.pixel(x, y)[:3]
+                assert actual == pytest.approx(expected, abs=12)
+            assert pixmap.pixel(250, 70)[:3] == image.getpixel((250, 70))
+            assert "ORIGINAL" not in edited[0].get_text()
+        finally:
+            edited.close()
+    finally:
+        engine.close()
+
+
+def test_ocr_filter_preserves_only_words_away_from_existing_pdf_text() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=300)
+    page.insert_text((50, 80), "Native heading")
+    native = page.get_text("words", sort=True)[0]
+    candidates = [
+        (*native[:4], "Native", 0, 0, 0),
+        (50, 180, 135, 198, "Scanned", 1, 0, 0),
+    ]
+
+    filtered = _filter_words_over_existing_text(page, candidates)
+
+    assert [word[4] for word in filtered] == ["Scanned"]
+    document.close()
 
 
 def test_ocr_worker_handles_unicode_workspace_without_system_tesseract(
@@ -243,6 +424,36 @@ def test_original_image_selection_is_non_mutating_and_transform_is_undoable() ->
     assert window.inserted_images[0].rotation_degrees == pytest.approx(28.0)
     window.undo()
     assert not window.inserted_images
+    assert not window.deleted_images
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_shared_original_image_delete_keeps_document_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:
+    app = _application()
+    document = pymupdf.open()
+    page = document.new_page(width=150, height=100)
+    payload = _image_payload()
+    xref = page.insert_image(pymupdf.Rect(5, 5, 45, 45), stream=payload)
+    page.insert_image(pymupdf.Rect(70, 5, 110, 45), xref=xref)
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    window = MainWindow()
+    window._activate_document(engine, None, already_saved=True)
+    window._cancel_document_inspection()
+    warnings = []
+    monkeypatch.setattr("openpdf_editor.main_window.QMessageBox.warning", lambda *args: warnings.append(args))
+    run = window.engine.image_runs(0)[0]
+    history_index = window.history_index
+    window._delete_visual("source", run.key)
+    assert warnings and warnings[0][2] == window.trx("image_deletion_shared")
+    assert window.history_index == history_index
     assert not window.deleted_images
 
     window._maybe_save_changes = lambda: True

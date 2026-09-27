@@ -148,19 +148,28 @@ def main() -> int:
         if header not in headers:
             errors.append(f"Missing security header: {header}")
     index = (ROOT / "index.html").read_text(encoding="utf-8")
-    czech_index = (ROOT / "cs" / "index.html").read_text(encoding="utf-8")
-    for label, source in (("index.html", index), ("cs/index.html", czech_index)):
+    homepages = {
+        language: (ROOT / language / "index.html" if language != "en" else ROOT / "index.html").read_text(encoding="utf-8")
+        for language in ("en", "cs", "de", "es", "fr")
+    }
+    for language, source in homepages.items():
+        label = f"{language}/index.html"
         if source.count('"@type": "SoftwareApplication"') != 1:
             errors.append(f"{label}: expected one SoftwareApplication JSON-LD object")
         for token in ('"operatingSystem"', '"softwareVersion"', '"downloadUrl"', '"offers"'):
             if token not in source:
                 errors.append(f"{label}: structured application data is missing {token}")
-    for source, own, alternate in (
-        (index, 'hreflang="en" href="https://nettongia.com/"', 'hreflang="cs" href="https://nettongia.com/cs/"'),
-        (czech_index, 'hreflang="cs" href="https://nettongia.com/cs/"', 'hreflang="en" href="https://nettongia.com/"'),
-    ):
-        if own not in source or alternate not in source:
-            errors.append("Homepage hreflang pairing is incomplete")
+        if f'<html lang="{language}">' not in source:
+            errors.append(f"{label}: wrong document language")
+        for alternate in homepages:
+            href = "https://nettongia.com/" + (f"{alternate}/" if alternate != "en" else "")
+            if f'hreflang="{alternate}" href="{href}"' not in source:
+                errors.append(f"{label}: missing reciprocal hreflang {alternate}")
+            local_href = "/" if alternate == "en" else f"/{alternate}/"
+            if f'href="{local_href}"' not in source:
+                errors.append(f"{label}: missing language switch to {alternate}")
+        if source.count('data-download') != 1 or not re.search(r"-portable(?:-release)?\.zip", source):
+            errors.append(f"{label}: exactly one portable download is required")
     if len(re.findall(r"\b[a-f0-9]{64}\b", index, flags=re.I)) != 1:
         errors.append("Download section must publish exactly one portable ZIP SHA-256")
     if index.count("data-download") != 1 or not re.search(r"-portable(?:-release)?\.zip", index):
@@ -174,14 +183,14 @@ def main() -> int:
     app = (ROOT / "app.js").read_text(encoding="utf-8")
     styles = (ROOT / "styles.css").read_text(encoding="utf-8")
     counters = ROOT / "functions" / "api" / "counters.js"
-    if 'setLanguage(stored || "en")' not in app:
-        errors.append("English must remain the default website language")
+    if '<html lang="en">' not in index or 'document.documentElement.lang' not in app:
+        errors.append("The English homepage and locale-aware counters must be present")
     if "@media(prefers-color-scheme:dark)" not in styles:
         errors.append("Website must follow the operating-system dark theme")
     for token in (
         "color-scheme:light dark",
         ".secondary{color:var(--teal)}",
-        ".language button[aria-pressed=true]{color:#061315}",
+        '.nav .language a[aria-current="page"]{color:#061315}',
         ".privacy-grid a{color:var(--teal)}",
     ):
         if token not in styles:

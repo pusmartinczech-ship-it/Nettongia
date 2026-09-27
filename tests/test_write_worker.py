@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pymupdf
@@ -6,6 +7,7 @@ import pytest
 from openpdf_editor.engine import PdfEngine, TextPlacement
 from openpdf_editor.recovery import RecoverySnapshot
 from openpdf_editor.write_worker import (
+    PASSWORD_ENVIRONMENT_VARIABLE,
     prepare_write_job,
     read_write_result,
     run_write_job,
@@ -110,3 +112,39 @@ def test_prepare_write_job_rejects_invalid_profile_and_extension(tmp_path: Path)
         prepare_write_job(tmp_path / "a", _snapshot(), tmp_path / "a.pdf", "unknown")
     with pytest.raises(ValueError, match="must be a PDF"):
         prepare_write_job(tmp_path / "b", _snapshot(), tmp_path / "a.txt", None)
+    with pytest.raises(ValueError, match="separate writes"):
+        prepare_write_job(
+            tmp_path / "c",
+            _snapshot(),
+            tmp_path / "c.pdf",
+            "lossless",
+            password_protected=True,
+        )
+
+
+def test_write_worker_password_protects_without_serializing_password(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    password = "worker-only-password"
+    output = tmp_path / "protected-worker.pdf"
+    job, result_path = prepare_write_job(
+        tmp_path / "protected-job",
+        _snapshot(),
+        output,
+        None,
+        password_protected=True,
+    )
+    assert password not in job.read_text(encoding="utf-8")
+    assert password.encode() not in (job.parent / "snapshot.openpdf-recovery").read_bytes()
+    monkeypatch.setenv(PASSWORD_ENVIRONMENT_VARIABLE, password)
+
+    assert run_write_job(job) == 0
+    assert PASSWORD_ENVIRONMENT_VARIABLE not in os.environ
+    result, error = read_write_result(result_path)
+    assert result is None
+    assert error is None
+    with pymupdf.open(output) as protected:
+        assert protected.needs_pass
+        assert protected.authenticate(password)
+        assert "Isolated worker output" in protected[0].get_text()

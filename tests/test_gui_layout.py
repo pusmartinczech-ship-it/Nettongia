@@ -29,6 +29,7 @@ from PySide6.QtGui import (
     QKeySequence,
     QPalette,
     QPixmap,
+    QTextCursor,
 )
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
@@ -37,10 +38,12 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QGraphicsPixmapItem,
     QGraphicsProxyWidget,
+    QLabel,
     QMenu,
     QMessageBox,
     QPushButton,
     QToolBar,
+    QToolButton,
 )
 
 import openpdf_editor.main_window as main_window_module
@@ -49,6 +52,7 @@ from openpdf_editor.main_window import (
     FONT_SIZE_PRESETS,
     MainWindow,
     PageView,
+    RibbonActionButton,
     SignatureGraphicsItem,
     VisualImageItem,
 )
@@ -89,34 +93,84 @@ def _form_pdf_bytes() -> bytes:
         document.close()
 
 
-def test_text_controls_use_one_toolbar_without_overlap() -> None:
+def test_branded_welcome_card_is_centered_and_uses_current_mascot() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(1100, 720)
+    window.set_theme("light")
+    window.show()
+    app.processEvents()
+
+    mascot = window.welcome_card.findChild(QLabel, "welcomeMascot")
+    assert window.welcome_card.isVisible()
+    assert mascot is not None
+    assert mascot.pixmap() is not None and not mascot.pixmap().isNull()
+    assert abs(
+        window.welcome_card.geometry().center().x()
+        - window.page_view.viewport().rect().center().x()
+    ) <= 2
+    assert abs(
+        window.welcome_card.geometry().center().y()
+        - window.page_view.viewport().rect().center().y()
+    ) <= 2
+
+    page = QPixmap(320, 450)
+    page.fill(Qt.white)
+    window.page_view.set_page(page, [], [], [], 1.0)
+    assert not window.welcome_card.isVisible()
+    window.page_view.clear_page()
+    assert window.welcome_card.isVisible()
+    window.close()
+
+
+def test_ribbon_groups_tools_without_overlap_and_can_collapse() -> None:
     app = _application()
     window = MainWindow()
     window.resize(910, 720)
+    window.set_language("en")
     window.set_theme("dark")
     window.show()
     app.processEvents()
 
     assert len(window.findChildren(QToolBar)) == 1
-    assert window.toolbar.height() < 60
+    assert window.toolbar.height() == 155
+    assert window.ribbon_tabs.count() == 6
+    assert [window.ribbon_tabs.tabText(index) for index in range(6)] == [
+        "Home",
+        "Edit",
+        "Page",
+        "Comments",
+        "Forms",
+        "View",
+    ]
+    assert not window.menuBar().isVisible()
+    window.ribbon_tabs.setCurrentIndex(1)
+    app.processEvents()
     assert window.text_controls_widget.isVisible()
     assert window.language_button.isVisible()
-    assert window.toolbar.widgetForAction(window.print_action).isVisible()
-    assert window.toolbar.width() - 1 - window.language_button.geometry().right() <= 4
     assert len(window.language_actions) == 21
     assert all(not action.icon().isNull() for action in window.language_actions.values())
     assert not window.sidebar_tabs.isTabEnabled(window.outline_tab_index)
 
-    action_order = window.toolbar.actions()
-    assert action_order.index(window.save_action) < action_order.index(
-        window.print_action
-    )
-    assert action_order.index(window.print_action) < action_order.index(
-        window.undo_action
-    )
+    quick_actions = [
+        button.defaultAction()
+        for button in window.toolbar.findChildren(QToolButton)
+        if button.objectName() == "ribbonQuickButton"
+    ]
+    assert quick_actions == [
+        window.new_action,
+        window.open_action,
+        window.save_action,
+        window.undo_action,
+        window.redo_action,
+    ]
     assert window.save_action.shortcut() == QKeySequence(QKeySequence.Save)
     assert window.save_as_action.shortcut() == QKeySequence(QKeySequence.SaveAs)
     assert window.save_copy_action.shortcut() == QKeySequence("Ctrl+Alt+S")
+    assert not window.add_password_protection_action.icon().isNull()
+    assert not window.remove_password_protection_action.icon().isNull()
+    assert not window.compare_pdf_action.icon().isNull()
+    assert not window.remove_password_protection_action.isEnabled()
     assert window.move_page_up_action.shortcut() == QKeySequence("Alt+Shift+Up")
     assert window.move_page_down_action.shortcut() == QKeySequence("Alt+Shift+Down")
     assert window.rotate_page_left_action.shortcut() == QKeySequence("Ctrl+Shift+Left")
@@ -128,12 +182,27 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
     assert file_actions.index(window.save_as_action) < file_actions.index(
         window.save_copy_action
     )
+    assert file_actions.index(window.save_copy_action) < file_actions.index(
+        window.add_password_protection_action
+    )
+    assert file_actions.index(window.add_password_protection_action) < file_actions.index(
+        window.remove_password_protection_action
+    )
     assert window.edit_original_image_action in window.image_menu.actions()
     assert window.export_diagnostics_action in window.help_menu.actions()
     assert window.move_page_up_action in window.page_menu.actions()
     assert window.move_page_down_action in window.page_menu.actions()
     assert window.rotate_page_left_action in window.page_menu.actions()
     assert window.rotate_page_right_action in window.page_menu.actions()
+
+    window._toggle_ribbon()
+    app.processEvents()
+    assert window.ribbon_collapsed
+    assert window.toolbar.height() == 74
+    assert window.ribbon_tabs.height() == 31
+    window._toggle_ribbon()
+    app.processEvents()
+    assert not window.ribbon_collapsed
 
     widgets = (
         window.text_font_box,
@@ -195,8 +264,112 @@ def test_text_controls_use_one_toolbar_without_overlap() -> None:
 
     editor.deleteLater()
     window.close()
+
+
+def test_ribbon_labels_fit_in_all_supported_languages() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(910, 720)
+    window.show()
+    app.processEvents()
+
+    assert all(
+        not button.icon().isNull()
+        for button in window.ribbon_tabs.findChildren(RibbonActionButton)
+    )
+    ribbon_buttons = window.ribbon_tabs.findChildren(RibbonActionButton)
+    for theme, expect_bright_pixels in (("light", False), ("dark", True)):
+        window.set_theme(theme)
+        app.processEvents()
+        for button in ribbon_buttons:
+            image = button.icon().pixmap(24, 24).toImage()
+            lightness = [
+                image.pixelColor(x, y).lightness()
+                for y in range(image.height())
+                for x in range(image.width())
+                if image.pixelColor(x, y).alpha() > 40
+            ]
+            assert lightness, (theme, button.text())
+            if expect_bright_pixels:
+                assert max(lightness) >= 180, (theme, button.text())
+            else:
+                assert min(lightness) <= 120, (theme, button.text())
+
+    for code in window.language_actions:
+        window.set_language(code)
+        app.processEvents()
+        assert all(
+            window.ribbon_tabs.tabText(index).strip()
+            for index in range(window.ribbon_tabs.count())
+        )
+        for index in range(window.ribbon_tabs.count()):
+            window.ribbon_tabs.setCurrentIndex(index)
+            app.processEvents()
+            buttons = window.ribbon_tabs.currentWidget().findChildren(
+                RibbonActionButton
+            )
+            clipped = [button.text() for button in buttons if not button.label_fits()]
+            assert not clipped, (code, clipped)
+        for button in (
+            window.ribbon_form_edit_button,
+            window.ribbon_form_preview_button,
+            window.ribbon_fill_sign_button,
+        ):
+            assert button.width() >= button.sizeHint().width(), (code, button.text())
+
+    window.set_language("zh")
+    assert window.ribbon_fill_sign_button.text() == "填写并签名"
+    window.set_language("hi")
+    assert window.ribbon_form_preview_button.text() == "पूर्वावलोकन"
+    window.set_language("cs")
+    assert window.ribbon_fill_sign_button.text() == "Vyplnit a podepsat"
+    window.close()
     window.deleteLater()
     app.processEvents()
+
+
+def test_right_sidebar_labels_wrap_in_all_supported_languages() -> None:
+    app = _application()
+    window = MainWindow()
+    window.resize(910, 720)
+    for index in (
+        window.comments_tool_index,
+        window.forms_tool_index,
+        window.fill_sign_tool_index,
+    ):
+        window.right_sidebar.setTabEnabled(index, True)
+    window.show()
+    app.processEvents()
+
+    def label_fits(button: QPushButton) -> bool:
+        lines = button.text().replace("&", "").splitlines()
+        required_width = max(
+            button.fontMetrics().horizontalAdvance(line) for line in lines
+        ) + 18
+        required_height = button.fontMetrics().lineSpacing() * len(lines) + 10
+        return required_width <= button.width() and required_height <= button.height()
+
+    for code in window.language_actions:
+        window.set_language(code)
+        app.processEvents()
+        for index in (
+            window.comments_tool_index,
+            window.forms_tool_index,
+            window.fill_sign_tool_index,
+        ):
+            window.right_sidebar.setCurrentIndex(index)
+            app.processEvents()
+            assert all(
+                label_fits(button)
+                for button in window.right_sidebar.findChildren(QPushButton)
+                if button.isVisible() and button.text()
+            ), code
+
+    window.set_language("ar")
+    assert app.layoutDirection() == Qt.RightToLeft
+    window.set_language("en")
+    assert app.layoutDirection() == Qt.LeftToRight
+    window.close()
 
 
 def test_anonymized_diagnostics_are_reviewed_before_export(
@@ -476,6 +649,35 @@ def test_native_comments_and_highlights_are_listed_and_undoable(
     app.processEvents()
 
 
+def test_underlining_and_striking_text_are_undoable(tmp_path: Path) -> None:
+    app = _application()
+    source = fitz.open()
+    source.new_page(width=420, height=300).insert_text((50, 90), "REVIEW TEXT")
+    engine = PdfEngine()
+    engine.load_bytes(source.tobytes())
+    source.close()
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    try:
+        run = window.engine.text_runs(0)[0]
+        window._mark_text("source", run.key, "underline")
+        assert [item.type_name for item in window.engine.annotations()] == ["Underline"]
+        window._mark_text("source", run.key, "strikeout")
+        assert [item.type_name for item in window.engine.annotations()] == [
+            "Underline", "StrikeOut"
+        ]
+        window.undo()
+        assert [item.type_name for item in window.engine.annotations()] == ["Underline"]
+        window.redo()
+        assert len(window.engine.annotations()) == 2
+    finally:
+        window._maybe_save_changes = lambda: True
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
 def test_acroform_sidebar_edits_fields_with_undo_redo(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -489,6 +691,12 @@ def test_acroform_sidebar_edits_fields_with_undo_redo(
     app.processEvents()
 
     assert window.forms_list.count() == 3
+    window.set_language("ar")
+    assert "صفحة" in window.forms_list.item(0).text()
+    assert "حقل نص" in window.forms_list.item(0).text()
+    window.set_language("cs")
+    assert "Stránka" in window.forms_list.item(0).text()
+    assert "Textové pole" in window.forms_list.item(0).text()
     assert window.sidebar_tabs.count() == 2
     assert window.right_sidebar.isTabEnabled(window.forms_tool_index)
     assert not window.right_sidebar.isExpanded()
@@ -604,6 +812,41 @@ def test_form_field_creation_and_deletion_use_right_sidebar_and_history(
     assert window.engine.form_fields() == []
     window.undo()
     assert len(window.engine.form_fields()) == 1
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_form_accessibility_actions_update_pdf_and_support_undo(
+    tmp_path: Path, monkeypatch
+) -> None:
+    app = _application()
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    for index in range(2):
+        engine.load_bytes(engine.bytes_with_new_form_field(
+            0, (40, 50 + index * 70, 250, 90 + index * 70),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, f"field_{index}", f"Label {index}"),
+        ))
+    window = MainWindow(recovery_path=tmp_path / "recovery")
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=True)
+    window.forms_list.setCurrentRow(1)
+    monkeypatch.setattr(
+        main_window_module.QInputDialog, "getText",
+        lambda *args, **kwargs: ("Your email address", True),
+    )
+    window.edit_selected_form_label()
+    assert window.engine.form_fields()[1].label == "Your email address"
+    assert window.forms_list.currentRow() == 1
+    window.move_selected_form_tab(-1)
+    assert [field.name for field in window.engine.form_fields()] == ["field_1", "field_0"]
+    assert window.forms_list.currentRow() == 0
+    assert window.engine.form_accessibility_issues() == []
+    window.undo()
+    assert [field.name for field in window.engine.form_fields()] == ["field_0", "field_1"]
 
     window._maybe_save_changes = lambda: True
     window.close()
@@ -1308,6 +1551,158 @@ def test_inline_editor_does_not_remove_itself_inside_focus_event() -> None:
     assert accepted == ["Changed text"]
 
     editor.deleteLater()
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+
+def test_inline_font_change_is_live_and_persists_after_editor_closes() -> None:
+    app = _application()
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_text((50, 100), "FONT BEFORE", fontname="helv", fontsize=18)
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    window = MainWindow()
+    window._maybe_save_changes = lambda: True
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=False)
+    window.show()
+    app.processEvents()
+
+    run = next(item for item in engine.text_runs(0) if item.text == "FONT BEFORE")
+    window._start_inline_text_edit("source", run.key)
+    assert window.page_view._inline_editor is not None
+    window.text_font_box.setFocus(Qt.OtherFocusReason)
+    app.processEvents(QEventLoop.AllEvents, 100)
+    assert window.page_view._inline_editor is not None
+    assert window.page_view.inline_editing
+    available = QFontDatabase.families()
+    if not available:
+        window.close()
+        window.deleteLater()
+        app.processEvents(QEventLoop.AllEvents, 50)
+        pytest.skip("The Qt platform plugin does not expose any system fonts.")
+    target = next(
+        (
+            family
+            for family in available
+            if any(token in family.lower() for token in ("serif", "times", "courier", "mono"))
+            and family != window.text_font_box.currentFont().family()
+        ),
+        available[-1],
+    )
+    window.text_font_box.setCurrentFont(QFont(target))
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+    selected_family = window.text_font_box.currentFont().family()
+    assert window.page_view._inline_editor.font().family() == selected_family
+    document_cursor = window.page_view._inline_editor.textCursor()
+    document_cursor.select(QTextCursor.Document)
+    assert document_cursor.charFormat().fontFamily() == selected_family
+    assert window.edits[run.key].font_family == selected_family
+
+    window.page_view.finish_inline_editor(True)
+    app.processEvents(QEventLoop.AllEvents, 100)
+    assert not window.page_view.inline_editing
+    assert window.edits[run.key].font_family == selected_family
+
+    window.close()
+    window.deleteLater()
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+
+def test_inline_replacement_expands_the_frame_for_wrapped_text() -> None:
+    app = _application()
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_text((50, 100), "Short line", fontname="helv", fontsize=16)
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    window = MainWindow()
+    window._maybe_save_changes = lambda: True
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=False)
+    window.show()
+    app.processEvents()
+
+    run = next(item for item in engine.text_runs(0) if item.text == "Short line")
+    window._start_inline_text_edit("source", run.key)
+    assert window.page_view._inline_editor is not None
+    window.page_view._inline_editor.setPlainText(
+        "This replacement is long enough to wrap across several lines while keeping its font size."
+    )
+    window.page_view.finish_inline_editor(True)
+    app.processEvents(QEventLoop.AllEvents, 100)
+
+    edit = window.edits[run.key]
+    assert edit.wrap_text
+    assert edit.bbox is not None
+    assert edit.bbox[3] - edit.bbox[1] > run.bbox[3] - run.bbox[1]
+    edited = engine.build_document(window.edits.values())
+    try:
+        replacement_lines = [
+            line
+            for block in edited[0].get_text("dict")["blocks"]
+            if block.get("type") == 0
+            for line in block.get("lines", [])
+            if any(span.get("text", "").strip() for span in line.get("spans", []))
+        ]
+        assert len(replacement_lines) >= 2
+    finally:
+        edited.close()
+
+    window.close()
+    window.deleteLater()
+    app.processEvents(QEventLoop.AllEvents, 50)
+
+
+def test_existing_multiline_paragraph_opens_as_one_undoable_text_block() -> None:
+    app = _application()
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_textbox(
+        (50, 45, 310, 160),
+        "First source line\nSecond source line\nThird source line",
+        fontsize=15,
+        fontname="helv",
+    )
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    window = MainWindow()
+    window._maybe_save_changes = lambda: True
+    window._start_document_inspection = lambda: None
+    window._activate_document(engine, None, already_saved=False)
+
+    runs = engine.text_runs(0)
+    assert len(runs) == 1
+    paragraph = runs[0]
+    assert len(paragraph.source_bboxes) == 3
+    window._start_inline_text_edit("source", paragraph.key)
+    assert window.page_view._inline_editor is not None
+    assert window.page_view._inline_editor.toPlainText() == (
+        "First source line Second source line Third source line"
+    )
+    window.page_view._inline_editor.setPlainText("A fully replaced paragraph")
+    window.page_view.finish_inline_editor(True)
+    app.processEvents(QEventLoop.AllEvents, 100)
+
+    assert window.edits[paragraph.key].new_text == "A fully replaced paragraph"
+    assert len(window.edits[paragraph.key].run.source_bboxes) == 3
+    window.undo()
+    assert paragraph.key not in window.edits
+    window.redo()
+    assert window.edits[paragraph.key].new_text == "A fully replaced paragraph"
+
+    window.close()
+    window.deleteLater()
     app.processEvents(QEventLoop.AllEvents, 50)
 
 

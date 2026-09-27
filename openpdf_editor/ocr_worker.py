@@ -162,6 +162,98 @@ def _insert_invisible_word(page, word: tuple, font_path: str | None) -> bool:
     return True
 
 
+def _insert_invisible_block(page, words: list[tuple], font_path: str | None) -> int:
+    """Insert one Tesseract block as a coherent invisible PDF text block."""
+
+    valid = [
+        word
+        for word in words
+        if len(word) >= 8
+        and str(word[4]).strip()
+        and not (pymupdf.Rect(word[:4]) & page.rect).is_empty
+    ]
+    if not valid:
+        return 0
+    by_line: dict[int, list[tuple]] = {}
+    for word in valid:
+        by_line.setdefault(int(word[6]), []).append(word)
+    line_groups = [
+        sorted(line, key=lambda word: (int(word[7]), float(word[0])))
+        for _, line in sorted(by_line.items())
+    ]
+    text = "\n".join(
+        " ".join(str(word[4]).strip() for word in line)
+        for line in line_groups
+    )
+    rect = pymupdf.Rect(
+        min(float(word[0]) for word in valid),
+        min(float(word[1]) for word in valid),
+        max(float(word[2]) for word in valid),
+        max(float(word[3]) for word in valid),
+    ) & page.rect
+    heights = sorted(max(1.0, float(word[3]) - float(word[1])) for word in valid)
+    font_size = min(96.0, max(3.0, heights[len(heights) // 2] * 0.78))
+    kwargs = {
+        "fontname": "ocrfont" if font_path else "helv",
+        "fontfile": font_path,
+        "render_mode": 3,
+        "lineheight": 1.0,
+        "overlay": True,
+    }
+    attempted_size = font_size
+    while attempted_size >= 3.0:
+        remaining = page.insert_textbox(rect, text, fontsize=attempted_size, **kwargs)
+        if remaining >= 0:
+            return len(valid)
+        if attempted_size <= 3.0:
+            break
+        attempted_size = max(3.0, attempted_size * 0.88)
+    # Unusual layouts can have a block rectangle too tight for a textbox.
+    # Keep OCR available by falling back to the established per-word path.
+    return sum(_insert_invisible_word(page, word, font_path) for word in valid)
+
+
+def _filter_words_over_existing_text(page, words: list[tuple]) -> list[tuple]:
+    """Keep OCR words that do not duplicate an existing PDF text layer."""
+
+    existing_rects = [
+        pymupdf.Rect(word[:4]) & page.rect
+        for word in page.get_text("words", sort=True)
+        if len(word) >= 5 and str(word[4]).strip()
+    ]
+    existing_rects = [rect for rect in existing_rects if not rect.is_empty]
+    if not existing_rects:
+        return words
+
+    filtered: list[tuple] = []
+    for word in words:
+        candidate = pymupdf.Rect(word[:4]) & page.rect
+        if candidate.is_empty:
+            continue
+        duplicated = False
+        center = (candidate.tl + candidate.br) / 2.0
+        for existing in existing_rects:
+            padding = max(1.0, min(4.0, existing.height * 0.2))
+            expanded = pymupdf.Rect(
+                existing.x0 - padding,
+                existing.y0 - padding,
+                existing.x1 + padding,
+                existing.y1 + padding,
+            )
+            overlap = candidate & existing
+            overlap_ratio = (
+                overlap.get_area() / candidate.get_area()
+                if not overlap.is_empty and candidate.get_area() > 0
+                else 0.0
+            )
+            if expanded.contains(center) or overlap_ratio >= 0.35:
+                duplicated = True
+                break
+        if not duplicated:
+            filtered.append(word)
+    return filtered
+
+
 def run_ocr_job(job_path: str | Path) -> int:
     result_path: Path | None = None
     document = None
@@ -186,9 +278,6 @@ def run_ocr_job(job_path: str | Path) -> int:
         font_path = _ocr_font_path()
         for page_index in job["page_indices"]:
             page = document[page_index]
-            if len(page.get_text("text").strip()) >= 3:
-                skipped += 1
-                continue
             textpage = page.get_textpage_ocr(
                 language=job["language"],
                 dpi=job["dpi"],
@@ -196,10 +285,20 @@ def run_ocr_job(job_path: str | Path) -> int:
                 tessdata=str(tessdata),
             )
             words = page.get_text("words", textpage=textpage, sort=True)
-            inserted = sum(_insert_invisible_word(page, word, font_path) for word in words)
+            words = _filter_words_over_existing_text(page, words)
+            by_block: dict[int, list[tuple]] = {}
+            for word in words:
+                block_number = int(word[5]) if len(word) >= 8 else len(by_block)
+                by_block.setdefault(block_number, []).append(word)
+            inserted = sum(
+                _insert_invisible_block(page, block_words, font_path)
+                for block_words in by_block.values()
+            )
             if inserted:
                 processed += 1
                 words_inserted += inserted
+            else:
+                skipped += 1
         if processed:
             temporary = output_path.with_suffix(".tmp.pdf")
             document.save(temporary, garbage=2, deflate=True)

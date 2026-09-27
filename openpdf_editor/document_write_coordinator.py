@@ -6,12 +6,16 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 
 from .document_session import DocumentWriteContext
 from .engine import CompressionResult
 from .recovery import RecoverySnapshot
-from .write_worker import prepare_write_job, read_write_result
+from .write_worker import (
+    PASSWORD_ENVIRONMENT_VARIABLE,
+    prepare_write_job,
+    read_write_result,
+)
 
 
 @dataclass(frozen=True)
@@ -50,6 +54,7 @@ class DocumentWriteCoordinator(QObject):
         self,
         snapshot: RecoverySnapshot,
         context: DocumentWriteContext,
+        password: str | None = None,
     ) -> None:
         if self.is_running:
             raise RuntimeError("A document write is already running.")
@@ -61,6 +66,7 @@ class DocumentWriteCoordinator(QObject):
                 snapshot,
                 context.path,
                 context.compression_profile,
+                password_protected=context.password_protected,
             )
         except Exception:
             shutil.rmtree(workspace, ignore_errors=True)
@@ -70,6 +76,13 @@ class DocumentWriteCoordinator(QObject):
         request_id = self._request_id
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.MergedChannels)
+        if context.password_protected:
+            if not password:
+                shutil.rmtree(workspace, ignore_errors=True)
+                raise ValueError("The password-protected write is missing its password.")
+            environment = QProcessEnvironment.systemEnvironment()
+            environment.insert(PASSWORD_ENVIRONMENT_VARIABLE, password)
+            process.setProcessEnvironment(environment)
         if getattr(sys, "frozen", False):
             arguments = ["--document-write-worker", str(job_path)]
         else:

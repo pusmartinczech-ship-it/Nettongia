@@ -51,6 +51,9 @@ _EVENTS = {
     "tile_render_failed",
     "document_write_started",
     "document_write_finished",
+    "comparison_started",
+    "comparison_finished",
+    "document_marks_changed",
     "diagnostic_exported",
 }
 _INTEGER_DETAILS = {
@@ -89,6 +92,10 @@ _ENUM_DETAILS = {
         "visual_delete",
         "save",
         "save_copy",
+        "protect",
+        "unprotect",
+        "compare",
+        "document_marks",
         "compress",
         "ocr",
         "export_diagnostics",

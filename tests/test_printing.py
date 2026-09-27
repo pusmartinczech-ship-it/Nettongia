@@ -1,9 +1,11 @@
 import os
+from io import BytesIO
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pymupdf
+from PIL import Image
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPageRanges
 from PySide6.QtPrintSupport import QPrintPreviewDialog, QPrinter
@@ -67,6 +69,93 @@ def test_print_ranges_and_pdf_printer_output(tmp_path: Path) -> None:
     window.close()
     window.deleteLater()
     app.processEvents()
+
+
+def test_print_to_pdf_keeps_vector_paths_and_unsaved_text(tmp_path: Path) -> None:
+    app = _application()
+    document = pymupdf.open()
+    page = document.new_page(width=360, height=240)
+    page.draw_rect(pymupdf.Rect(40, 40, 260, 180), color=(1, 0, 0), width=0.5)
+    page.insert_text((50, 85), "Original", fontsize=18)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    window = MainWindow()
+    window._activate_document(engine, Path("vector-print.pdf"), already_saved=True)
+    window.inserted_texts = [
+        TextPlacement(
+            key="print-text", page_index=0,
+            bbox=(50, 110, 280, 145), text="Unsaved vector", font_size=17,
+        )
+    ]
+    output = tmp_path / "vector-print.pdf"
+    printer = QPrinter(QPrinter.HighResolution)
+    printer.setOutputFormat(QPrinter.PdfFormat)
+    printer.setOutputFileName(str(output))
+    printer.setResolution(72)
+    try:
+        assert window._render_print_job(printer, [0]) == 1
+        with pymupdf.open(output) as printed:
+            assert printed[0].get_drawings()
+            assert printed[0].get_images() == []
+            assert min(printed[0].get_pixmap(dpi=144).samples) < 128
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_print_annotated_page_keeps_annotation_appearance(tmp_path: Path) -> None:
+    app = _application()
+    document = pymupdf.open()
+    page = document.new_page(width=360, height=240)
+    page.add_rect_annot(pymupdf.Rect(35, 35, 100, 95))
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    window = MainWindow()
+    window._activate_document(engine, Path("annotated.pdf"), already_saved=True)
+    output = tmp_path / "annotation-print.pdf"
+    printer = QPrinter(QPrinter.HighResolution)
+    printer.setOutputFormat(QPrinter.PdfFormat)
+    printer.setOutputFileName(str(output))
+    try:
+        assert window._render_print_job(printer, [0]) == 1
+        with pymupdf.open(output) as printed:
+            assert printed[0].get_images()
+            assert min(printed[0].get_pixmap(dpi=72).samples) < 200
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
+
+
+def test_vector_print_keeps_images_next_to_vector_art(tmp_path: Path) -> None:
+    app = _application()
+    image_stream = BytesIO()
+    Image.new("RGB", (32, 32), (17, 115, 222)).save(image_stream, format="PNG")
+    source = pymupdf.open()
+    page = source.new_page(width=320, height=220)
+    page.draw_circle((145, 70), 26, color=(1, 0, 0))
+    page.insert_image(pymupdf.Rect(35, 115, 85, 165), stream=image_stream.getvalue())
+    engine = PdfEngine()
+    engine.load_bytes(source.tobytes())
+    source.close()
+    window = MainWindow()
+    window._activate_document(engine, Path("mixed.pdf"), already_saved=True)
+    output = tmp_path / "mixed-print.pdf"
+    printer = QPrinter(QPrinter.HighResolution)
+    printer.setOutputFormat(QPrinter.PdfFormat)
+    printer.setOutputFileName(str(output))
+    try:
+        window._render_print_job(printer, [0])
+        with pymupdf.open(output) as printed:
+            assert printed[0].get_drawings()
+            assert printed[0].get_images()
+    finally:
+        window.close()
+        window.deleteLater()
+        app.processEvents()
 
 
 def test_print_action_opens_application_preview(monkeypatch) -> None:

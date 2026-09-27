@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import math
 import os
+import re
+import secrets
 import tempfile
 import zlib
 from dataclasses import dataclass, field, replace
+from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
 from urllib.parse import parse_qs
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 try:
     import pymupdf
@@ -25,6 +28,10 @@ from .font_resolver import resolve_font
 # predictable upper bound so an A0 page at 400% cannot exhaust the process
 # memory before the UI has a chance to react.
 MAX_RENDER_PIXELS = 32_000_000
+DOCUMENT_MARK_STREAM_TAG = b"/NettongiaDocumentMark BMC"
+DOCUMENT_MARK_STREAM_PATTERN = re.compile(
+    rb"/NettongiaDocumentMark\s+BMC.*?EMC", re.DOTALL
+)
 
 
 class PdfPasswordRequiredError(ValueError):
@@ -107,6 +114,8 @@ class TextRun:
     color: int
     flags: int
     direction: tuple[float, float] = (1.0, 0.0)
+    source_bboxes: tuple[tuple[float, float, float, float], ...] = ()
+    alpha: int = 255
 
     @property
     def bold(self) -> bool:
@@ -115,6 +124,10 @@ class TextRun:
     @property
     def italic(self) -> bool:
         return bool(self.flags & 2) or any(x in self.font_name.lower() for x in ("italic", "oblique"))
+
+    @property
+    def is_ocr(self) -> bool:
+        return self.alpha == 0
 
 
 @dataclass(frozen=True)
@@ -129,6 +142,7 @@ class TextEdit:
     underline: bool = False
     color: int | None = None
     bbox: tuple[float, float, float, float] | None = None
+    wrap_text: bool = True
 
 
 @dataclass(frozen=True)
@@ -143,6 +157,31 @@ class TextPlacement:
     italic: bool = False
     underline: bool = False
     color: int = 0
+
+
+@dataclass(frozen=True)
+class DocumentMarksSpec:
+    """Header, footer and text-watermark settings for a whole document."""
+
+    header_left: str = ""
+    header_center: str = ""
+    header_right: str = ""
+    footer_left: str = ""
+    footer_center: str = ""
+    footer_right: str = ""
+    font_family: str = "Arial"
+    font_size: float = 9.0
+    color: int = 0
+    margin: float = 24.0
+    watermark_text: str = ""
+    watermark_font_size: float = 54.0
+    watermark_color: int = 0x6F7782
+    watermark_opacity: float = 0.18
+    watermark_rotation: float = -45.0
+    watermark_overlay: bool = False
+    page_mode: str = "all"
+    skip_first_page: bool = False
+    document_title: str = ""
 
 
 @dataclass(frozen=True)
@@ -182,6 +221,12 @@ class ImagePlacement:
 class ImageDeletion:
     run: ImageRun
     fill_removed_area: bool = True
+
+
+class ImageDeletionError(ValueError):
+    def __init__(self, reason: str, message: str) -> None:
+        self.reason = reason
+        super().__init__(message)
 
 
 @dataclass(frozen=True)
@@ -246,6 +291,13 @@ class FormFieldSpec:
     multiline: bool = False
 
 
+@dataclass(frozen=True)
+class FormAccessibilityIssue:
+    page_index: int
+    field_name: str
+    code: str
+
+
 class PdfEngine:
     def __init__(self) -> None:
         self.path: Path | None = None
@@ -253,6 +305,7 @@ class PdfEngine:
         self._source: pymupdf.Document | None = None
         self._runs: dict[int, list[TextRun]] = {}
         self._image_runs: dict[int, list[ImageRun]] = {}
+        self._image_occurrences: dict[int, set[str]] | None = None
         self._has_outline: bool | None = None
         self._was_encrypted = False
 
@@ -280,6 +333,7 @@ class PdfEngine:
         self._original_bytes = None
         self._runs.clear()
         self._image_runs.clear()
+        self._image_occurrences = None
         self._has_outline = None
         self._was_encrypted = False
         self.path = None
@@ -584,6 +638,81 @@ class PdfEngine:
         finally:
             document.close()
 
+    def bytes_with_form_label(self, field_xref: int, label: str) -> bytes:
+        """Set the PDF alternate field name used by assistive technology."""
+        label = label.strip()
+        if not label or len(label) > 500 or any(ord(char) < 32 for char in label):
+            raise ValueError("Enter a descriptive form field label (up to 500 characters).")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page in document:
+                for widget in page.widgets() or ():
+                    if widget.xref == field_xref:
+                        widget.field_label = label
+                        widget.update()
+                        return self._serialize(document)
+            raise ValueError("The form field is no longer available.")
+        finally:
+            document.close()
+
+    def bytes_with_form_tab_order(self, page_index: int, ordered_xrefs: Iterable[int]) -> bytes:
+        """Order widgets in /Annots and request annotation-order keyboard traversal."""
+        if not 0 <= page_index < self.page_count:
+            raise IndexError("The page is unavailable.")
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            editable_types = {
+                pymupdf.PDF_WIDGET_TYPE_TEXT,
+                pymupdf.PDF_WIDGET_TYPE_CHECKBOX,
+                pymupdf.PDF_WIDGET_TYPE_RADIOBUTTON,
+                pymupdf.PDF_WIDGET_TYPE_COMBOBOX,
+                pymupdf.PDF_WIDGET_TYPE_LISTBOX,
+                pymupdf.PDF_WIDGET_TYPE_SIGNATURE,
+            }
+            current = [
+                widget.xref for widget in page.widgets() or ()
+                if int(widget.field_type or 0) in editable_types
+            ]
+            ordered = list(ordered_xrefs)
+            if len(ordered) != len(current) or set(ordered) != set(current):
+                raise ValueError("The tab order must contain each supported field on this page exactly once.")
+            widget_xrefs = set(current)
+            annotations = [xref for xref, _type, _id in page.annot_xrefs()]
+            widget_iter = iter(ordered)
+            reordered = [next(widget_iter) if xref in widget_xrefs else xref for xref in annotations]
+            document.xref_set_key(
+                page.xref, "Annots", "[" + " ".join(f"{xref} 0 R" for xref in reordered) + "]"
+            )
+            document.xref_set_key(page.xref, "Tabs", "/A")
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def form_accessibility_issues(self) -> list[FormAccessibilityIssue]:
+        """Check form labels, keyboard order, and basic native PDF structures."""
+        self._require_open()
+        issues: list[FormAccessibilityIssue] = []
+        catalog = self._source.pdf_catalog()
+        fields_type, _ = self._source.xref_get_key(catalog, "AcroForm/Fields")
+        for page_index, page in enumerate(self._source):
+            widgets = list(page.widgets() or ())
+            if not widgets:
+                continue
+            if fields_type not in ("array", "xref"):
+                issues.append(FormAccessibilityIssue(page_index, "", "registry"))
+            if len(widgets) > 1 and self._source.xref_get_key(page.xref, "Tabs") != ("name", "/A"):
+                issues.append(FormAccessibilityIssue(page_index, "", "tab_order"))
+            for widget in widgets:
+                name = str(widget.field_name or "")
+                label = str(widget.field_label or "").strip()
+                if not label or (label == name and re.fullmatch(r"field_\d+", name)):
+                    issues.append(FormAccessibilityIssue(page_index, name, "label"))
+                appearance_type, appearance = self._source.xref_get_key(widget.xref, "AP/N")
+                if appearance_type not in ("xref", "dict") or appearance in ("null", "<<>>"):
+                    issues.append(FormAccessibilityIssue(page_index, name, "appearance"))
+        return issues
+
     @staticmethod
     def _view_rect(
         page: pymupdf.Page,
@@ -727,10 +856,230 @@ class PdfEngine:
                             color=int(span.get("color", 0)),
                             flags=int(span.get("flags", 0)),
                             direction=self._mapped_direction(page, direction, to_view=True),
+                            alpha=int(span.get("alpha", 255)),
                         )
                     )
+        runs = self._merge_ocr_runs(runs)
+        runs = self._merge_paragraph_runs(runs)
         self._runs[page_index] = runs
         return runs
+
+    @staticmethod
+    def _merge_ocr_runs(runs: list[TextRun]) -> list[TextRun]:
+        """Recover editable paragraphs from invisible OCR line objects."""
+
+        visible = [run for run in runs if not run.is_ocr]
+        ocr_runs = sorted(
+            (run for run in runs if run.is_ocr),
+            key=lambda item: (item.bbox[1], item.bbox[0]),
+        )
+        groups: list[list[TextRun]] = []
+        for run in ocr_runs:
+            best_group: list[TextRun] | None = None
+            best_gap = float("inf")
+            for group in groups:
+                previous = group[-1]
+                previous_height = max(1.0, previous.bbox[3] - previous.bbox[1])
+                gap = run.bbox[1] - previous.bbox[3]
+                new_row = run.bbox[1] >= previous.bbox[1] + previous_height * 0.5
+                size_match = abs(run.font_size - previous.font_size) <= max(
+                    1.0, previous.font_size * 0.3
+                )
+                left_match = abs(run.bbox[0] - previous.bbox[0]) <= max(
+                    run.font_size, previous.font_size
+                ) * 3.0
+                overlap = max(
+                    0.0,
+                    min(run.bbox[2], previous.bbox[2])
+                    - max(run.bbox[0], previous.bbox[0]),
+                )
+                minimum_width = max(
+                    1.0,
+                    min(
+                        run.bbox[2] - run.bbox[0],
+                        previous.bbox[2] - previous.bbox[0],
+                    ),
+                )
+                aligned = left_match or overlap / minimum_width >= 0.2
+                if (
+                    new_row
+                    and -previous_height * 0.25 <= gap <= previous_height * 1.8
+                    and size_match
+                    and aligned
+                    and gap < best_gap
+                ):
+                    best_group = group
+                    best_gap = gap
+            if best_group is None:
+                groups.append([run])
+            else:
+                best_group.append(run)
+
+        merged: list[TextRun] = []
+        for group in groups:
+            if len(group) < 2 or any(
+                PdfEngine._looks_like_list_item(run.text) for run in group
+            ):
+                merged.extend(group)
+                continue
+            first = group[0]
+            merged.append(
+                replace(
+                    first,
+                    text="\n".join(run.text for run in group),
+                    bbox=(
+                        min(run.bbox[0] for run in group),
+                        min(run.bbox[1] for run in group),
+                        max(run.bbox[2] for run in group),
+                        max(run.bbox[3] for run in group),
+                    ),
+                    source_bboxes=tuple(
+                        bbox
+                        for run in group
+                        for bbox in (run.source_bboxes or (run.bbox,))
+                    ),
+                )
+            )
+        return sorted(
+            [*visible, *merged],
+            key=lambda item: (item.block_index, item.line_index, item.span_index),
+        )
+
+    @staticmethod
+    def _merge_paragraph_runs(runs: list[TextRun]) -> list[TextRun]:
+        """Merge conservative, uniformly styled PDF blocks into editable paragraphs."""
+
+        by_block: dict[int, list[TextRun]] = {}
+        for run in runs:
+            by_block.setdefault(run.block_index, []).append(run)
+        result: list[TextRun] = []
+        for block_runs in by_block.values():
+            ordered = sorted(
+                block_runs,
+                key=lambda item: (item.line_index, item.span_index),
+            )
+            line_indices = sorted({item.line_index for item in ordered})
+            first = ordered[0]
+            # OCR lines were grouped using their spatial layout above. A second
+            # paragraph pass can join unrelated columns and discard line breaks.
+            if any(item.is_ocr for item in ordered):
+                result.extend(ordered)
+                continue
+            horizontal = first.direction[0] > 0.999 and abs(first.direction[1]) < 0.001
+            uniform = all(
+                item.font_name == first.font_name
+                and abs(item.font_size - first.font_size) <= 0.35
+                and item.color == first.color
+                and item.flags == first.flags
+                and item.alpha == first.alpha
+                and abs(item.direction[0] - first.direction[0]) < 0.001
+                and abs(item.direction[1] - first.direction[1]) < 0.001
+                for item in ordered
+            )
+            line_groups = [
+                sorted(
+                    (item for item in ordered if item.line_index == line_index),
+                    key=lambda item: item.bbox[0],
+                )
+                for line_index in line_indices
+            ]
+            line_texts = [PdfEngine._joined_line_text(line) for line in line_groups]
+            list_like = any(
+                PdfEngine._looks_like_list_item(text)
+                for text in line_texts
+            )
+            table_like = any(
+                any(
+                    later.bbox[0] - earlier.bbox[2] > first.font_size * 1.5
+                    for earlier, later in zip(line, line[1:])
+                )
+                for line in line_groups
+            )
+            line_boxes = [
+                (
+                    min(item.bbox[0] for item in line),
+                    min(item.bbox[1] for item in line),
+                    max(item.bbox[2] for item in line),
+                    max(item.bbox[3] for item in line),
+                )
+                for line in line_groups
+            ]
+            spacing_ok = all(
+                -first.font_size * 0.25
+                <= later[1] - earlier[3]
+                <= first.font_size * 1.5
+                for earlier, later in zip(line_boxes, line_boxes[1:])
+            )
+            body_left = line_boxes[1][0] if len(line_boxes) > 1 else line_boxes[0][0]
+            alignment_ok = all(
+                abs(box[0] - body_left) <= first.font_size * 2.0
+                for box in line_boxes[1:]
+            )
+            if (
+                len(line_indices) < 2
+                or not horizontal
+                or not uniform
+                or list_like
+                or table_like
+                or not spacing_ok
+                or not alignment_ok
+            ):
+                result.extend(ordered)
+                continue
+            bbox = (
+                min(item.bbox[0] for item in ordered),
+                min(item.bbox[1] for item in ordered),
+                max(item.bbox[2] for item in ordered),
+                max(item.bbox[3] for item in ordered),
+            )
+            result.append(
+                replace(
+                    first,
+                    text=PdfEngine._joined_paragraph_text(line_texts),
+                    bbox=bbox,
+                    source_bboxes=tuple(item.bbox for item in ordered),
+                )
+            )
+        return sorted(result, key=lambda item: (item.block_index, item.line_index, item.span_index))
+
+    @staticmethod
+    def _joined_line_text(line: list[TextRun]) -> str:
+        text = ""
+        previous: TextRun | None = None
+        for run in line:
+            if (
+                previous is not None
+                and text
+                and not text[-1].isspace()
+                and run.text
+                and not run.text[0].isspace()
+                and run.bbox[0] - previous.bbox[2] > run.font_size * 0.12
+            ):
+                text += " "
+            text += run.text
+            previous = run
+        return text
+
+    @staticmethod
+    def _joined_paragraph_text(lines: list[str]) -> str:
+        result = ""
+        for line in lines:
+            value = line.strip()
+            if not value:
+                continue
+            if result.endswith(("-", "\u00ad")) and value[0].islower():
+                result = result[:-1] + value
+            else:
+                result = value if not result else f"{result} {value}"
+        return result
+
+    @staticmethod
+    def _looks_like_list_item(text: str) -> bool:
+        stripped = text.lstrip()
+        if stripped.startswith(("•", "◦", "▪", "- ", "– ", "— ")):
+            return True
+        head = stripped.split(" ", 1)[0]
+        return bool(head.rstrip(".)").isdigit() and head.endswith((".", ")")))
 
     def image_runs(self, page_index: int) -> list[ImageRun]:
         self._require_open()
@@ -747,15 +1096,26 @@ class PdfEngine:
             bbox = self._view_rect(page, info.get("bbox", (0, 0, 0, 0)))
             if bbox.is_empty:
                 continue
+            xref = int(info.get("xref", 0))
+            smask = masks.get(xref, 0)
+            # delete_image leaves an invisible 1-pixel placeholder in the PDF.
+            # Do not offer that placeholder as an editable original on reopen.
+            if (
+                int(info.get("width", 0)) == 1
+                and int(info.get("height", 0)) == 1
+                and smask > 0
+                and pymupdf.Pixmap(self._source, smask).samples == b"\0"
+            ):
+                continue
             runs.append(
                 ImageRun(
                     key=f"image:{page_index}:{occurrence}",
                     page_index=page_index,
                     bbox=(bbox.x0, bbox.y0, bbox.x1, bbox.y1),
-                    xref=int(info.get("xref", 0)),
+                    xref=xref,
                     width=int(info.get("width", 0)),
                     height=int(info.get("height", 0)),
-                    smask=masks.get(int(info.get("xref", 0)), 0),
+                    smask=smask,
                     rotation_degrees=(
                         self._image_rotation(info.get("transform"))
                         + float(page.rotation)
@@ -765,6 +1125,38 @@ class PdfEngine:
             )
         self._image_runs[page_index] = runs
         return runs
+
+    def validate_image_deletions(self, deleted_images: Iterable[ImageDeletion]) -> None:
+        """Prevent an image shared by other occurrences from being removed globally."""
+        deletions = tuple(deleted_images)
+        if not deletions:
+            return
+        selected = set()
+        for deletion in deletions:
+            run = deletion.run
+            if not 0 <= run.page_index < self.page_count or run not in self.image_runs(
+                run.page_index
+            ):
+                raise ImageDeletionError("missing", "The original image is no longer available.")
+            if run.xref <= 0:
+                raise ImageDeletionError(
+                    "inline", "This PDF contains an inline image that cannot be removed safely."
+                )
+            selected.add(run.key)
+
+        if self._image_occurrences is None:
+            occurrences: dict[int, set[str]] = {}
+            for page_index in range(self.page_count):
+                for run in self.image_runs(page_index):
+                    occurrences.setdefault(run.xref, set()).add(run.key)
+            self._image_occurrences = occurrences
+        for deletion in deletions:
+            if self._image_occurrences[deletion.run.xref] - selected:
+                raise ImageDeletionError(
+                    "shared",
+                    "This image is reused elsewhere in the PDF. Removing it would also "
+                    "erase other copies; individual removal is not supported yet."
+                )
 
     @staticmethod
     def _image_rotation(transform: object) -> float:
@@ -912,22 +1304,15 @@ class PdfEngine:
         inserted_texts: Iterable[TextPlacement] = (),
     ) -> pymupdf.Document:
         self._require_open()
+        deleted_images = tuple(deleted_images)
+        self.validate_image_deletions(deleted_images)
         document = pymupdf.open(stream=self._original_bytes, filetype="pdf")
-
-        deletion_groups: dict[int, list[ImageDeletion]] = {}
-        for deletion in deleted_images:
-            deletion_groups.setdefault(deletion.run.page_index, []).append(deletion)
-        for page_index, page_deletions in deletion_groups.items():
-            if not 0 <= page_index < document.page_count:
-                continue
-            page = document[page_index]
-            for deletion in page_deletions:
-                page.add_redact_annot(
-                    self._page_rect_from_view(page, deletion.run.bbox),
-                    fill=(1, 1, 1) if deletion.fill_removed_area else False,
-                    cross_out=False,
-                )
-            page.apply_redactions(images=1, graphics=0, text=1)
+        # Replacing the image object with a transparent pixel preserves text,
+        # vector artwork, and other images beneath its painted area. PyMuPDF's
+        # replacement affects every use of an xref, hence the validation above.
+        xref_pages = {deletion.run.xref: deletion.run.page_index for deletion in deleted_images}
+        for xref, page_index in xref_pages.items():
+            document[page_index].delete_image(xref)
 
         edit_groups: dict[int, list[TextEdit]] = {}
         for edit in edits:
@@ -941,11 +1326,22 @@ class PdfEngine:
                 run = edit.run
                 run_bbox = self._page_rect_from_view(page, run.bbox)
                 run_origin = self._mapped_point(page, run.origin, to_view=False)
+                source_bboxes = tuple(
+                    (
+                        mapped.x0,
+                        mapped.y0,
+                        mapped.x1,
+                        mapped.y1,
+                    )
+                    for bbox in run.source_bboxes
+                    for mapped in (self._page_rect_from_view(page, bbox),)
+                )
                 page_run = replace(
                     run,
                     bbox=(run_bbox.x0, run_bbox.y0, run_bbox.x1, run_bbox.y1),
                     origin=(run_origin.x, run_origin.y),
                     direction=self._mapped_direction(page, run.direction, to_view=False),
+                    source_bboxes=source_bboxes,
                 )
                 target_bbox = None
                 if edit.bbox is not None:
@@ -953,9 +1349,44 @@ class PdfEngine:
                     target_bbox = (target.x0, target.y0, target.x1, target.y1)
                 page_edit = replace(edit, run=page_run, bbox=target_bbox)
                 page_space_edits.append(page_edit)
-                rect = self._redaction_rect(page_run, page.cropbox)
-                page.add_redact_annot(rect, fill=(1, 1, 1), cross_out=False)
-            page.apply_redactions(images=0, graphics=0, text=0)
+                # Remove only the original text operators. A transparent
+                # redaction preserves vector fills and images behind the text
+                # instead of replacing colored backgrounds with a white box.
+                source_rects = page_run.source_bboxes or (page_run.bbox,)
+                if not page_run.is_ocr:
+                    for source_bbox in source_rects:
+                        rect = self._redaction_rect(
+                            replace(page_run, bbox=source_bbox),
+                            page.cropbox,
+                        )
+                        page.add_redact_annot(rect, fill=False, cross_out=False)
+            if any(not edit.run.is_ocr for edit in page_space_edits):
+                page.apply_redactions(images=0, graphics=0, text=0)
+
+            ocr_patches: list[tuple[pymupdf.Rect, bytes]] = []
+            for edit in page_space_edits:
+                page_run = edit.run
+                if not page_run.is_ocr:
+                    continue
+                for source_bbox in page_run.source_bboxes or (page_run.bbox,):
+                    rect = self._redaction_rect(
+                        replace(page_run, bbox=source_bbox),
+                        page.cropbox,
+                    )
+                    patch = self._ocr_scan_patch(page, rect)
+                    if patch is not None:
+                        ocr_patches.append(patch)
+                    page.add_redact_annot(rect, fill=False, cross_out=False)
+            if any(edit.run.is_ocr for edit in page_space_edits):
+                # Remove the invisible search layer without modifying the scan
+                # image. Overlay transparent, locally repaired pixels for the
+                # photographed lettering before inserting replacement text.
+                page.apply_redactions(images=0, graphics=0, text=0)
+                for patch_rect, patch_bytes in ocr_patches:
+                    page.insert_image(
+                        patch_rect, stream=patch_bytes, overlay=True,
+                        keep_proportion=False,
+                    )
 
             for ordinal, edit in enumerate(page_space_edits):
                 if edit.new_text:
@@ -1019,6 +1450,7 @@ class PdfEngine:
         inserted_images: Iterable[ImagePlacement] = (),
         deleted_images: Iterable[ImageDeletion] = (),
         inserted_texts: Iterable[TextPlacement] = (),
+        encryption_password: str | None = None,
     ) -> None:
         document = self.build_document(
             edits,
@@ -1028,6 +1460,18 @@ class PdfEngine:
             inserted_texts,
         )
         try:
+            encryption_options: dict[str, object] = {}
+            if encryption_password is not None:
+                if not encryption_password:
+                    raise ValueError("The PDF password cannot be empty.")
+                if len(encryption_password) > 40:
+                    raise ValueError("The PDF password cannot exceed 40 characters.")
+                encryption_options = {
+                    "encryption": pymupdf.PDF_ENCRYPT_AES_256,
+                    "owner_pw": secrets.token_urlsafe(30),
+                    "user_pw": encryption_password,
+                    "validation_password": encryption_password,
+                }
             self._save_document_atomic(
                 document,
                 path,
@@ -1042,6 +1486,7 @@ class PdfEngine:
                 deflate_images=True,
                 deflate_fonts=True,
                 use_objstms=1,
+                **encryption_options,
             )
         finally:
             document.close()
@@ -1111,6 +1556,292 @@ class PdfEngine:
         finally:
             document.close()
 
+    @staticmethod
+    def _document_mark_xrefs(document: pymupdf.Document) -> set[int]:
+        marked: set[int] = set()
+        for page in document:
+            for xref in page.get_contents() or ():
+                try:
+                    stream = document.xref_stream(int(xref))
+                except Exception:
+                    continue
+                if DOCUMENT_MARK_STREAM_PATTERN.search(stream):
+                    marked.add(int(xref))
+        return marked
+
+    @classmethod
+    def _remove_document_marks(cls, document: pymupdf.Document) -> int:
+        marked = cls._document_mark_xrefs(document)
+        for xref in marked:
+            stream = document.xref_stream(xref)
+            document.update_stream(
+                xref,
+                DOCUMENT_MARK_STREAM_PATTERN.sub(b"", stream),
+            )
+        return len(marked)
+
+    def has_document_marks(self) -> bool:
+        self._require_open()
+        return bool(self._document_mark_xrefs(self._source))
+
+    def bytes_without_document_marks(self) -> bytes:
+        """Remove page decorations previously created by Nettongia."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            self._remove_document_marks(document)
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    @staticmethod
+    def _mark_new_page_streams(
+        document: pymupdf.Document,
+        page: pymupdf.Page,
+        previous: set[int],
+    ) -> None:
+        for xref in set(int(item) for item in (page.get_contents() or ())) - previous:
+            stream = document.xref_stream(xref)
+            if not DOCUMENT_MARK_STREAM_PATTERN.search(stream):
+                document.update_stream(
+                    xref,
+                    DOCUMENT_MARK_STREAM_TAG + b"\n" + stream + b"\nEMC\n",
+                )
+
+    @staticmethod
+    def _expanded_document_mark_text(
+        text: str,
+        *,
+        page_number: int,
+        page_count: int,
+        title: str,
+    ) -> str:
+        values = {
+            "page": str(page_number),
+            "pages": str(page_count),
+            "date": date.today().isoformat(),
+            "title": title,
+        }
+        expanded = text
+        for token, value in values.items():
+            expanded = expanded.replace("{" + token + "}", value)
+        return expanded
+
+    @classmethod
+    def _insert_page_mark_text(
+        cls,
+        page: pymupdf.Page,
+        text: str,
+        view_rect: pymupdf.Rect,
+        *,
+        align: int,
+        spec: DocumentMarksSpec,
+    ) -> None:
+        if not text:
+            return
+        font_file = resolve_font(spec.font_family)
+        fallback = _builtin_pdf_font_name(spec.font_family, False, False)
+        simple = bool(font_file and _can_use_simple_font_encoding(text))
+        font_name = (
+            cls._font_resource_name(font_file, simple=simple)
+            if font_file
+            else fallback
+        )
+        page.insert_textbox(
+            cls._page_rect_from_view(page, view_rect),
+            text,
+            fontsize=float(spec.font_size),
+            fontname=font_name,
+            fontfile=font_file,
+            set_simple=int(simple),
+            color=cls._pdf_color(spec.color),
+            align=align,
+            rotate=int(page.rotation) % 360,
+            overlay=True,
+        )
+
+    @staticmethod
+    def _watermark_png(spec: DocumentMarksSpec, text: str) -> tuple[bytes, float, float]:
+        font_file = resolve_font(spec.font_family)
+        pixel_size = max(12, round(spec.watermark_font_size * 4.0))
+
+        def load_font(size: int):
+            try:
+                return (
+                    ImageFont.truetype(font_file, size)
+                    if font_file
+                    else ImageFont.truetype("DejaVuSans.ttf", size)
+                )
+            except (OSError, ValueError):
+                return ImageFont.load_default()
+
+        # A very long watermark at a large point size must not allocate an
+        # unbounded RGBA bitmap. Lower only its raster resolution; its PDF
+        # dimensions remain based on the requested point size below.
+        for _ in range(3):
+            font = load_font(pixel_size)
+            probe = Image.new("RGBA", (1, 1), (0, 0, 0, 0))
+            bounds = ImageDraw.Draw(probe).textbbox((0, 0), text, font=font)
+            width = max(1, bounds[2] - bounds[0])
+            height = max(1, bounds[3] - bounds[1])
+            padding = max(8, pixel_size // 10)
+            raster_width = width + padding * 2
+            raster_height = height + padding * 2
+            reduction = min(
+                1.0,
+                8192.0 / raster_width,
+                math.sqrt(8_000_000.0 / (raster_width * raster_height)),
+            )
+            if reduction >= 0.99 or pixel_size <= 12:
+                break
+            pixel_size = max(12, int(pixel_size * reduction * 0.96))
+        render_scale = pixel_size / float(spec.watermark_font_size)
+        image = Image.new(
+            "RGBA",
+            (width + padding * 2, height + padding * 2),
+            (0, 0, 0, 0),
+        )
+        alpha = max(1, min(255, round(spec.watermark_opacity * 255)))
+        color = (
+            (spec.watermark_color >> 16) & 255,
+            (spec.watermark_color >> 8) & 255,
+            spec.watermark_color & 255,
+            alpha,
+        )
+        ImageDraw.Draw(image).text(
+            (padding - bounds[0], padding - bounds[1]),
+            text,
+            font=font,
+            fill=color,
+        )
+        output = BytesIO()
+        image.save(output, format="PNG", optimize=True)
+        return (
+            output.getvalue(),
+            image.width / render_scale,
+            image.height / render_scale,
+        )
+
+    def bytes_with_document_marks(self, spec: DocumentMarksSpec) -> bytes:
+        """Replace Nettongia headers, footers and watermark in the PDF."""
+
+        texts = (
+            spec.header_left,
+            spec.header_center,
+            spec.header_right,
+            spec.footer_left,
+            spec.footer_center,
+            spec.footer_right,
+            spec.watermark_text,
+        )
+        if not any(value.strip() for value in texts):
+            raise ValueError("Enter header, footer, or watermark text.")
+        if any(len(value) > 1000 for value in texts[:6]) or len(texts[6]) > 250:
+            raise ValueError("Document mark text is too long.")
+        if spec.page_mode not in {"all", "odd", "even"}:
+            raise ValueError("The page selection is invalid.")
+        if not 4.0 <= spec.font_size <= 36.0:
+            raise ValueError("Header and footer font size must be between 4 and 36 points.")
+        if not 8.0 <= spec.watermark_font_size <= 240.0:
+            raise ValueError("Watermark font size must be between 8 and 240 points.")
+        if not 0.01 <= spec.watermark_opacity <= 1.0:
+            raise ValueError("Watermark opacity must be between 1 and 100 percent.")
+        if not 0.0 <= spec.margin <= 144.0:
+            raise ValueError("The page margin is invalid.")
+        if not 0 <= spec.color <= 0xFFFFFF or not 0 <= spec.watermark_color <= 0xFFFFFF:
+            raise ValueError("The selected color is invalid.")
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            if self._remove_document_marks(document):
+                # Reopen the cleaned document before inserting replacements.
+                # MuPDF may otherwise retain the old merged content stream in
+                # the page cache and discard newly appended operators.
+                cleaned = self._serialize(document)
+                document.close()
+                document = pymupdf.open(stream=cleaned, filetype="pdf")
+            metadata = document.metadata or {}
+            title = spec.document_title.strip() or str(metadata.get("title") or "")
+            page_count = document.page_count
+            for page_index, page in enumerate(document):
+                page_number = page_index + 1
+                if spec.skip_first_page and page_index == 0:
+                    continue
+                if spec.page_mode == "odd" and page_number % 2 == 0:
+                    continue
+                if spec.page_mode == "even" and page_number % 2 == 1:
+                    continue
+                previous = set(int(item) for item in (page.get_contents() or ()))
+                expanded = [
+                    self._expanded_document_mark_text(
+                        value.strip(),
+                        page_number=page_number,
+                        page_count=page_count,
+                        title=title,
+                    )
+                    for value in texts
+                ]
+                visible = page.rect
+                margin = min(float(spec.margin), visible.width / 4, visible.height / 4)
+                third = max(1.0, (visible.width - margin * 2) / 3.0)
+                line_height = max(12.0, float(spec.font_size) * 1.55)
+                header_top = margin
+                footer_bottom = visible.height - margin
+                for column, align in enumerate(
+                    (pymupdf.TEXT_ALIGN_LEFT, pymupdf.TEXT_ALIGN_CENTER, pymupdf.TEXT_ALIGN_RIGHT)
+                ):
+                    x0 = margin + column * third
+                    x1 = margin + (column + 1) * third
+                    self._insert_page_mark_text(
+                        page,
+                        expanded[column],
+                        pymupdf.Rect(x0, header_top, x1, header_top + line_height),
+                        align=align,
+                        spec=spec,
+                    )
+                    self._insert_page_mark_text(
+                        page,
+                        expanded[column + 3],
+                        pymupdf.Rect(x0, footer_bottom - line_height, x1, footer_bottom),
+                        align=align,
+                        spec=spec,
+                    )
+                watermark = expanded[6]
+                if watermark:
+                    payload, width, height = self._watermark_png(spec, watermark)
+                    available_width = visible.width * 0.82
+                    available_height = visible.height * 0.55
+                    fit = min(1.0, available_width / width, available_height / height)
+                    width *= fit
+                    height *= fit
+                    radians = math.radians(spec.watermark_rotation)
+                    outer_width = abs(width * math.cos(radians)) + abs(height * math.sin(radians))
+                    outer_height = abs(width * math.sin(radians)) + abs(height * math.cos(radians))
+                    center = pymupdf.Point(
+                        (visible.x0 + visible.x1) / 2,
+                        (visible.y0 + visible.y1) / 2,
+                    )
+                    bbox = (
+                        center.x - outer_width / 2,
+                        center.y - outer_height / 2,
+                        center.x + outer_width / 2,
+                        center.y + outer_height / 2,
+                    )
+                    self._insert_visual(
+                        document,
+                        page_index,
+                        bbox,
+                        payload,
+                        overlay=bool(spec.watermark_overlay),
+                        rotation_degrees=float(spec.watermark_rotation),
+                    )
+                self._mark_new_page_streams(
+                    document, document[page_index], previous
+                )
+            return self._serialize(document)
+        finally:
+            document.close()
+
     def bytes_with_blank_page(self, after_page: int) -> bytes:
         document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
         try:
@@ -1125,6 +1856,7 @@ class PdfEngine:
         after_page: int,
         source_path: str | Path,
         password: str | None = None,
+        page_spec: str | None = None,
     ) -> tuple[bytes, int]:
         document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
         source = pymupdf.open(str(source_path))
@@ -1136,12 +1868,108 @@ class PdfEngine:
                     )
                 if not source.authenticate(password):
                     raise PdfInvalidPasswordError("The PDF password is incorrect.")
+            if page_spec is not None:
+                pages = self.parse_page_selection(page_spec, source.page_count)
+                source.select(pages)
             count = source.page_count
             document.insert_pdf(source, start_at=after_page + 1)
             return self._serialize(document), count
         finally:
             source.close()
             document.close()
+
+    @staticmethod
+    def parse_page_selection(spec: str, page_count: int) -> list[int]:
+        """Parse one-based comma separated pages and inclusive ranges in document order."""
+        if page_count < 1 or not spec.strip():
+            raise ValueError("Enter a page number or range, for example 1,3-5.")
+        pages: set[int] = set()
+        for part in spec.split(","):
+            bounds = part.strip().split("-")
+            if len(bounds) > 2 or not bounds[0].strip().isdigit() or (
+                len(bounds) == 2 and bounds[1].strip() and not bounds[1].strip().isdigit()
+            ):
+                raise ValueError("Invalid page range. Use numbers such as 1,3-5 or 1-.")
+            first = int(bounds[0].strip())
+            last = (
+                int(bounds[1].strip()) if bounds[1].strip() else page_count
+            ) if len(bounds) == 2 else first
+            if first < 1 or last > page_count or first > last:
+                raise ValueError(
+                    f"Page range must be within 1-{page_count} and in ascending order."
+                )
+            pages.update(range(first - 1, last))
+        return sorted(pages)
+
+    def save_page_selection(
+        self,
+        path: str | Path,
+        pages: list[int],
+        edits: Iterable[TextEdit] = (),
+        signatures: Iterable[SignaturePlacement] = (),
+        inserted_images: Iterable[ImagePlacement] = (),
+        deleted_images: Iterable[ImageDeletion] = (),
+        inserted_texts: Iterable[TextPlacement] = (),
+    ) -> None:
+        if not pages or len(set(pages)) != len(pages) or any(
+            page < 0 or page >= self.page_count for page in pages
+        ):
+            raise ValueError("Select at least one valid page without duplicates.")
+        document = self.build_document(
+            edits, signatures, inserted_images, deleted_images, inserted_texts
+        )
+        try:
+            document.select(pages)
+            self._save_document_atomic(
+                document, path, garbage=2, deflate=True, use_objstms=1
+            )
+        finally:
+            document.close()
+
+    def save_page_groups(
+        self,
+        groups: list[tuple[Path, list[int]]],
+        edits: Iterable[TextEdit] = (),
+        signatures: Iterable[SignaturePlacement] = (),
+        inserted_images: Iterable[ImagePlacement] = (),
+        deleted_images: Iterable[ImageDeletion] = (),
+        inserted_texts: Iterable[TextPlacement] = (),
+    ) -> None:
+        """Compose pending edits once before writing several independent parts."""
+        if not groups or any(
+            not pages or len(set(pages)) != len(pages)
+            or any(page < 0 or page >= self.page_count for page in pages)
+            for _, pages in groups
+        ):
+            raise ValueError("Select at least one valid page per part.")
+        targets = [target.resolve() for target, _ in groups]
+        if len(set(targets)) != len(targets) or any(
+            target.exists() for target in targets
+        ):
+            raise FileExistsError("An output file already exists or a filename is duplicated.")
+        composed = self.build_document(
+            edits, signatures, inserted_images, deleted_images, inserted_texts
+        )
+        try:
+            payload = composed.tobytes(garbage=2, deflate=True, use_objstms=1)
+        finally:
+            composed.close()
+        created: list[Path] = []
+        try:
+            for target, pages in groups:
+                part = pymupdf.open(stream=payload, filetype="pdf")
+                try:
+                    part.select(pages)
+                    self._save_document_atomic(
+                        part, target, garbage=2, deflate=True, use_objstms=1
+                    )
+                    created.append(target)
+                finally:
+                    part.close()
+        except Exception:
+            for target in created:
+                target.unlink(missing_ok=True)
+            raise
 
     def bytes_without_page(self, page_index: int) -> bytes:
         if self.page_count <= 1:
@@ -1205,6 +2033,351 @@ class PdfEngine:
         finally:
             document.close()
 
+    def bytes_with_pages_cropped(
+        self,
+        page_indices: Iterable[int],
+        margins: tuple[float, float, float, float],
+    ) -> bytes:
+        """Inset selected page CropBoxes by visible left, top, right and bottom margins.
+
+        Cropping is intentionally non-destructive: content outside the new CropBox
+        remains in the PDF and can be restored with Undo before saving.  Margins are
+        expressed in points in the page's displayed orientation, so a rotated page
+        behaves exactly as it appears on screen.
+        """
+
+        pages = sorted(set(int(index) for index in page_indices))
+        if not pages or any(index < 0 or index >= self.page_count for index in pages):
+            raise ValueError("Select at least one valid page to crop.")
+        try:
+            left, top, right, bottom = (float(value) for value in margins)
+        except (TypeError, ValueError):
+            raise ValueError("Crop margins must be valid numbers.") from None
+        if any(not math.isfinite(value) or value < 0 for value in (left, top, right, bottom)):
+            raise ValueError("Crop margins cannot be negative.")
+        if not any(value > 0 for value in (left, top, right, bottom)):
+            raise ValueError("Enter at least one crop margin.")
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            for page_index in pages:
+                page = document[page_index]
+                visible = page.rect
+                remaining_width = float(visible.width) - left - right
+                remaining_height = float(visible.height) - top - bottom
+                if remaining_width < 36.0 or remaining_height < 36.0:
+                    raise ValueError(
+                        f"Crop margins leave page {page_index + 1} smaller than 12.7 mm."
+                    )
+
+                # Page.derotation_matrix maps the normalized, displayed page
+                # rectangle into coordinates relative to the current CropBox.
+                # Translate that local rectangle back into MediaBox coordinates
+                # before assigning the next CropBox. This also supports PDFs that
+                # were already cropped before opening them in Nettongia.
+                view_rect = pymupdf.Rect(
+                    left,
+                    top,
+                    float(visible.width) - right,
+                    float(visible.height) - bottom,
+                )
+                local_rect = view_rect * page.derotation_matrix
+                current = page.cropbox
+                cropped = pymupdf.Rect(
+                    current.x0 + local_rect.x0,
+                    current.y0 + local_rect.y0,
+                    current.x0 + local_rect.x1,
+                    current.y0 + local_rect.y1,
+                )
+                page.set_cropbox(cropped)
+            return document.tobytes(
+                garbage=2,
+                clean=False,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+                use_objstms=1,
+            )
+        finally:
+            document.close()
+
+    @staticmethod
+    def _pdf_matrix_text(matrix: pymupdf.Matrix) -> str:
+        return " ".join(
+            f"{value:.9g}"
+            for value in (
+                matrix.a,
+                matrix.b,
+                matrix.c,
+                matrix.d,
+                matrix.e,
+                matrix.f,
+            )
+        )
+
+    @classmethod
+    def _wrap_page_contents_with_matrix(
+        cls,
+        document: pymupdf.Document,
+        page: pymupdf.Page,
+        matrix: pymupdf.Matrix,
+    ) -> None:
+        """Transform one page without mutating content streams shared by other pages."""
+
+        contents = [int(xref) for xref in (page.get_contents() or ())]
+        prefix = document.get_new_xref()
+        document.update_object(prefix, "<<>>")
+        document.update_stream(
+            prefix,
+            f"q\n{cls._pdf_matrix_text(matrix)} cm\n".encode("ascii"),
+        )
+        suffix = document.get_new_xref()
+        document.update_object(suffix, "<<>>")
+        document.update_stream(suffix, b"\nQ\n")
+        references = [prefix, *contents, suffix]
+        document.xref_set_key(
+            page.xref,
+            "Contents",
+            "[" + " ".join(f"{xref} 0 R" for xref in references) + "]",
+        )
+
+    @classmethod
+    def _transform_pdf_coordinate_array(
+        cls,
+        document: pymupdf.Document,
+        xref: int,
+        key: str,
+        matrix: pymupdf.Matrix,
+        *,
+        rectangle: bool = False,
+    ) -> bool:
+        value_type, raw_value = document.xref_get_key(xref, key)
+        if value_type != "array":
+            return False
+        numbers = [
+            float(value)
+            for value in re.findall(
+                r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?",
+                raw_value,
+            )
+        ]
+        if len(numbers) < 4 or len(numbers) % 2:
+            return False
+        points = [
+            pymupdf.Point(numbers[index], numbers[index + 1]) * matrix
+            for index in range(0, len(numbers), 2)
+        ]
+        if rectangle:
+            xs = [point.x for point in points]
+            ys = [point.y for point in points]
+            values = (min(xs), min(ys), max(xs), max(ys))
+        else:
+            values = tuple(
+                coordinate
+                for point in points
+                for coordinate in (point.x, point.y)
+            )
+        document.xref_set_key(
+            xref,
+            key,
+            "[" + " ".join(f"{value:.9g}" for value in values) + "]",
+        )
+        return True
+
+    @classmethod
+    def _transform_annotation_geometry(
+        cls,
+        document: pymupdf.Document,
+        xref: int,
+        matrix: pymupdf.Matrix,
+    ) -> None:
+        cls._transform_pdf_coordinate_array(
+            document, xref, "Rect", matrix, rectangle=True
+        )
+        for key in ("QuadPoints", "Vertices", "L", "CL"):
+            cls._transform_pdf_coordinate_array(document, xref, key, matrix)
+        ink_type, ink_value = document.xref_get_key(xref, "InkList")
+        if ink_type == "array":
+            strokes: list[str] = []
+            for raw_stroke in re.findall(r"\[([^\[\]]+)\]", ink_value):
+                numbers = [
+                    float(value)
+                    for value in re.findall(
+                        r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[Ee][-+]?\d+)?",
+                        raw_stroke,
+                    )
+                ]
+                if len(numbers) < 4 or len(numbers) % 2:
+                    continue
+                points = [
+                    pymupdf.Point(numbers[index], numbers[index + 1]) * matrix
+                    for index in range(0, len(numbers), 2)
+                ]
+                strokes.append(
+                    "["
+                    + " ".join(
+                        f"{coordinate:.9g}"
+                        for point in points
+                        for coordinate in (point.x, point.y)
+                    )
+                    + "]"
+                )
+            if strokes:
+                document.xref_set_key(xref, "InkList", "[" + " ".join(strokes) + "]")
+        popup_type, popup_value = document.xref_get_key(xref, "Popup")
+        if popup_type == "xref":
+            try:
+                popup_xref = int(popup_value.split()[0])
+            except (TypeError, ValueError, IndexError):
+                popup_xref = 0
+            if popup_xref > 0:
+                cls._transform_pdf_coordinate_array(
+                    document, popup_xref, "Rect", matrix, rectangle=True
+                )
+
+    def bytes_with_pages_resized(
+        self,
+        page_indices: Iterable[int],
+        target_width: float,
+        target_height: float,
+        mode: str = "fit",
+    ) -> bytes:
+        """Resize selected pages and optionally scale their visible content.
+
+        ``fit`` scales content proportionally to fit and centres it. ``canvas``
+        preserves its visual size and only changes the centred page canvas.
+        Existing page rotation is baked into the transformed content so the
+        displayed orientation remains unchanged while the new physical page size
+        has an unambiguous width and height.
+        """
+
+        pages = sorted(set(int(index) for index in page_indices))
+        if not pages or any(index < 0 or index >= self.page_count for index in pages):
+            raise ValueError("Select at least one valid page to resize.")
+        try:
+            width = float(target_width)
+            height = float(target_height)
+        except (TypeError, ValueError):
+            raise ValueError("Page dimensions must be valid numbers.") from None
+        if (
+            not math.isfinite(width)
+            or not math.isfinite(height)
+            or width < 36.0
+            or height < 36.0
+            or width > 14_400.0
+            or height > 14_400.0
+        ):
+            raise ValueError("Page dimensions must be between 12.7 and 5080 mm.")
+        if mode not in {"fit", "canvas"}:
+            raise ValueError("Unknown page resize mode.")
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        page_set = set(pages)
+        # Link rectangles belong to their source pages, while internal target
+        # points belong to destination pages. Capture both before geometry changes.
+        page_links = [page.get_links() for page in document]
+        table_of_contents = document.get_toc(simple=False)
+        transformations: dict[int, tuple[pymupdf.Matrix, pymupdf.Matrix]] = {}
+        try:
+            for page_index in pages:
+                page = document[page_index]
+                old_width = float(page.rect.width)
+                old_height = float(page.rect.height)
+                if old_width <= 0 or old_height <= 0:
+                    raise ValueError(f"Page {page_index + 1} has invalid dimensions.")
+                scale = (
+                    min(width / old_width, height / old_height)
+                    if mode == "fit"
+                    else 1.0
+                )
+                offset_x = (width - old_width * scale) / 2.0
+                offset_y = (height - old_height * scale) / 2.0
+                visible_transform = pymupdf.Matrix(
+                    scale, 0.0, 0.0, scale, offset_x, offset_y
+                )
+                old_rotation = pymupdf.Matrix(page.rotation_matrix)
+                old_pdf_to_view = pymupdf.Matrix(page.transformation_matrix) * old_rotation
+                new_pdf_to_view = pymupdf.Matrix(1.0, 0.0, 0.0, -1.0, 0.0, height)
+                content_transform = (
+                    old_pdf_to_view * visible_transform * ~new_pdf_to_view
+                )
+                transformations[page_index] = (old_rotation, visible_transform)
+
+                annotation_xrefs = [
+                    annotation.xref for annotation in (page.annots() or ())
+                ]
+                widget_xrefs = [widget.xref for widget in (page.widgets() or ())]
+                for xref in (*annotation_xrefs, *widget_xrefs):
+                    self._transform_annotation_geometry(
+                        document, xref, content_transform
+                    )
+                self._wrap_page_contents_with_matrix(
+                    document, page, content_transform
+                )
+                page.set_rotation(0)
+                document.xref_set_key(page.xref, "UserUnit", "1")
+                target_box = pymupdf.Rect(0.0, 0.0, width, height)
+                page.set_mediabox(target_box)
+                page.set_cropbox(target_box)
+
+                for xref in annotation_xrefs:
+                    annotation = page.load_annot(xref)
+                    if annotation is None:
+                        continue
+                    annotation.update()
+                for xref in widget_xrefs:
+                    widget = page.load_widget(xref)
+                    if widget is None:
+                        continue
+                    widget.update()
+
+            for source_index, links in enumerate(page_links):
+                page = document[source_index]
+                for link in links:
+                    changed = False
+                    if source_index in page_set and link.get("from") is not None:
+                        rotation, transform = transformations[source_index]
+                        link["from"] = pymupdf.Rect(link["from"]) * rotation * transform
+                        changed = True
+                    destination_value = link.get("page", -1)
+                    destination = (
+                        int(destination_value)
+                        if isinstance(destination_value, (int, float))
+                        else -1
+                    )
+                    target = link.get("to")
+                    if destination in page_set and target is not None:
+                        rotation, transform = transformations[destination]
+                        link["to"] = pymupdf.Point(target) * rotation * transform
+                        changed = True
+                    if changed and int(link.get("xref", 0)) > 0:
+                        page.update_link(link)
+
+            toc_changed = False
+            for entry in table_of_contents:
+                if len(entry) < 4 or not isinstance(entry[3], dict):
+                    continue
+                destination = int(entry[2]) - 1
+                target = entry[3].get("to")
+                if destination not in page_set or target is None:
+                    continue
+                rotation, transform = transformations[destination]
+                entry[3]["to"] = pymupdf.Point(target) * rotation * transform
+                toc_changed = True
+            if toc_changed:
+                document.set_toc(table_of_contents)
+
+            return document.tobytes(
+                garbage=2,
+                clean=False,
+                deflate=True,
+                deflate_images=True,
+                deflate_fonts=True,
+                use_objstms=1,
+            )
+        finally:
+            document.close()
+
     def bytes_with_text_comment(
         self,
         page_index: int,
@@ -1245,31 +2418,60 @@ class PdfEngine:
     ) -> bytes:
         """Return a PDF containing a native yellow highlight annotation."""
 
+        return self.bytes_with_text_markup(
+            page_index, bbox, "highlight", content=content, author=author
+        )
+
+    def bytes_with_text_markup(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float],
+        style: str,
+        *,
+        content: str = "",
+        author: str = "",
+        line_bboxes: Iterable[tuple[float, float, float, float]] | None = None,
+    ) -> bytes:
+        """Create a native text markup annotation in visible page coordinates."""
+
         if not 0 <= page_index < self.page_count:
             raise IndexError("The page is unavailable.")
+        if style not in {"highlight", "underline", "strikeout"}:
+            raise ValueError("Unsupported text markup style.")
         document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
         try:
             page = document[page_index]
-            view_rect = pymupdf.Rect(bbox) & page.rect
-            if view_rect.is_empty or view_rect.width < 0.5 or view_rect.height < 0.5:
+            quads = []
+            for box in tuple(line_bboxes) if line_bboxes is not None else (bbox,):
+                view_rect = pymupdf.Rect(box) & page.rect
+                if view_rect.is_empty or view_rect.width < 0.5 or view_rect.height < 0.5:
+                    raise ValueError("The selected text area is unavailable.")
+                # Preserve corner order on rotated pages and individual
+                # baselines on multi-line paragraphs.
+                quads.append(pymupdf.Quad(
+                    self._mapped_point(page, view_rect.top_left, to_view=False),
+                    self._mapped_point(page, view_rect.top_right, to_view=False),
+                    self._mapped_point(page, view_rect.bottom_left, to_view=False),
+                    self._mapped_point(page, view_rect.bottom_right, to_view=False),
+                ))
+            if not quads:
                 raise ValueError("The selected text area is unavailable.")
-            # A plain Rect loses the text-baseline direction on rotated pages.
-            # Preserve the visible corner order in an explicit Quad so the
-            # highlight remains horizontal to the user.
-            quad = pymupdf.Quad(
-                self._mapped_point(page, view_rect.top_left, to_view=False),
-                self._mapped_point(page, view_rect.top_right, to_view=False),
-                self._mapped_point(page, view_rect.bottom_left, to_view=False),
-                self._mapped_point(page, view_rect.bottom_right, to_view=False),
-            )
-            annotation = page.add_highlight_annot(quad)
+            annotation = {
+                "highlight": page.add_highlight_annot,
+                "underline": page.add_underline_annot,
+                "strikeout": page.add_strikeout_annot,
+            }[style](quads)
             annotation.set_info(
                 title=author.strip(),
                 content=content.strip(),
-                subject="Nettongia highlight",
+                subject=f"Nettongia {style}",
             )
-            annotation.set_colors(stroke=(1.0, 0.82, 0.0))
-            annotation.update(opacity=0.45)
+            annotation.set_colors(stroke={
+                "highlight": (1.0, 0.82, 0.0),
+                "underline": (0.10, 0.42, 0.85),
+                "strikeout": (0.85, 0.16, 0.19),
+            }[style])
+            annotation.update(opacity=0.45 if style == "highlight" else 1.0)
             return self._serialize(document)
         finally:
             document.close()
@@ -1380,6 +2582,8 @@ class PdfEngine:
     def _save_document_atomic(
         document: pymupdf.Document,
         path: str | Path,
+        *,
+        validation_password: str | None = None,
         **save_options: object,
     ) -> None:
         """Save through a sibling temporary file and replace the target.
@@ -1403,6 +2607,7 @@ class PdfEngine:
             PdfEngine._validate_saved_pdf(
                 temporary_path,
                 expected_page_count=document.page_count,
+                password=validation_password,
             )
             if target.exists():
                 try:
@@ -1418,11 +2623,20 @@ class PdfEngine:
             raise
 
     @staticmethod
-    def _validate_saved_pdf(path: str | Path, *, expected_page_count: int) -> None:
+    def _validate_saved_pdf(
+        path: str | Path,
+        *,
+        expected_page_count: int,
+        password: str | None = None,
+    ) -> None:
         """Reopen and render representative pages before publishing a save."""
 
         verification = pymupdf.open(path)
         try:
+            if verification.needs_pass and (
+                password is None or not verification.authenticate(password)
+            ):
+                raise ValueError("The saved PDF could not be unlocked for validation.")
             if verification.page_count != expected_page_count or verification.page_count < 1:
                 raise ValueError("The saved PDF has an unexpected page count.")
             for page_index in dict.fromkeys(
@@ -1510,6 +2724,68 @@ class PdfEngine:
         )
 
     @staticmethod
+    def wrapped_text_height(
+        text: str,
+        width: float,
+        font_family: str,
+        font_size: float,
+        bold: bool = False,
+        italic: bool = False,
+    ) -> float:
+        """Return a conservative textbox height using the PDF font metrics."""
+
+        size = max(3.0, float(font_size))
+        usable_width = max(1.0, float(width) - 1.0)
+        font_file = resolve_font(font_family, bold, italic)
+        fallback = _builtin_pdf_font_name(font_family, bold, italic)
+        try:
+            font = (
+                pymupdf.Font(fontfile=font_file)
+                if font_file
+                else pymupdf.Font(fallback)
+            )
+        except Exception:
+            font = pymupdf.Font("helv")
+
+        lines = PdfEngine._wrapped_text_lines(text, usable_width, font, size)
+        return max(1, len(lines)) * size * 1.15 + 5.0
+
+    @staticmethod
+    def _wrapped_text_lines(
+        text: str,
+        width: float,
+        font: pymupdf.Font,
+        font_size: float,
+    ) -> list[str]:
+        """Wrap text with the same font metrics used for PDF composition."""
+
+        def length(value: str) -> float:
+            return float(font.text_length(value, fontsize=font_size))
+
+        lines: list[str] = []
+        for paragraph in text.split("\n"):
+            if not paragraph:
+                lines.append("")
+                continue
+            current = ""
+            for word in paragraph.split(" "):
+                candidate = word if not current else f"{current} {word}"
+                if current and length(candidate) > width:
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+                while current and length(current) > width:
+                    split_at = len(current) - 1
+                    while split_at > 1 and length(current[:split_at]) > width:
+                        split_at -= 1
+                    lines.append(current[:split_at])
+                    current = current[split_at:]
+            if current:
+                lines.append(current)
+        return lines or [""]
+
+    @staticmethod
     def _redaction_rect(run: TextRun, page_rect: pymupdf.Rect) -> pymupdf.Rect:
         rect = pymupdf.Rect(run.bbox)
         rect.x0 = max(page_rect.x0, rect.x0 - 0.35)
@@ -1517,6 +2793,88 @@ class PdfEngine:
         rect.x1 = min(page_rect.x1, rect.x1 + 0.35)
         rect.y1 = min(page_rect.y1, rect.y1 + 0.35)
         return rect
+
+    @staticmethod
+    def _ocr_scan_patch(
+        page: pymupdf.Page, source_rect: pymupdf.Rect
+    ) -> tuple[pymupdf.Rect, bytes] | None:
+        """Repair recognized ink locally without changing the original image.
+
+        The transparent overlay only covers pixels that differ substantially
+        from the estimated background. Unrecognized texture is left alone.
+        """
+
+        rect = pymupdf.Rect(source_rect) & page.rect
+        if rect.is_empty:
+            return None
+        margin = 14.0
+        clip = pymupdf.Rect(
+            rect.x0 - margin, rect.y0 - margin,
+            rect.x1 + margin, rect.y1 + margin,
+        ) & page.rect
+        # Bound the memory and CPU cost for unexpectedly large OCR blocks.
+        scale = min(2.0, math.sqrt(900_000 / max(1.0, clip.width * clip.height)))
+        scale = max(0.5, scale)
+        pixmap = page.get_pixmap(
+            matrix=pymupdf.Matrix(scale, scale), clip=clip,
+            alpha=False, annots=False,
+        )
+        if pixmap.width < 2 or pixmap.height < 2:
+            return None
+        image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
+        pixels = image.load()
+        overlay = Image.new("RGBA", image.size)
+        repaired = overlay.load()
+        changed = False
+        x0 = max(0, math.ceil(rect.x0 * scale - pixmap.x))
+        x1 = min(pixmap.width, math.ceil(rect.x1 * scale - pixmap.x))
+        y0 = max(0, math.ceil(rect.y0 * scale - pixmap.y))
+        y1 = min(pixmap.height, math.ceil(rect.y1 * scale - pixmap.y))
+        if x1 <= x0 or y1 <= y0:
+            return None
+
+        upper = max(0, y0 - 1 - round(margin * scale * 0.7))
+        lower = min(pixmap.height - 1, y1 + round(margin * scale * 0.7))
+        left = max(0, x0 - 1 - round(margin * scale * 0.7))
+        right = min(pixmap.width - 1, x1 + round(margin * scale * 0.7))
+        for y in range(y0, y1):
+            vertical_weight = (y - upper) / max(1, lower - upper)
+            for x in range(x0, x1):
+                horizontal_weight = (x - left) / max(1, right - left)
+                top, bottom = pixels[x, upper], pixels[x, lower]
+                side_left, side_right = pixels[left, y], pixels[right, y]
+                vertical = tuple(
+                    top[c] * (1 - vertical_weight) + bottom[c] * vertical_weight
+                    for c in range(3)
+                )
+                horizontal = tuple(
+                    side_left[c] * (1 - horizontal_weight)
+                    + side_right[c] * horizontal_weight
+                    for c in range(3)
+                )
+                # Prefer samples along the long edge of a text line: its top
+                # and bottom normally contain fewer neighboring letters.
+                background = tuple(round(value) for value in vertical)
+                if max(abs(top[c] - bottom[c]) for c in range(3)) > 45:
+                    # A border can itself cross printed artwork; in that
+                    # case use the perpendicular estimate as a fallback.
+                    background = tuple(round(value) for value in horizontal)
+                original = pixels[x, y]
+                if max(abs(original[c] - background[c]) for c in range(3)) >= 30:
+                    repaired[x, y] = (*background, 255)
+                    changed = True
+
+        if not changed:
+            return None
+
+        output = BytesIO()
+        overlay.save(output, format="PNG")
+        patch_rect = pymupdf.Rect(
+            pixmap.x / scale, pixmap.y / scale,
+            (pixmap.x + pixmap.width) / scale,
+            (pixmap.y + pixmap.height) / scale,
+        )
+        return patch_rect, output.getvalue()
 
     def _insert_edit(self, page: pymupdf.Page, edit: TextEdit, ordinal: int) -> None:
         run = edit.run
@@ -1550,7 +2908,13 @@ class PdfEngine:
                 )
                 if edit.fit_to_width:
                     available = self._text_axis_extent(target_bbox, direction)
-                    if text_width > available:
+                    can_wrap = (
+                        edit.wrap_text
+                        and direction[0] > 0.999
+                        and abs(direction[1]) < 0.001
+                        and text_width > available
+                    )
+                    if text_width > available and not can_wrap:
                         font_size = max(3.0, font_size * available / text_width)
                         text_width = max(
                             (font.text_length(line, fontsize=font_size) for line in lines),
@@ -1569,7 +2933,13 @@ class PdfEngine:
             )
             if edit.fit_to_width:
                 available = self._text_axis_extent(target_bbox, direction)
-                if text_width > available:
+                can_wrap = (
+                    edit.wrap_text
+                    and direction[0] > 0.999
+                    and abs(direction[1]) < 0.001
+                    and text_width > available
+                )
+                if text_width > available and not can_wrap:
                     font_size = max(3.0, font_size * available / text_width)
                     text_width = max(
                         (
@@ -1590,19 +2960,65 @@ class PdfEngine:
         morph = None
         if abs(normalized_angle) >= 0.001:
             morph = (insertion_point, pymupdf.Matrix(normalized_angle))
-        page.insert_text(
-            insertion_point,
-            lines if len(lines) > 1 else edit.new_text,
-            fontsize=font_size,
-            lineheight=1.15,
-            fontname=font_name,
-            fontfile=font_file,
-            set_simple=int(simple_font),
-            color=color,
-            morph=morph,
-            overlay=True,
+        wrapped = bool(
+            edit.wrap_text
+            and direction[0] > 0.999
+            and abs(direction[1]) < 0.001
+            and text_width > self._text_axis_extent(target_bbox, direction)
         )
+        if wrapped:
+            attempted_size = font_size
+            remaining = -1.0
+            while attempted_size >= 3.0:
+                remaining = page.insert_textbox(
+                    pymupdf.Rect(target_bbox),
+                    edit.new_text,
+                    fontsize=attempted_size,
+                    lineheight=1.15,
+                    fontname=font_name,
+                    fontfile=font_file,
+                    set_simple=int(simple_font),
+                    color=color,
+                    align=pymupdf.TEXT_ALIGN_LEFT,
+                    overlay=True,
+                )
+                if remaining >= 0:
+                    font_size = attempted_size
+                    break
+                if attempted_size <= 3.0:
+                    break
+                attempted_size = max(3.0, attempted_size * 0.88)
+            if remaining < 0:
+                wrapped = False
+        if not wrapped:
+            page.insert_text(
+                insertion_point,
+                lines if len(lines) > 1 else edit.new_text,
+                fontsize=font_size,
+                lineheight=1.15,
+                fontname=font_name,
+                fontfile=font_file,
+                set_simple=int(simple_font),
+                color=color,
+                morph=morph,
+                overlay=True,
+            )
         if edit.underline:
+            if wrapped:
+                try:
+                    underline_font = (
+                        pymupdf.Font(fontfile=font_file)
+                        if font_file
+                        else pymupdf.Font(font_name)
+                    )
+                except Exception:
+                    underline_font = pymupdf.Font("helv")
+                lines = self._wrapped_text_lines(
+                    edit.new_text,
+                    self._text_axis_extent(target_bbox, direction),
+                    underline_font,
+                    font_size,
+                )
             normal = (-direction[1], direction[0])
             underline_offset = max(0.8, font_size * 0.08)
             line_step = font_size * 1.15

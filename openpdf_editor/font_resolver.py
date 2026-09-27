@@ -5,12 +5,17 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from PIL import ImageFont
+
 
 def _font_roots() -> list[Path]:
     roots: list[Path] = []
     windir = os.environ.get("WINDIR")
     if windir:
         roots.append(Path(windir) / "Fonts")
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        roots.append(Path(local_app_data) / "Microsoft/Windows/Fonts")
     roots.extend(
         [
             Path("/usr/share/fonts/truetype/msttcorefonts"),
@@ -67,6 +72,19 @@ def _style_rank(remainder: str, bold: bool, italic: bool) -> int:
     return extra + len(remainder)
 
 
+@lru_cache(maxsize=4096)
+def _font_identity(path: str) -> tuple[str, str] | None:
+    """Read the family and style independently of abbreviated filenames."""
+    try:
+        family, style = ImageFont.truetype(path, 16).getname()
+    except (OSError, ValueError):
+        return None
+    return (
+        _family_name(family),
+        re.sub(r"[^a-z0-9]+", "", style.lower()),
+    )
+
+
 def resolve_font(original_name: str, bold: bool = False, italic: bool = False) -> str | None:
     """Return a broadly compatible system font that resembles the PDF font."""
     files = _font_files()
@@ -76,6 +94,17 @@ def resolve_font(original_name: str, bold: bool = False, italic: bool = False) -
     # fall back to DejaVu Sans.
     normalized = re.sub(r"[^a-z0-9]+", "", original_name.lower())
     family_name = _family_name(original_name)
+
+    # Qt presents internal family names, not filenames (e.g. Windows uses
+    # cour.ttf for Courier New). Prefer an actual installed family before
+    # considering metric-compatible substitutions or filename heuristics.
+    exact: list[tuple[int, str]] = []
+    for path in files.values():
+        identity = _font_identity(str(path))
+        if identity is not None and identity[0] == family_name:
+            exact.append((_style_rank(identity[1], bold, italic), str(path)))
+    if exact:
+        return min(exact)[1]
 
     if "calibri" in normalized:
         families = ["calibri", "carlito", "dejavusans"]
