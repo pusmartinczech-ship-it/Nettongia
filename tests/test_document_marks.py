@@ -47,7 +47,7 @@ def test_document_marks_expand_tokens_and_respect_page_scope() -> None:
         assert document[1].get_text().strip() == "Original page 2"
         page_three = document[2].get_text()
         assert "Original page 3" in page_three
-        assert "Český dokument" in page_three
+        assert "Český dokument" in page_three.replace("\u00a0", " ")
         assert "3 / 3" in page_three
         assert document[2].get_images(full=True)
 

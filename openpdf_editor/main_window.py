@@ -2650,11 +2650,15 @@ class MainWindow(QMainWindow):
         forms_actions.addWidget(self.create_form_side_button)
         forms_actions.addWidget(self.edit_form_side_button)
         forms_actions.addWidget(self.delete_form_side_button)
-        forms_accessibility_actions = QHBoxLayout()
+        forms_accessibility_actions = QVBoxLayout()
         forms_accessibility_actions.setContentsMargins(6, 0, 6, 4)
+        forms_accessibility_actions.setSpacing(4)
         forms_accessibility_actions.addWidget(self.form_label_button)
-        forms_accessibility_actions.addWidget(self.form_tab_earlier_button)
-        forms_accessibility_actions.addWidget(self.form_tab_later_button)
+        form_tab_actions = QHBoxLayout()
+        form_tab_actions.setSpacing(4)
+        form_tab_actions.addWidget(self.form_tab_earlier_button)
+        form_tab_actions.addWidget(self.form_tab_later_button)
+        forms_accessibility_actions.addLayout(form_tab_actions)
         forms_accessibility_actions.addWidget(self.form_check_button)
         self.form_edit_mode_button = QPushButton("Edit")
         self.form_edit_mode_button.setCheckable(True)
@@ -4254,10 +4258,14 @@ class MainWindow(QMainWindow):
         self.edit_form_side_button.setToolTip(self.trx("edit_form_field"))
         self.delete_form_side_button.setText("×")
         self.delete_form_side_button.setToolTip(self.trx("delete_form_field"))
-        self.form_label_button.setText(self.trx("form_label_action"))
+        self._set_wrapped_button_text(
+            self.form_label_button, self.trx("form_label_action"), 165
+        )
         self.form_tab_earlier_button.setToolTip(self.trx("form_tab_earlier"))
         self.form_tab_later_button.setToolTip(self.trx("form_tab_later"))
-        self.form_check_button.setText(self.trx("form_check_action"))
+        self._set_wrapped_button_text(
+            self.form_check_button, self.trx("form_check_action"), 165
+        )
         self._set_wrapped_button_text(
             self.form_edit_mode_button, self.trx("form_edit_mode"), 165
         )
