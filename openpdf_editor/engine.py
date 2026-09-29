@@ -859,91 +859,9 @@ class PdfEngine:
                             alpha=int(span.get("alpha", 255)),
                         )
                     )
-        runs = self._merge_ocr_runs(runs)
         runs = self._merge_paragraph_runs(runs)
         self._runs[page_index] = runs
         return runs
-
-    @staticmethod
-    def _merge_ocr_runs(runs: list[TextRun]) -> list[TextRun]:
-        """Recover editable paragraphs from invisible OCR line objects."""
-
-        visible = [run for run in runs if not run.is_ocr]
-        ocr_runs = sorted(
-            (run for run in runs if run.is_ocr),
-            key=lambda item: (item.bbox[1], item.bbox[0]),
-        )
-        groups: list[list[TextRun]] = []
-        for run in ocr_runs:
-            best_group: list[TextRun] | None = None
-            best_gap = float("inf")
-            for group in groups:
-                previous = group[-1]
-                previous_height = max(1.0, previous.bbox[3] - previous.bbox[1])
-                gap = run.bbox[1] - previous.bbox[3]
-                new_row = run.bbox[1] >= previous.bbox[1] + previous_height * 0.5
-                size_match = abs(run.font_size - previous.font_size) <= max(
-                    1.0, previous.font_size * 0.3
-                )
-                left_match = abs(run.bbox[0] - previous.bbox[0]) <= max(
-                    run.font_size, previous.font_size
-                ) * 3.0
-                overlap = max(
-                    0.0,
-                    min(run.bbox[2], previous.bbox[2])
-                    - max(run.bbox[0], previous.bbox[0]),
-                )
-                minimum_width = max(
-                    1.0,
-                    min(
-                        run.bbox[2] - run.bbox[0],
-                        previous.bbox[2] - previous.bbox[0],
-                    ),
-                )
-                aligned = left_match or overlap / minimum_width >= 0.2
-                if (
-                    new_row
-                    and -previous_height * 0.25 <= gap <= previous_height * 1.8
-                    and size_match
-                    and aligned
-                    and gap < best_gap
-                ):
-                    best_group = group
-                    best_gap = gap
-            if best_group is None:
-                groups.append([run])
-            else:
-                best_group.append(run)
-
-        merged: list[TextRun] = []
-        for group in groups:
-            if len(group) < 2 or any(
-                PdfEngine._looks_like_list_item(run.text) for run in group
-            ):
-                merged.extend(group)
-                continue
-            first = group[0]
-            merged.append(
-                replace(
-                    first,
-                    text="\n".join(run.text for run in group),
-                    bbox=(
-                        min(run.bbox[0] for run in group),
-                        min(run.bbox[1] for run in group),
-                        max(run.bbox[2] for run in group),
-                        max(run.bbox[3] for run in group),
-                    ),
-                    source_bboxes=tuple(
-                        bbox
-                        for run in group
-                        for bbox in (run.source_bboxes or (run.bbox,))
-                    ),
-                )
-            )
-        return sorted(
-            [*visible, *merged],
-            key=lambda item: (item.block_index, item.line_index, item.span_index),
-        )
 
     @staticmethod
     def _merge_paragraph_runs(runs: list[TextRun]) -> list[TextRun]:

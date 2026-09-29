@@ -273,13 +273,17 @@ Entering an empty replacement deletes the selected source text. Editing currentl
 
 Choose **Page > OCR current page** or **Page > OCR document**, then select one of the models bundled in `vendor/ocr/tessdata`. OCR runs in a separate process and can be cancelled without changing the open document. It handles image-only pages as well as scans mixed with native PDF text, ignores OCR words that overlap existing text, adds an invisible searchable layer, and reports the number of recognized pages and words.
 
-OCR text is also editable. Hover or double-click a recognized block just like
+OCR text is also editable. Hover or double-click a recognized line just like
 ordinary PDF text; replacements support reflow, formatting and Undo/Redo. The
-original scan image remains embedded when a block is edited. The invisible
+original scan image remains embedded when a line is edited. The invisible
 recognized text is removed, and a transparent overlay repairs only pixels
 identified as scanned lettering before inserting real PDF text. Original line
 breaks remain editable. Gradients and surrounding texture are retained where
 possible; lettering over detailed photographs may still need manual cleanup.
+New OCR results keep each recognized line at its scan coordinates, so editing
+one table row does not reflow other rows into the same cell. To benefit from
+this change in a document processed by an older version, reopen the original
+scan and run OCR again before editing.
 
 Release and checkpoint archives already contain all OCR models and never need
 network access at runtime. After a clean Git checkout, run

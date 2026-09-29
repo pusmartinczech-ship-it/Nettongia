@@ -163,7 +163,12 @@ def _insert_invisible_word(page, word: tuple, font_path: str | None) -> bool:
 
 
 def _insert_invisible_block(page, words: list[tuple], font_path: str | None) -> int:
-    """Insert one Tesseract block as a coherent invisible PDF text block."""
+    """Keep the actual scan coordinates of each recognized line.
+
+    Tesseract blocks can span several table rows. A single PDF textbox would
+    reflow those rows into its own line spacing, making a later edit overwrite
+    neighboring cells rather than the line the user selected.
+    """
 
     valid = [
         word
@@ -181,18 +186,6 @@ def _insert_invisible_block(page, words: list[tuple], font_path: str | None) -> 
         sorted(line, key=lambda word: (int(word[7]), float(word[0])))
         for _, line in sorted(by_line.items())
     ]
-    text = "\n".join(
-        " ".join(str(word[4]).strip() for word in line)
-        for line in line_groups
-    )
-    rect = pymupdf.Rect(
-        min(float(word[0]) for word in valid),
-        min(float(word[1]) for word in valid),
-        max(float(word[2]) for word in valid),
-        max(float(word[3]) for word in valid),
-    ) & page.rect
-    heights = sorted(max(1.0, float(word[3]) - float(word[1])) for word in valid)
-    font_size = min(96.0, max(3.0, heights[len(heights) // 2] * 0.78))
     kwargs = {
         "fontname": "ocrfont" if font_path else "helv",
         "fontfile": font_path,
@@ -200,17 +193,30 @@ def _insert_invisible_block(page, words: list[tuple], font_path: str | None) -> 
         "lineheight": 1.0,
         "overlay": True,
     }
-    attempted_size = font_size
-    while attempted_size >= 3.0:
-        remaining = page.insert_textbox(rect, text, fontsize=attempted_size, **kwargs)
-        if remaining >= 0:
-            return len(valid)
-        if attempted_size <= 3.0:
-            break
-        attempted_size = max(3.0, attempted_size * 0.88)
-    # Unusual layouts can have a block rectangle too tight for a textbox.
-    # Keep OCR available by falling back to the established per-word path.
-    return sum(_insert_invisible_word(page, word, font_path) for word in valid)
+    inserted = 0
+    for line in line_groups:
+        text = " ".join(str(word[4]).strip() for word in line)
+        rect = pymupdf.Rect(
+            min(float(word[0]) for word in line),
+            min(float(word[1]) for word in line),
+            max(float(word[2]) for word in line),
+            max(float(word[3]) for word in line),
+        ) & page.rect
+        heights = sorted(max(1.0, float(word[3]) - float(word[1])) for word in line)
+        font_size = min(96.0, max(3.0, heights[len(heights) // 2] * 0.78))
+        attempted_size = font_size
+        while attempted_size >= 3.0:
+            remaining = page.insert_textbox(rect, text, fontsize=attempted_size, **kwargs)
+            if remaining >= 0:
+                inserted += len(line)
+                break
+            if attempted_size <= 3.0:
+                break
+            attempted_size = max(3.0, attempted_size * 0.88)
+        if remaining < 0:
+            # An unusually tight row can still be made searchable word by word.
+            inserted += sum(_insert_invisible_word(page, word, font_path) for word in line)
+    return inserted
 
 
 def _filter_words_over_existing_text(page, words: list[tuple]) -> list[tuple]:

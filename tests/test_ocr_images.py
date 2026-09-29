@@ -85,7 +85,7 @@ def test_ocr_worker_adds_invisible_searchable_text_without_visual_change(
     assert after == before
 
 
-def test_ocr_block_is_exposed_as_an_editable_invisible_text_block() -> None:
+def test_ocr_block_keeps_individual_lines_editable() -> None:
     document = pymupdf.open()
     page = document.new_page(width=420, height=300)
     words = [
@@ -102,18 +102,18 @@ def test_ocr_block_is_exposed_as_an_editable_invisible_text_block() -> None:
     engine.load_bytes(payload)
     try:
         runs = engine.text_runs(0)
-        assert len(runs) == 1
-        assert runs[0].is_ocr
-        assert runs[0].text == "First line\nSecond line"
-        assert len(runs[0].source_bboxes) == 2
+        assert len(runs) == 2
+        assert all(run.is_ocr for run in runs)
+        assert [run.text for run in runs] == ["First line", "Second line"]
+        assert runs[1].bbox[1] > runs[0].bbox[3]
         edited = engine.build_document(
-            [TextEdit(runs[0], "New first\nNew second", runs[0].font_size,
+            [TextEdit(runs[0], "New first", runs[0].font_size,
                       bbox=runs[0].bbox)]
         )
         try:
             text = edited[0].get_text()
-            assert "New first" in text and "New second" in text
-            assert "First line" not in text and "Second line" not in text
+            assert "New first" in text and "Second line" in text
+            assert "First line" not in text
         finally:
             edited.close()
     finally:
@@ -134,8 +134,53 @@ def test_adjacent_ocr_columns_remain_separate_editable_blocks() -> None:
     document.close()
     try:
         runs = engine.text_runs(0)
-        assert len(runs) == 2
-        assert sorted(run.text for run in runs) == ["Left\nLeft", "Right\nRight"]
+        assert len(runs) == 4
+        assert sorted(run.text for run in runs) == ["Left", "Left", "Right", "Right"]
+    finally:
+        engine.close()
+
+
+def test_editing_one_ocr_table_row_preserves_neighboring_rows() -> None:
+    image = Image.new("RGB", (480, 210), "white")
+    draw = ImageDraw.Draw(image)
+    for y in (40, 70, 100, 130):
+        draw.line((20, y, 460, y), fill="black", width=1)
+    for x in (20, 280, 460):
+        draw.line((x, 40, x, 130), fill="black", width=1)
+    for y, label in ((47, "First row"), (77, "Target row"), (107, "Last row")):
+        draw.text((30, y), label, fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=480, height=210)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    words = [
+        (30, y, 128, y + 14, label, 0, index, 0)
+        for index, (y, label) in enumerate(
+            ((45, "First row"), (75, "Target row"), (105, "Last row"))
+        )
+    ]
+    assert _insert_invisible_block(page, words, None) == 3
+    before = bytes(page.get_pixmap(alpha=False).samples)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        runs = engine.text_runs(0)
+        assert len(runs) == 3
+        assert [run.text for run in runs] == ["First row", "Target row", "Last row"]
+        edited = engine.build_document([TextEdit(runs[1], "Fixed row", runs[1].font_size)])
+        try:
+            page = edited[0]
+            assert "Fixed row" in page.get_text()
+            assert "Target row" not in page.get_text()
+            assert "First row" in page.get_text() and "Last row" in page.get_text()
+            after = bytes(page.get_pixmap(alpha=False).samples)
+            stride = 480 * 3
+            assert after[40 * stride:70 * stride] == before[40 * stride:70 * stride]
+            assert after[100 * stride:130 * stride] == before[100 * stride:130 * stride]
+        finally:
+            edited.close()
     finally:
         engine.close()
 
