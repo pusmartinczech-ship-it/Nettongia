@@ -3717,7 +3717,7 @@ class MainWindow(QMainWindow):
         self.ribbon_tabs = QTabWidget(ribbon)
         self.ribbon_tabs.setObjectName("ribbonTabs")
         self.ribbon_tabs.setDocumentMode(True)
-        self.ribbon_tabs.tabBarDoubleClicked.connect(lambda _index: self._toggle_ribbon())
+        self.ribbon_tabs.tabBarClicked.connect(self._open_collapsed_ribbon_tab)
         self.ribbon_tab_keys: list[str] = []
         self.ribbon_group_labels: list[tuple[QLabel, str]] = []
 
@@ -3873,6 +3873,10 @@ class MainWindow(QMainWindow):
 
     def _toggle_ribbon(self) -> None:
         self._set_ribbon_collapsed(not self.ribbon_collapsed)
+
+    def _open_collapsed_ribbon_tab(self, index: int) -> None:
+        if index >= 0 and self.ribbon_collapsed:
+            self._set_ribbon_collapsed(False)
 
     def _set_ribbon_collapsed(self, collapsed: bool) -> None:
         self.ribbon_collapsed = collapsed

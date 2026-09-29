@@ -200,9 +200,21 @@ def test_ribbon_groups_tools_without_overlap_and_can_collapse() -> None:
     assert window.ribbon_collapsed
     assert window.toolbar.height() == 74
     assert window.ribbon_tabs.height() == 31
-    window._toggle_ribbon()
+    tab_bar = window.ribbon_tabs.tabBar()
+    QTest.mouseClick(tab_bar, Qt.LeftButton, pos=tab_bar.tabRect(1).center())
     app.processEvents()
     assert not window.ribbon_collapsed
+    assert window.toolbar.height() == 155
+    assert window.text_controls_widget.isVisible()
+
+    window._toggle_ribbon()
+    app.processEvents()
+    assert window.ribbon_collapsed
+    QTest.mouseClick(tab_bar, Qt.LeftButton, pos=tab_bar.tabRect(2).center())
+    app.processEvents()
+    assert window.ribbon_tabs.currentIndex() == 2
+    assert not window.ribbon_collapsed
+    assert window.ribbon_tabs.height() == 112
 
     widgets = (
         window.text_font_box,
