@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import parse_qs
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 try:
     import pymupdf
@@ -1282,6 +1282,7 @@ class PdfEngine:
                 page.apply_redactions(images=0, graphics=0, text=0)
 
             ocr_patches: list[tuple[pymupdf.Rect, bytes]] = []
+            table_cells = None
             for edit in page_space_edits:
                 page_run = edit.run
                 if not page_run.is_ocr:
@@ -1291,7 +1292,22 @@ class PdfEngine:
                         replace(page_run, bbox=source_bbox),
                         page.cropbox,
                     )
-                    patch = self._ocr_scan_patch(page, rect)
+                    if table_cells is None:
+                        from .ocr_worker import _scanned_table_cells
+
+                        table_cells = [cell for _, cells in _scanned_table_cells(page) for cell in cells]
+                    center = pymupdf.Point((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2)
+                    cell = next(
+                        (candidate for candidate in table_cells
+                         if candidate.contains(center)
+                         and candidate.intersects(rect)
+                         and rect.height <= candidate.height + 3),
+                        None,
+                    )
+                    patch = self._ocr_scan_patch(
+                        page, cell if cell is not None else rect,
+                        fill_cell=cell is not None,
+                    )
                     if patch is not None:
                         ocr_patches.append(patch)
                     page.add_redact_annot(rect, fill=False, cross_out=False)
@@ -2714,7 +2730,7 @@ class PdfEngine:
 
     @staticmethod
     def _ocr_scan_patch(
-        page: pymupdf.Page, source_rect: pymupdf.Rect
+        page: pymupdf.Page, source_rect: pymupdf.Rect, *, fill_cell: bool = False
     ) -> tuple[pymupdf.Rect, bytes] | None:
         """Repair recognized ink locally without changing the original image.
 
@@ -2750,6 +2766,22 @@ class PdfEngine:
         y1 = min(pixmap.height, math.ceil(rect.y1 * scale - pixmap.y))
         if x1 <= x0 or y1 <= y0:
             return None
+
+        if fill_cell:
+            # Within a ruled cell the entire interior belongs to this one
+            # text item. A uniform scan background removes faint remnants
+            # outside the OCR glyph bounds without touching the ruling lines.
+            background = tuple(int(v) for v in ImageStat.Stat(
+                image.crop((x0, y0, x1, y1))
+            ).median)
+            overlay.paste((*background, 255), (x0, y0, x1, y1))
+            output = BytesIO()
+            overlay.save(output, format="PNG")
+            return pymupdf.Rect(
+                pixmap.x / scale, pixmap.y / scale,
+                (pixmap.x + pixmap.width) / scale,
+                (pixmap.y + pixmap.height) / scale,
+            ), output.getvalue()
 
         upper = max(0, y0 - 1 - round(margin * scale * 0.7))
         lower = min(pixmap.height - 1, y1 + round(margin * scale * 0.7))
