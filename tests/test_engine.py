@@ -20,6 +20,7 @@ from openpdf_editor.engine import (
     TextRun,
     _builtin_pdf_font_name,
 )
+from openpdf_editor import __version__
 
 
 SAMPLES = Path(os.environ.get("OPENPDF_TEST_SAMPLES", Path(__file__).resolve().parents[2] / "upload"))
@@ -93,6 +94,7 @@ def test_blank_document_creation() -> None:
         assert document[0].rect.width == pytest.approx(595.28, abs=0.1)
         assert document[0].rect.height == pytest.approx(841.89, abs=0.1)
         assert document.metadata["creator"] == "Nettongia PDF Editor"
+        assert document.metadata["producer"] == f"Nettongia PDF Editor {__version__}"
 
 
 def test_password_protected_pdf_can_be_opened_and_edited() -> None:
@@ -631,7 +633,9 @@ def test_formatting_and_visual_signature(tmp_path: Path) -> None:
 
     with fitz.open(output) as document:
         page = document[0]
-        assert "FORMATTED HEADING" in page.get_text()
+        # The target box is narrow enough to wrap the replacement onto two
+        # lines while retaining the complete text in the saved PDF.
+        assert "FORMATTED HEADING" in " ".join(page.get_text().split())
         assert page.get_images(full=True)
         assert page.get_drawings()
 
@@ -746,10 +750,18 @@ def test_image_insertion_and_deletion(tmp_path: Path) -> None:
     )
     deleted_output = tmp_path / "image_deleted.pdf"
     engine.save(deleted_output, [], [], [], [ImageDeletion(source_image)])
-    with fitz.open(deleted_output) as document:
+    with fitz.open(SAMPLES / "0015_001.pdf") as original, fitz.open(deleted_output) as document:
+        original_pixmap = original[0].get_pixmap(matrix=fitz.Matrix(0.2, 0.2), alpha=False)
         pixmap = document[0].get_pixmap(matrix=fitz.Matrix(0.2, 0.2), alpha=False)
-        dark_samples = sum(value < 235 for value in pixmap.samples)
-        assert dark_samples < len(pixmap.samples) * 0.03
+        original_dark = sum(value < 235 for value in original_pixmap.samples)
+        remaining_dark = sum(value < 235 for value in pixmap.samples)
+        # This supplied scan has several overlapping images. Deleting the
+        # largest source image exposes the others instead of blanking the page.
+        assert remaining_dark < original_dark * 0.7
+        original_xrefs = {image["xref"] for image in original[0].get_image_info(xrefs=True)}
+        output_xrefs = {image["xref"] for image in document[0].get_image_info(xrefs=True)}
+        assert original_xrefs - {source_image.xref} <= output_xrefs
+        assert source_image.xref not in output_xrefs
 
 
 def test_promoting_original_image_is_pixel_identical_before_transform() -> None:

@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 1.0.0
+
+- Prepared the offline editor's first stable release candidate with PDF, OCR
+  and GUI regression coverage.
+- Kept Ctrl+F active when a different ribbon tab is selected or the ribbon is
+  collapsed.
+- Aligned the new-document PDF producer metadata with the application version.
+- Added the corresponding source archive as a separate release asset beside
+  the verified Windows portable archive.
 
 - Added native PDF underline and strikeout annotations through the text context menu. Multi-line paragraphs keep separate markup lines, including on rotated pages; actions support Undo/Redo and appear in Comments.
 - Printing retains vector drawings and text outlines where supported; pages with annotations or form widgets use the existing raster path.

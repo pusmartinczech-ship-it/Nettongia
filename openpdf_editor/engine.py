@@ -15,6 +15,8 @@ from urllib.parse import parse_qs
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
+from . import __version__
+
 try:
     import pymupdf
 except ImportError:  # PyMuPDF before 1.24
@@ -1506,7 +1508,7 @@ class PdfEngine:
             document.set_metadata(
                 {
                     "creator": "Nettongia PDF Editor",
-                    "producer": "Nettongia PDF Editor 0.20.0",
+                    "producer": f"Nettongia PDF Editor {__version__}",
                 }
             )
             for _ in range(page_count):

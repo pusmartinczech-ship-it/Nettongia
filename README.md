@@ -1,4 +1,4 @@
-# Nettongia PDF Editor 0.20.0
+# Nettongia PDF Editor 1.0.0
 
 Nettongia PDF Editor is an offline Windows desktop application for genuine PDF content editing. It physically removes selected source text and deleted images before writing the new page content; it does not merely cover the old objects with annotations.
 
