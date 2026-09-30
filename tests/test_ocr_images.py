@@ -1,5 +1,6 @@
 import os
 import time
+from dataclasses import replace
 from io import BytesIO
 from pathlib import Path
 
@@ -20,6 +21,8 @@ from openpdf_editor.ocr_worker import (
     run_ocr_job,
     _filter_words_over_existing_text,
     _insert_invisible_block,
+    _insert_invisible_table_cells,
+    _scanned_table_cells,
 )
 
 
@@ -179,6 +182,148 @@ def test_editing_one_ocr_table_row_preserves_neighboring_rows() -> None:
             stride = 480 * 3
             assert after[40 * stride:70 * stride] == before[40 * stride:70 * stride]
             assert after[100 * stride:130 * stride] == before[100 * stride:130 * stride]
+        finally:
+            edited.close()
+    finally:
+        engine.close()
+
+
+def test_oversized_legacy_ocr_bbox_does_not_erase_other_scan_lines() -> None:
+    image = Image.new("RGB", (420, 260), "white")
+    draw = ImageDraw.Draw(image)
+    for y, label in ((45, "First item"), (100, "Second item"), (155, "Third item")):
+        draw.text((35, y), label, fill="black")
+        draw.text((175, y), "................", fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=260)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    for index, (y, label) in enumerate(
+        ((45, "First item"), (100, "Second item"), (155, "Third item"))
+    ):
+        assert _insert_invisible_block(
+            page, [(35, y, 100, y + 14, label, index, 0, 0)], None
+        ) == 1
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        first = next(run for run in engine.text_runs(0) if run.text == "First item")
+        # Some existing OCR layers report one span over much of the page.
+        oversized = replace(first, bbox=(35, 40, 305, 190))
+        before = engine.render_page(0, 1.0)[0]
+        edited = engine.build_document([TextEdit(oversized, "Changed item", first.font_size)])
+        try:
+            after = bytes(edited[0].get_pixmap(alpha=False).samples)
+            stride = 420 * 3
+            assert after[90 * stride:175 * stride] == before[90 * stride:175 * stride]
+            assert "Second item" in edited[0].get_text()
+            assert "Third item" in edited[0].get_text()
+        finally:
+            edited.close()
+    finally:
+        engine.close()
+
+
+def test_dense_ocr_line_repair_clears_scan_ink_without_touching_neighbors() -> None:
+    font_path = next((path for path in (
+        Path("/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf"),
+        Path("C:/Windows/Fonts/times.ttf"),
+        Path("C:/Windows/Fonts/georgia.ttf"),
+    ) if path.is_file()), None)
+    if font_path is None:
+        pytest.skip("the serif scan test font is unavailable")
+    image = Image.new("RGB", (840, 440), "white")
+    draw = ImageDraw.Draw(image)
+    font = ImageFont.truetype(str(font_path), 20)
+    text_right = draw.textbbox((180, 190), "Original text", font=font)[2] / 2
+    for y, text in ((160, "Previous item"), (190, "Original text"), (220, "Following item")):
+        draw.text((180, y), text, font=font, fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=420, height=220)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    page.insert_text((90, 104), "Original text", fontsize=10, render_mode=3)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        run = engine.text_runs(0)[0]
+        # The hidden OCR span stops short of the last scanned letters.
+        short_right = text_right - 7
+        short_run = replace(run, bbox=(90, 94, short_right, 106))
+        before = engine.render_page(0, 1.0)[0]
+        edited = engine.build_document([TextEdit(short_run, "", run.font_size)])
+        try:
+            after = bytes(edited[0].get_pixmap(alpha=False).samples)
+            stride = 420 * 3
+            assert after[80 * stride:91 * stride] == before[80 * stride:91 * stride]
+            assert after[110 * stride:125 * stride] == before[110 * stride:125 * stride]
+            underreported_ink = next(
+                (x, y) for x in range(int(short_right) + 1, int(text_right) + 1)
+                for y in range(95, 107)
+                if before[y * stride + x * 3] < 220
+            )
+            x, y = underreported_ink
+            assert after[y * stride + x * 3] > 235
+        finally:
+            edited.close()
+    finally:
+        engine.close()
+
+
+def test_ruled_scan_ocr_edit_clears_entire_cell(tmp_path: Path) -> None:
+    if "eng" not in available_ocr_languages():
+        pytest.skip("English Tesseract data is unavailable")
+    from openpdf_editor.runtime import bundled_tessdata_path
+
+    tessdata = bundled_tessdata_path(verify=True)
+    if tessdata is None:
+        pytest.skip("Bundled OCR data is unavailable")
+    image = Image.new("RGB", (1200, 520), "white")
+    draw = ImageDraw.Draw(image)
+    font_path = next((path for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "C:/Windows/Fonts/arial.ttf",
+    ) if Path(path).is_file()), None)
+    if font_path is None:
+        pytest.skip("a TrueType test font is unavailable")
+    font = ImageFont.truetype(font_path, 23)
+    for y in range(40, 401, 60):
+        draw.line((40, y, 1160, y), fill="black", width=2)
+    for x in (40, 760, 900, 1160):
+        draw.line((x, 40, x, 400), fill="black", width=2)
+    labels = ("First program message", "Second program message",
+              "Third program message", "Fourth program message",
+              "Fifth program message", "Sixth program message")
+    for index, label in enumerate(labels):
+        draw.text((50, 55 + index * 60), label, font=font, fill="black")
+        draw.text((770, 55 + index * 60), f"EH{index + 1}", font=font, fill="black")
+    stream = BytesIO()
+    image.save(stream, format="PNG")
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=260)
+    page.insert_image(page.rect, stream=stream.getvalue())
+    tables = _scanned_table_cells(page)
+    assert len(tables) == 1
+    assert len(tables[0][1]) == 18
+    assert _insert_invisible_table_cells(page, tables[0][1], "eng", 200, tessdata, None) >= 12
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    try:
+        runs = engine.text_runs(0)
+        target = next(run for run in runs if "Third program message" in run.text)
+        before = engine.render_page(0, 1.0)
+        edited = engine.build_document([TextEdit(target, "Changed", target.font_size)])
+        try:
+            after = bytes(edited[0].get_pixmap(alpha=False).samples)
+            assert "Changed" in edited[0].get_text()
+            assert "Third program message" not in edited[0].get_text()
+            assert after[55 * 600 * 3:75 * 600 * 3] == before[0][55 * 600 * 3:75 * 600 * 3]
+            assert after[85 * 600 * 3:105 * 600 * 3] != before[0][85 * 600 * 3:105 * 600 * 3]
         finally:
             edited.close()
     finally:

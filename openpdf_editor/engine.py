@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Iterable
 from urllib.parse import parse_qs
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageStat
 
 try:
     import pymupdf
@@ -1281,7 +1281,8 @@ class PdfEngine:
             if any(not edit.run.is_ocr for edit in page_space_edits):
                 page.apply_redactions(images=0, graphics=0, text=0)
 
-            ocr_patches: list[tuple[pymupdf.Rect, bytes]] = []
+            ocr_patches: list[tuple[pymupdf.Rect, bytes | tuple[float, float, float]]] = []
+            table_cells = None
             for edit in page_space_edits:
                 page_run = edit.run
                 if not page_run.is_ocr:
@@ -1291,7 +1292,41 @@ class PdfEngine:
                         replace(page_run, bbox=source_bbox),
                         page.cropbox,
                     )
-                    patch = self._ocr_scan_patch(page, rect)
+                    if (
+                        "\n" not in edit.new_text
+                        and rect.height > max(28.0, page_run.font_size * 2.5)
+                    ):
+                        # A legacy OCR span may cover several scan lines even
+                        # though the user is changing one line. Restrict both
+                        # the pixel repair and hidden-text redaction to the
+                        # selected baseline instead of clearing every row.
+                        baseline = page_run.origin[1]
+                        if not rect.y0 <= baseline <= rect.y1:
+                            baseline = (rect.y0 + rect.y1) / 2
+                        rect.y0 = max(rect.y0, baseline - page_run.font_size * 1.3)
+                        rect.y1 = min(rect.y1, baseline + page_run.font_size * 0.45)
+                    if table_cells is None:
+                        from .ocr_worker import _scanned_table_cells
+
+                        table_cells = [cell for _, cells in _scanned_table_cells(page) for cell in cells]
+                    center = pymupdf.Point((rect.x0 + rect.x1) / 2, (rect.y0 + rect.y1) / 2)
+                    cell = next(
+                        (candidate for candidate in table_cells
+                         if candidate.contains(center)
+                         and candidate.intersects(rect)
+                         and rect.height <= candidate.height + 3),
+                        None,
+                    )
+                    repair_rect = cell if cell is not None else pymupdf.Rect(
+                        max(page.rect.x0, rect.x0 - 1.0),
+                        max(page.rect.y0, rect.y0 - 1.0),
+                        min(page.rect.x1, rect.x1 + page_run.font_size),
+                        min(page.rect.y1, rect.y1 + 1.5),
+                    )
+                    patch = self._ocr_scan_patch(
+                        page, repair_rect,
+                        fill_cell=cell is not None,
+                    )
                     if patch is not None:
                         ocr_patches.append(patch)
                     page.add_redact_annot(rect, fill=False, cross_out=False)
@@ -1300,11 +1335,17 @@ class PdfEngine:
                 # image. Overlay transparent, locally repaired pixels for the
                 # photographed lettering before inserting replacement text.
                 page.apply_redactions(images=0, graphics=0, text=0)
-                for patch_rect, patch_bytes in ocr_patches:
-                    page.insert_image(
-                        patch_rect, stream=patch_bytes, overlay=True,
-                        keep_proportion=False,
-                    )
+                for patch_rect, patch_content in ocr_patches:
+                    if isinstance(patch_content, bytes):
+                        page.insert_image(
+                            patch_rect, stream=patch_content, overlay=True,
+                            keep_proportion=False,
+                        )
+                    else:
+                        page.draw_rect(
+                            patch_rect, color=None, fill=patch_content,
+                            overlay=True,
+                        )
 
             for ordinal, edit in enumerate(page_space_edits):
                 if edit.new_text:
@@ -2714,12 +2755,12 @@ class PdfEngine:
 
     @staticmethod
     def _ocr_scan_patch(
-        page: pymupdf.Page, source_rect: pymupdf.Rect
-    ) -> tuple[pymupdf.Rect, bytes] | None:
+        page: pymupdf.Page, source_rect: pymupdf.Rect, *, fill_cell: bool = False
+    ) -> tuple[pymupdf.Rect, bytes | tuple[float, float, float]] | None:
         """Repair recognized ink locally without changing the original image.
 
-        The transparent overlay only covers pixels that differ substantially
-        from the estimated background. Unrecognized texture is left alone.
+        Light paper receives a small vector fill; other backgrounds get a
+        transparent overlay over pixels that differ from nearby samples.
         """
 
         rect = pymupdf.Rect(source_rect) & page.rect
@@ -2741,7 +2782,11 @@ class PdfEngine:
             return None
         image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
         pixels = image.load()
-        overlay = Image.new("RGBA", image.size)
+        # Keep the scan RGB behind transparent pixels. Otherwise resampling
+        # an RGBA patch blends its opaque paper colour with transparent black
+        # and draws a grey rectangle around the repaired line.
+        overlay = image.convert("RGBA")
+        overlay.putalpha(0)
         repaired = overlay.load()
         changed = False
         x0 = max(0, math.ceil(rect.x0 * scale - pixmap.x))
@@ -2751,31 +2796,61 @@ class PdfEngine:
         if x1 <= x0 or y1 <= y0:
             return None
 
-        upper = max(0, y0 - 1 - round(margin * scale * 0.7))
-        lower = min(pixmap.height - 1, y1 + round(margin * scale * 0.7))
+        if fill_cell:
+            # Within a ruled cell the entire interior belongs to this one
+            # text item. A uniform scan background removes faint remnants
+            # outside the OCR glyph bounds without touching the ruling lines.
+            background = tuple(int(v) for v in ImageStat.Stat(
+                image.crop((x0, y0, x1, y1))
+            ).median)
+            overlay.paste((*background, 255), (x0, y0, x1, y1))
+            output = BytesIO()
+            overlay.save(output, format="PNG")
+            return pymupdf.Rect(
+                pixmap.x / scale, pixmap.y / scale,
+                (pixmap.x + pixmap.width) / scale,
+                (pixmap.y + pixmap.height) / scale,
+            ), output.getvalue()
+
+        # Scan lettering is often only one or two points away from the next
+        # line. Sampling ten points away copies neighboring glyphs into the
+        # repair and leaves dark ghosts under the replacement text.
+        sample_gap = max(1, round(scale))
+        upper = max(0, y0 - 1 - sample_gap)
+        lower = min(pixmap.height - 1, y1 + sample_gap)
+        far_upper = max(0, y0 - 1 - round(margin * scale * 0.7))
+        far_lower = min(pixmap.height - 1, y1 + round(margin * scale * 0.7))
         left = max(0, x0 - 1 - round(margin * scale * 0.7))
         right = min(pixmap.width - 1, x1 + round(margin * scale * 0.7))
+        top_median = ImageStat.Stat(image.crop((x0, upper, x1, upper + 1))).median
+        bottom_median = ImageStat.Stat(image.crop((x0, lower, x1, lower + 1))).median
+        far_top_median = ImageStat.Stat(image.crop((x0, far_upper, x1, far_upper + 1))).median
+        far_bottom_median = ImageStat.Stat(image.crop((x0, far_lower, x1, far_lower + 1))).median
+        nearby_brightness = sum(top_median) + sum(bottom_median)
+        distant_brightness = sum(far_top_median) + sum(far_bottom_median)
+        if distant_brightness > nearby_brightness + 90:
+            # A solid scan mark can extend beyond the OCR box. Its closest
+            # samples are ink; the more distant samples are actual paper.
+            upper, lower = far_upper, far_lower
+            top_median, bottom_median = far_top_median, far_bottom_median
+        if min((*top_median, *bottom_median)) >= 235:
+            # A light, nearly uniform paper scan can be cleared completely.
+            # A vector fill avoids a grey fringe at the edge of an alpha PNG.
+            background = tuple(round(max(a, b)) for a, b in zip(top_median, bottom_median))
+            return rect, tuple(channel / 255 for channel in background)
         for y in range(y0, y1):
-            vertical_weight = (y - upper) / max(1, lower - upper)
             for x in range(x0, x1):
                 horizontal_weight = (x - left) / max(1, right - left)
                 top, bottom = pixels[x, upper], pixels[x, lower]
                 side_left, side_right = pixels[left, y], pixels[right, y]
-                vertical = tuple(
-                    top[c] * (1 - vertical_weight) + bottom[c] * vertical_weight
-                    for c in range(3)
-                )
+                vertical = top if sum(top) >= sum(bottom) else bottom
                 horizontal = tuple(
                     side_left[c] * (1 - horizontal_weight)
                     + side_right[c] * horizontal_weight
                     for c in range(3)
                 )
-                # Prefer samples along the long edge of a text line: its top
-                # and bottom normally contain fewer neighboring letters.
                 background = tuple(round(value) for value in vertical)
                 if max(abs(top[c] - bottom[c]) for c in range(3)) > 45:
-                    # A border can itself cross printed artwork; in that
-                    # case use the perpendicular estimate as a fallback.
                     background = tuple(round(value) for value in horizontal)
                 original = pixels[x, y]
                 if max(abs(original[c] - background[c]) for c in range(3)) >= 30:

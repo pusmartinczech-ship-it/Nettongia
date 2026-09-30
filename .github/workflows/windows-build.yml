@@ -35,7 +35,12 @@ jobs:
 
       - name: Run source regression suite
         shell: powershell
-        run: ./.venv-build/Scripts/python.exe -m pytest -q
+        run: |
+          Get-ChildItem tests -Filter test_*.py | Sort-Object Name | ForEach-Object {
+            Write-Host "Running $($_.Name)"
+            & ./.venv-build/Scripts/python.exe -m pytest -q $_.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Regression suite failed: $($_.Name)" }
+          }
 
       - name: Run final golden PDF audit
         shell: powershell
