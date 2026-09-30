@@ -9,6 +9,13 @@ components and their upstream license pages.
 - PySide6, Shiboken6 and Qt modules: GNU LGPLv3/GPLv3 or Qt commercial terms,
   with module-specific third-party notices. <https://doc.qt.io/qtforpython-6/licenses.html>
 - Pillow: HPND license. <https://python-pillow.github.io/license.html>
+- pyHanko and pyhanko-certvalidator: MIT license. They provide offline PDF
+  signature integrity, revision and certificate-chain validation.
+  <https://github.com/MatthiasValvekens/pyHanko/blob/master/LICENSE>
+- cryptography: Apache License 2.0 or BSD license; asn1crypto and oscrypto: MIT
+  license; certifi: Mozilla Public License 2.0. These are runtime dependencies
+  of the signature-validation stack, and their exact license texts are copied
+  into the packaged `licenses` directory.
 - Tesseract OCR and Leptonica: Apache License 2.0 and BSD-style license. Their
   OCR engine is embedded in the pinned PyMuPDF/MuPDF build; no separate runtime
   executable is downloaded or installed. <https://github.com/tesseract-ocr/tesseract/blob/main/LICENSE>

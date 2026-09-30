@@ -5,8 +5,9 @@ from pathlib import Path
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pymupdf
-from PySide6.QtCore import QEventLoop, QSettings
+from PySide6.QtCore import QEventLoop, QSettings, Qt
 from PySide6.QtGui import QKeySequence
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from openpdf_editor.engine import PdfEngine, TextPlacement
@@ -140,6 +141,29 @@ def test_find_navigates_pages_and_searches_unsaved_text() -> None:
     window.hide_find_bar()
     assert not window.find_bar.isVisible()
     assert window.page_view._search_highlight_item is None
+
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
+def test_ctrl_f_opens_find_with_another_ribbon_tab_collapsed() -> None:
+    app = _application()
+    window = MainWindow()
+    engine = PdfEngine()
+    engine.load_bytes(_search_document())
+    window._activate_document(engine, Path("search-test.pdf"), already_saved=True)
+    window.show()
+    window.ribbon_tabs.setCurrentIndex(1)
+    window._set_ribbon_collapsed(True)
+    window.page_view.setFocus()
+    app.processEvents()
+
+    assert not window.find_bar.isVisible()
+    QTest.keyClick(window.page_view, Qt.Key_F, Qt.ControlModifier)
+    app.processEvents()
+    assert window.find_bar.isVisible()
+    assert window.find_edit.hasFocus()
 
     window.close()
     window.deleteLater()

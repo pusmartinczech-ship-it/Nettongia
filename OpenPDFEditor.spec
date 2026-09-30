@@ -1,4 +1,5 @@
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules
 
 
 project_root = Path(SPEC).resolve().parent
@@ -22,11 +23,12 @@ a = Analysis(
         "PySide6.QtSvg",
         "PIL.Image",
         "openpdf_editor.inspection_worker",
+        "openpdf_editor.digital_signature_worker",
         "openpdf_editor.ocr_worker",
         "openpdf_editor.portable_ocr_acceptance",
         "openpdf_editor.tile_worker",
         "openpdf_editor.write_worker",
-    ],
+    ] + collect_submodules("pyhanko") + collect_submodules("pyhanko_certvalidator"),
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

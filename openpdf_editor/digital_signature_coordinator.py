@@ -8,28 +8,32 @@ from pathlib import Path
 
 from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
 
-from .document_session import DocumentWriteContext
-from .engine import CompressionResult
-from .recovery import RecoverySnapshot
-from .write_worker import (
-    PASSWORD_ENVIRONMENT_VARIABLE,
-    prepare_write_job,
-    read_write_result,
+from .digital_signature_worker import (
+    CERTIFICATE_PASSWORD_ENVIRONMENT_VARIABLE,
+    SignatureWriteResult,
+    prepare_signature_job,
+    read_signature_result,
 )
+from .recovery import RecoverySnapshot
 
 
 @dataclass(frozen=True)
-class DocumentWriteOutcome:
-    """Terminal result of one isolated document-write request."""
+class SignatureContext:
+    output_path: Path
+    document_generation: int
+    content_revision: int
 
-    context: DocumentWriteContext
-    result: CompressionResult | None = None
+
+@dataclass(frozen=True)
+class SignatureOutcome:
+    context: SignatureContext
+    result: SignatureWriteResult | None = None
     error: str | None = None
     cancelled: bool = False
 
 
-class DocumentWriteCoordinator(QObject):
-    """Own the child-process lifecycle for one document write at a time."""
+class DigitalSignatureCoordinator(QObject):
+    """Run certificate signing outside the GUI process."""
 
     completed = Signal(object)
 
@@ -39,7 +43,7 @@ class DocumentWriteCoordinator(QObject):
         self._process: QProcess | None = None
         self._workspace: Path | None = None
         self._result_path: Path | None = None
-        self._context: DocumentWriteContext | None = None
+        self._context: SignatureContext | None = None
         self._cancelled = False
 
     @property
@@ -53,20 +57,40 @@ class DocumentWriteCoordinator(QObject):
     def start(
         self,
         snapshot: RecoverySnapshot,
-        context: DocumentWriteContext,
-        password: str | None = None,
+        context: SignatureContext,
+        certificate_path: str | Path,
+        certificate_password: str,
+        *,
+        field_name: str,
+        create_field: bool,
+        visible: bool = False,
+        page_index: int = 0,
+        reason: str = "",
+        location: str = "",
+        contact_info: str = "",
+        timestamp_url: str = "",
+        embed_revocation_info: bool = False,
     ) -> None:
         if self.is_running:
-            raise RuntimeError("A document write is already running.")
-
-        workspace = Path(tempfile.mkdtemp(prefix="OpenPDFEditor-write-"))
+            raise RuntimeError("A digital-signature operation is already running.")
+        if not certificate_password:
+            raise ValueError("The certificate password is missing.")
+        workspace = Path(tempfile.mkdtemp(prefix="Nettongia-signature-"))
         try:
-            job_path, result_path = prepare_write_job(
+            job_path, result_path = prepare_signature_job(
                 workspace,
                 snapshot,
-                context.path,
-                context.compression_profile,
-                password_protected=context.password_protected,
+                context.output_path,
+                certificate_path,
+                field_name=field_name,
+                create_field=create_field,
+                visible=visible,
+                page_index=page_index,
+                reason=reason,
+                location=location,
+                contact_info=contact_info,
+                timestamp_url=timestamp_url,
+                embed_revocation_info=embed_revocation_info,
             )
         except Exception:
             shutil.rmtree(workspace, ignore_errors=True)
@@ -76,18 +100,16 @@ class DocumentWriteCoordinator(QObject):
         request_id = self._request_id
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.MergedChannels)
-        if context.password_protected:
-            if not password:
-                shutil.rmtree(workspace, ignore_errors=True)
-                raise ValueError("The password-protected write is missing its password.")
-            environment = QProcessEnvironment.systemEnvironment()
-            environment.insert(PASSWORD_ENVIRONMENT_VARIABLE, password)
-            process.setProcessEnvironment(environment)
+        environment = QProcessEnvironment.systemEnvironment()
+        environment.insert(
+            CERTIFICATE_PASSWORD_ENVIRONMENT_VARIABLE, certificate_password
+        )
+        process.setProcessEnvironment(environment)
         if getattr(sys, "frozen", False):
-            arguments = ["--document-write-worker", str(job_path)]
+            arguments = ["--digital-signature-worker", str(job_path)]
         else:
             launcher = Path(__file__).resolve().parents[1] / "run_editor.py"
-            arguments = [str(launcher), "--document-write-worker", str(job_path)]
+            arguments = [str(launcher), "--digital-signature-worker", str(job_path)]
         process.setProgram(sys.executable)
         process.setArguments(arguments)
         process.finished.connect(
@@ -100,7 +122,6 @@ class DocumentWriteCoordinator(QObject):
                 rid, process_error
             )
         )
-
         self._process = process
         self._workspace = workspace
         self._result_path = result_path
@@ -140,53 +161,50 @@ class DocumentWriteCoordinator(QObject):
         if process is None or request_id != self._request_id:
             return
         if self._cancelled:
-            self._complete(DocumentWriteOutcome(self._require_context(), cancelled=True))
+            self._complete(SignatureOutcome(self._require_context(), cancelled=True))
             return
-
-        result: CompressionResult | None = None
+        result: SignatureWriteResult | None = None
         error: str | None = None
         try:
             if self._result_path is None or not self._result_path.is_file():
-                raise RuntimeError("The document write process did not return a result.")
-            result, error = read_write_result(self._result_path)
+                raise RuntimeError("The signing process did not return a result.")
+            result, error = read_signature_result(self._result_path)
             if exit_status == QProcess.CrashExit:
-                error = error or "The document write process stopped unexpectedly."
+                error = error or "The signing process stopped unexpectedly."
             elif exit_code != 0:
-                error = error or f"The document write process returned code {exit_code}."
+                error = error or f"The signing process returned code {exit_code}."
         except Exception as exc:
-            process_output = bytes(process.readAllStandardOutput()).decode(
+            output = bytes(process.readAllStandardOutput()).decode(
                 "utf-8", errors="replace"
             ).strip()
             error = str(exc)
-            if process_output:
-                error = f"{error}\n\n{process_output[-4000:]}"
+            if output:
+                error = f"{error}\n\n{output[-4000:]}"
         self._complete(
-            DocumentWriteOutcome(self._require_context(), result=result, error=error)
+            SignatureOutcome(self._require_context(), result=result, error=error)
         )
 
     def _process_error(
-        self,
-        request_id: int,
-        _process_error: QProcess.ProcessError,
+        self, request_id: int, _process_error: QProcess.ProcessError
     ) -> None:
         process = self._process
         if process is None or request_id != self._request_id:
             return
         if self._cancelled:
-            self._complete(DocumentWriteOutcome(self._require_context(), cancelled=True))
+            self._complete(SignatureOutcome(self._require_context(), cancelled=True))
             return
-        error = process.errorString() or "The document write process failed."
+        error = process.errorString() or "The signing process failed."
         if process.state() != QProcess.NotRunning:
             process.kill()
             process.waitForFinished(1000)
-        self._complete(DocumentWriteOutcome(self._require_context(), error=error))
+        self._complete(SignatureOutcome(self._require_context(), error=error))
 
-    def _require_context(self) -> DocumentWriteContext:
+    def _require_context(self) -> SignatureContext:
         if self._context is None:
-            raise RuntimeError("The document write context is missing.")
+            raise RuntimeError("The digital-signature context is missing.")
         return self._context
 
-    def _complete(self, outcome: DocumentWriteOutcome) -> None:
+    def _complete(self, outcome: SignatureOutcome) -> None:
         process = self._process
         if process is None:
             return

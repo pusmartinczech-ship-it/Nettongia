@@ -60,6 +60,11 @@ def _snapshot(text: str = "Changed") -> RecoverySnapshot:
         color=0x102030,
         flags=16,
         direction=(0.0, -1.0),
+        source_bboxes=(
+            (20.0, 30.0, 120.0, 40.0),
+            (20.0, 40.0, 120.0, 50.0),
+        ),
+        alpha=0,
     )
     return RecoverySnapshot(
         pdf_bytes=pdf_bytes,
@@ -75,6 +80,7 @@ def _snapshot(text: str = "Changed") -> RecoverySnapshot:
                 underline=True,
                 color=0x405060,
                 bbox=(20.0, 30.0, 150.0, 55.0),
+                wrap_text=False,
             ),
         ),
         inserted_texts=(

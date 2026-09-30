@@ -20,6 +20,8 @@ from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from .main_window import MainWindow
+from .comparison_worker import run_comparison_job
+from .digital_signature_worker import run_signature_job
 from .inspection_worker import run_inspection_job
 from .ocr_worker import run_ocr_job
 from .tile_worker import run_tile_job
@@ -107,6 +109,10 @@ def main() -> int:
         return run_self_test(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "--document-write-worker":
         return run_write_job(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--digital-signature-worker":
+        return run_signature_job(sys.argv[2])
+    if len(sys.argv) == 3 and sys.argv[1] == "--document-comparison-worker":
+        return run_comparison_job(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "--document-inspection-worker":
         return run_inspection_job(sys.argv[2])
     if len(sys.argv) == 3 and sys.argv[1] == "--tile-render-worker":
