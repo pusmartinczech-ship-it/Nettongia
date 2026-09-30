@@ -3359,6 +3359,9 @@ class MainWindow(QMainWindow):
         self.find_action = QAction("Find...", self)
         self.find_action.setShortcut(QKeySequence.Find)
         self.find_action.triggered.connect(self.show_find_bar)
+        # The menu bar is hidden by the ribbon UI. Keep its shortcut active
+        # regardless of which ribbon tab is currently visible.
+        self.addAction(self.find_action)
         self.find_next_action = QAction("Find next", self)
         self.find_next_action.setShortcut(QKeySequence("F3"))
         self.find_next_action.triggered.connect(self.find_next)
