@@ -385,6 +385,69 @@ class PdfEngine:
         self._require_open()
         return pymupdf.Rect(self._source[page_index].rect)
 
+    def page_links(self, page_index: int) -> list[dict]:
+        """Return detached link data with rectangles in visible page coordinates."""
+
+        self._require_open()
+        return [
+            {**link, "from": pymupdf.Rect(link["from"])}
+            for link in self._source[page_index].get_links()
+        ]
+
+    def bytes_with_link(
+        self,
+        page_index: int,
+        bbox: tuple[float, float, float, float] | None,
+        uri: str,
+        *,
+        xref: int | None = None,
+    ) -> bytes:
+        """Insert a URI link or replace the destination of an existing link."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            if xref is None:
+                if bbox is None:
+                    raise ValueError("Choose an area for the link.")
+                visible = pymupdf.Rect(bbox) & page.rect
+                if visible.is_empty or visible.width < 1 or visible.height < 1:
+                    raise ValueError("The link area is too small or outside the page.")
+                rect = self._page_rect_from_view(page, visible)
+                page.insert_link({"kind": pymupdf.LINK_URI, "from": rect, "uri": uri})
+            else:
+                original = next(
+                    (link for link in page.get_links() if int(link.get("xref", 0)) == int(xref)),
+                    None,
+                )
+                if original is None:
+                    raise ValueError("The link is no longer available.")
+                page.update_link({
+                    "xref": int(xref), "kind": pymupdf.LINK_URI,
+                    "from": self._page_rect_from_view(page, original["from"]),
+                    "uri": uri,
+                })
+            return self._serialize(document)
+        finally:
+            document.close()
+
+    def bytes_without_link(self, page_index: int, xref: int) -> bytes:
+        """Remove one link without changing the text or artwork beneath it."""
+
+        document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
+        try:
+            page = document[page_index]
+            link = next(
+                (item for item in page.get_links() if int(item.get("xref", 0)) == int(xref)),
+                None,
+            )
+            if link is None:
+                raise ValueError("The link is no longer available.")
+            page.delete_link(link)
+            return self._serialize(document)
+        finally:
+            document.close()
+
     def annotations(self) -> list[AnnotationInfo]:
         """Return native PDF annotations without keeping PyMuPDF proxies alive."""
 

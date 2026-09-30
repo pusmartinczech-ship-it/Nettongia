@@ -10,6 +10,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pymupdf
@@ -1005,6 +1006,7 @@ class PageView(QGraphicsView):
     source_image_edit_requested = Signal(str)
     visual_transform_requested = Signal(str, str, object, float)
     object_context_menu_requested = Signal(str, str, str, object)
+    canvas_context_menu_requested = Signal(object, object)
     signature_selection_changed = Signal(object)
     page_scroll_requested = Signal(int)
     visible_area_changed = Signal()
@@ -1017,6 +1019,7 @@ class PageView(QGraphicsView):
         self._source_image_edit_mode = False
         self._text_box_mode = False
         self._redaction_mode = False
+        self._link_area_mode = False
         self._form_field_mode = False
         self._form_field_compact = False
         self._form_field_signature = False
@@ -1633,7 +1636,13 @@ class PageView(QGraphicsView):
         item = self.itemAt(event.pos())
         target = self._context_object(item)
         if target is None or self.special_mode or self.inline_editing:
-            super().contextMenuEvent(event)
+            if self.sceneRect().contains(self.mapToScene(event.pos())) and not self.special_mode:
+                self.canvas_context_menu_requested.emit(
+                    self.mapToScene(event.pos()), event.globalPos()
+                )
+                event.accept()
+            else:
+                super().contextMenuEvent(event)
             return
 
         # A right click selects the object under the pointer before opening its
@@ -1759,8 +1768,9 @@ class PageView(QGraphicsView):
             elif isinstance(item, TextObjectGraphicsItem):
                 item.refresh_visuals()
 
-    def set_redaction_mode(self, enabled: bool) -> None:
+    def set_redaction_mode(self, enabled: bool, *, link_area: bool = False) -> None:
         self._redaction_mode = enabled
+        self._link_area_mode = enabled and link_area
         if enabled:
             self._placement_mode = False
             self._comment_placement_mode = False
@@ -1835,7 +1845,7 @@ class PageView(QGraphicsView):
                 self._text_drag_origin = point
                 self._text_drag_item = QGraphicsRectItem(QRectF(point, point))
                 if self._redaction_mode:
-                    accent = QColor("#e53935")
+                    accent = QColor("#1976d2") if self._link_area_mode else QColor("#e53935")
                 elif self._form_field_mode:
                     accent = QColor("#7b61ff")
                 else:
@@ -2434,6 +2444,7 @@ class MainWindow(QMainWindow):
         self._pending_visual: tuple[str, bytes, float, str, float] | None = None
         self._pending_text_box: tuple[str, tuple[float, float, float, float]] | None = None
         self._redaction_target_page: int | None = None
+        self._link_target_page: int | None = None
         self._pending_form_field: FormFieldSpec | None = None
         self._form_field_target_page: int | None = None
         self._form_workspace_mode = "none"
@@ -2814,6 +2825,9 @@ class MainWindow(QMainWindow):
         )
         self.page_view.object_context_menu_requested.connect(
             self._show_object_context_menu
+        )
+        self.page_view.canvas_context_menu_requested.connect(
+            self._show_canvas_context_menu
         )
         self.page_view.signature_selection_changed.connect(self._signature_selection_changed)
         self.page_view.page_scroll_requested.connect(self._scroll_main_view)
@@ -3490,6 +3504,8 @@ class MainWindow(QMainWindow):
         self.signature_action = QAction(self._asset_icon("signature.svg"), "Add visual signature...", self)
         self.signature_action.setToolTip("Draw or type a rotatable visual signature")
         self.signature_action.triggered.connect(self.add_signature)
+        self.add_link_action = QAction(self._asset_icon("link.svg"), "Add hyperlink...", self)
+        self.add_link_action.triggered.connect(self.start_add_link)
         self.add_comment_action = QAction("Add comment...", self)
         self.add_comment_action.setShortcut(QKeySequence("Ctrl+Alt+M"))
         self.add_comment_action.triggered.connect(self.start_add_comment)
@@ -3588,6 +3604,7 @@ class MainWindow(QMainWindow):
         self.insert_menu.addAction(self.insert_pdf_action)
         self.insert_menu.addSeparator()
         self.insert_menu.addAction(self.add_image_action)
+        self.insert_menu.addAction(self.add_link_action)
         self.insert_menu.addAction(self.signature_action)
         self.insert_menu.addAction(self.add_comment_action)
 
@@ -3745,6 +3762,7 @@ class MainWindow(QMainWindow):
         self._add_ribbon_tab("menu_edit", (
             self._ribbon_group("edit_text", (self.add_text_action, self.delete_text_action), self.text_controls_widget),
             self._ribbon_group("menu_image", (self.add_image_action, self.edit_original_image_action, self.delete_image_action, self.signature_action)),
+            self._ribbon_group("add_link", (self.add_link_action,)),
             self._ribbon_group("redact_area", (self.redact_area_action,)),
         ))
         self._add_ribbon_tab("menu_page", (
@@ -4174,6 +4192,7 @@ class MainWindow(QMainWindow):
             self.edit_original_image_action: "edit_original_image",
             self.delete_image_action: "delete_image",
             self.signature_action: "add_signature",
+            self.add_link_action: "add_link",
             self.add_comment_action: "add_comment",
             self.edit_comment_action: "edit_comment",
             self.delete_comment_action: "delete_annotation",
@@ -4555,6 +4574,7 @@ class MainWindow(QMainWindow):
             self.add_image_action: "image_add.svg",
             self.delete_image_action: "image_remove.svg",
             self.signature_action: "signature.svg",
+            self.add_link_action: "link.svg",
             self.add_text_action: "text_add.svg",
             self.delete_text_action: "text_remove.svg",
             self.find_action: "find.svg",
@@ -7080,6 +7100,27 @@ class MainWindow(QMainWindow):
         if not self.engine.is_open or self._document_write_in_progress(False):
             return
         menu = QMenu(self)
+        point = self.page_view.mapToScene(
+            self.page_view.mapFromGlobal(global_position)
+        )
+        link = self._link_at(self.current_page, point.x() / self.render_scale, point.y() / self.render_scale)
+        spec = self._text_spec(kind, key) if category == "text" else None
+        target_bbox = spec.bbox if spec else None
+        if category == "visual":
+            selected = next(
+                (item for item in self.page_view.scene().selectedItems()
+                 if isinstance(item, (SignatureGraphicsItem, VisualImageItem))
+                 and item.kind == kind and item.key == key),
+                None,
+            )
+            if selected is not None:
+                area = selected.sceneBoundingRect()
+                target_bbox = (
+                    area.left() / self.render_scale, area.top() / self.render_scale,
+                    area.right() / self.render_scale, area.bottom() / self.render_scale,
+                )
+        self._add_link_context_actions(menu, link, point, target_bbox=target_bbox)
+        menu.addSeparator()
         if category == "text":
             edit = menu.addAction(self.trx("edit_text"))
             edit.triggered.connect(
@@ -7123,6 +7164,130 @@ class MainWindow(QMainWindow):
         else:
             return
         self._exec_context_menu(menu, global_position)
+
+    def _link_at(self, page_index: int, x: float, y: float) -> dict | None:
+        if not self.engine.is_open or not 0 <= page_index < self.engine.page_count:
+            return None
+        return next(
+            ({**link, "_index": index}
+             for index, link in reversed(list(enumerate(self.engine.page_links(page_index))))
+             if pymupdf.Rect(link["from"]).contains(pymupdf.Point(x, y))),
+            None,
+        )
+
+    def _add_link_context_actions(
+        self, menu: QMenu, link: dict | None, point: QPointF,
+        *, target_bbox: tuple[float, float, float, float] | None = None,
+    ) -> None:
+        if link is not None:
+            edit = menu.addAction(self.trx("edit_link"))
+            edit.triggered.connect(
+                lambda _checked=False, page=self.current_page, xref=int(link["xref"]),
+                index=int(link["_index"]), uri=str(link.get("uri") or ""):
+                self._edit_link(page, xref, uri, index=index)
+            )
+            remove = menu.addAction(self.trx("remove_link"))
+            remove.triggered.connect(
+                lambda _checked=False, page=self.current_page, xref=int(link["xref"]),
+                index=int(link["_index"]): self._remove_link(page, xref, index=index)
+            )
+        else:
+            add = menu.addAction(self.trx("add_link"))
+            add.triggered.connect(
+                lambda _checked=False, page=self.current_page, x=point.x(), y=point.y(), bbox=target_bbox:
+                self._insert_link(page, bbox) if bbox else self._add_link_at_point(page, x, y)
+            )
+
+    def _show_canvas_context_menu(self, scene_point: QPointF, global_position: object) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        page = self.current_page
+        link = self._link_at(page, scene_point.x() / self.render_scale, scene_point.y() / self.render_scale)
+        menu = QMenu(self)
+        self._add_link_context_actions(menu, link, scene_point)
+        self._exec_context_menu(menu, global_position)
+
+    def _add_link_at_point(self, page: int, x: float, y: float) -> None:
+        if page != self.current_page:
+            return
+        bounds = self.engine.page_rect(page)
+        width, height = min(180.0, bounds.width), min(26.0, bounds.height)
+        px = min(max(bounds.x0, x / self.render_scale), bounds.x1 - width)
+        py = min(max(bounds.y0, y / self.render_scale), bounds.y1 - height)
+        self._insert_link(page, (px, py, px + width, py + height))
+
+    @staticmethod
+    def _validated_link_uri(value: str) -> str:
+        uri = value.strip()
+        if uri and ":" not in uri and "." in uri.split("/")[0]:
+            uri = "https://" + uri
+        parsed = urlsplit(uri)
+        if any(ord(char) < 32 for char in uri) or parsed.scheme.lower() not in ("http", "https", "mailto"):
+            raise ValueError("Use a full http(s) URL or a mailto: address.")
+        if parsed.scheme.lower() == "mailto":
+            if not parsed.path or "@" not in parsed.path:
+                raise ValueError("Enter a complete email address after mailto:.")
+        elif not parsed.netloc or any(char.isspace() for char in parsed.netloc):
+            raise ValueError("Enter a complete web address.")
+        return uri
+
+    def _ask_link_uri(self, initial: str = "") -> str | None:
+        uri, accepted = QInputDialog.getText(
+            self, self.trx("link_title"), self.trx("link_url_prompt"),
+            QLineEdit.Normal, initial,
+        )
+        if not accepted:
+            return None
+        try:
+            return self._validated_link_uri(uri)
+        except ValueError as exc:
+            QMessageBox.warning(self, self.trx("link_title"), str(exc))
+            return None
+
+    def _insert_link(self, page: int, bbox: tuple[float, float, float, float]) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        uri = self._ask_link_uri()
+        if uri and self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_link(page, bbox, uri), page, self.trx("link_title")
+        ):
+            self.statusBar().showMessage(self.trx("link_added"), 4000)
+
+    def _composed_link_xref(self, engine: PdfEngine, page: int, xref: int, index: int) -> int:
+        links = engine.page_links(page)
+        original = self.engine.page_links(page)
+        if (not 0 <= index < len(links) or not 0 <= index < len(original)
+                or int(original[index]["xref"]) != xref
+                or not pymupdf.Rect(links[index]["from"]).intersects(
+                    pymupdf.Rect(original[index]["from"])
+                )):
+            raise ValueError("The link is no longer available.")
+        return int(links[index]["xref"])
+
+    def _edit_link(self, page: int, xref: int, initial: str, *, index: int) -> None:
+        uri = self._ask_link_uri(initial)
+        if uri and uri != initial and self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_link(
+                page, None, uri, xref=self._composed_link_xref(engine, page, xref, index)
+            ), page, self.trx("link_title"),
+        ):
+            self.statusBar().showMessage(self.trx("link_updated"), 4000)
+
+    def _remove_link(self, page: int, xref: int, *, index: int) -> None:
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_without_link(
+                page, self._composed_link_xref(engine, page, xref, index)
+            ), page, self.trx("link_title")
+        ):
+            self.statusBar().showMessage(self.trx("link_removed"), 4000)
+
+    def start_add_link(self) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        self.cancel_special_mode()
+        self._link_target_page = self.current_page
+        self.page_view.set_redaction_mode(True, link_area=True)
+        self.statusBar().showMessage(self.trx("link_draw_hint"))
 
     def _push_state(
         self,
@@ -7674,6 +7839,12 @@ class MainWindow(QMainWindow):
         bbox: tuple[float, float, float, float],
         page_generation: int,
     ) -> None:
+        if self._link_target_page is not None:
+            target_page = self._link_target_page
+            self._link_target_page = None
+            if target_page == self.current_page and page_generation == self.page_view._page_generation:
+                self._insert_link(target_page, bbox)
+            return
         target_page = self._redaction_target_page
         self._redaction_target_page = None
         if (
@@ -8612,6 +8783,7 @@ class MainWindow(QMainWindow):
         self._pending_visual = None
         self._pending_text_box = None
         self._redaction_target_page = None
+        self._link_target_page = None
         self._pending_form_field = None
         self._form_field_target_page = None
         self.page_view.set_placement_mode(False)
@@ -9874,6 +10046,7 @@ class MainWindow(QMainWindow):
             self.add_image_action,
             self.delete_image_action,
             self.signature_action,
+            self.add_link_action,
             self.add_comment_action,
             self.redact_area_action,
             self.create_form_action,

@@ -378,6 +378,15 @@ BASE = {
     "sidebar_tree": "Tree",
     "comments": "Comments",
     "add_comment": "Add comment...",
+    "add_link": "Add hyperlink...",
+    "edit_link": "Edit hyperlink...",
+    "remove_link": "Remove hyperlink",
+    "link_title": "Hyperlink",
+    "link_url_prompt": "Web address (https://) or email address (mailto:):",
+    "link_draw_hint": "Drag over text or an image to mark the link area. Press Esc to cancel.",
+    "link_added": "Hyperlink added. Use Undo to remove it.",
+    "link_updated": "Hyperlink updated.",
+    "link_removed": "Hyperlink removed. Use Undo to restore it.",
     "edit_comment": "Edit selected comment...",
     "delete_annotation": "Delete selected annotation",
     "highlight_text": "Highlight text",
@@ -1344,6 +1353,18 @@ for key, values in EUROPEAN_ROWS.items():
         raise RuntimeError(f"Invalid European translation row {key}: {len(values)} values")
     for code, value in zip(EUROPEAN_LANGUAGE_CODES, values):
         _TRANSLATIONS[code][key] = value
+
+_TRANSLATIONS["cs"].update({
+    "add_link": "Přidat hypertextový odkaz...",
+    "edit_link": "Upravit hypertextový odkaz...",
+    "remove_link": "Odstranit hypertextový odkaz",
+    "link_title": "Hypertextový odkaz",
+    "link_url_prompt": "Webová adresa (https://) nebo e-mail (mailto:):",
+    "link_draw_hint": "Tažením označte oblast odkazu nad textem nebo obrázkem. Esc akci zruší.",
+    "link_added": "Odkaz byl vložen. Lze jej vrátit pomocí Zpět.",
+    "link_updated": "Odkaz byl upraven.",
+    "link_removed": "Odkaz byl odstraněn. Lze jej obnovit pomocí Zpět.",
+})
 
 
 def translate(language: str, key: str, **values: object) -> str:
