@@ -678,6 +678,7 @@ class DocumentMarksDialog(QDialog):
         tabs.addTab(watermark_page, self._tr("watermark"))
 
         self.font_family = QFontComboBox()
+        self._requested_font_family: str | None = None
         self.font_family.setCurrentFont(QFont("Arial"))
         self.header_size = QDoubleSpinBox()
         self.header_size.setRange(4, 36)
@@ -747,7 +748,7 @@ class DocumentMarksDialog(QDialog):
             self.watermark_opacity,
         ):
             spin.valueChanged.connect(self._update_preview)
-        self.font_family.currentFontChanged.connect(self._update_preview)
+        self.font_family.currentFontChanged.connect(self._font_changed)
         self.watermark_rotation.currentIndexChanged.connect(self._update_preview)
         self.watermark_overlay.toggled.connect(self._update_preview)
         self.page_scope.currentIndexChanged.connect(self._update_preview)
@@ -766,6 +767,9 @@ class DocumentMarksDialog(QDialog):
         ):
             getattr(self, name).setText(value)
         self.font_family.setCurrentFont(QFont(spec.font_family))
+        # Qt resolves fonts absent on this computer to a fallback. Keep the
+        # stored family until the user explicitly picks another one.
+        self._requested_font_family = spec.font_family
         self.header_size.setValue(spec.font_size)
         self.margin.setValue(spec.margin)
         self._header_color = _int_to_qcolor(spec.color)
@@ -781,6 +785,10 @@ class DocumentMarksDialog(QDialog):
             self.page_scope.setCurrentIndex(index)
         self.skip_first.setChecked(spec.skip_first_page)
         self._update_color_buttons()
+        self._update_preview()
+
+    def _font_changed(self, font: QFont) -> None:
+        self._requested_font_family = font.family()
         self._update_preview()
 
     def _request_remove(self) -> None:
@@ -823,7 +831,7 @@ class DocumentMarksDialog(QDialog):
             footer_left=self.footer_left.text(),
             footer_center=self.footer_center.text(),
             footer_right=self.footer_right.text(),
-            font_family=self.font_family.currentFont().family(),
+            font_family=self._requested_font_family or self.font_family.currentFont().family(),
             font_size=self.header_size.value(),
             color=_qcolor_to_int(self._header_color),
             margin=self.margin.value(),
