@@ -7911,11 +7911,14 @@ class MainWindow(QMainWindow):
             self.page_view.finish_inline_editor(True)
         try:
             has_existing = self.engine.has_document_marks()
+            existing_spec = self.engine.document_marks_spec()
         except Exception as exc:
             QMessageBox.critical(self, self.trx("document_marks_title"), str(exc))
             return
         title = self.document_path.stem if self.document_path else ""
-        dialog = DocumentMarksDialog(title, has_existing, self, self.trx)
+        dialog = DocumentMarksDialog(
+            title, has_existing, self, self.trx, existing_spec=existing_spec
+        )
         if not dialog.exec():
             return
         if dialog.remove_requested:

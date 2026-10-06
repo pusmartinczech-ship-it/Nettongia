@@ -613,6 +613,7 @@ class DocumentMarksDialog(QDialog):
         has_existing_marks: bool,
         parent=None,
         translator: Translator | None = None,
+        existing_spec: DocumentMarksSpec | None = None,
     ) -> None:
         super().__init__(parent)
         self._tr = _translator(translator)
@@ -751,6 +752,34 @@ class DocumentMarksDialog(QDialog):
         self.watermark_overlay.toggled.connect(self._update_preview)
         self.page_scope.currentIndexChanged.connect(self._update_preview)
         self.skip_first.toggled.connect(self._update_preview)
+        self._update_color_buttons()
+        if existing_spec is not None:
+            self.load_spec(existing_spec)
+        self._update_preview()
+
+    def load_spec(self, spec: DocumentMarksSpec) -> None:
+        for name, value in (
+            ("header_left", spec.header_left), ("header_center", spec.header_center),
+            ("header_right", spec.header_right), ("footer_left", spec.footer_left),
+            ("footer_center", spec.footer_center), ("footer_right", spec.footer_right),
+            ("watermark_text", spec.watermark_text),
+        ):
+            getattr(self, name).setText(value)
+        self.font_family.setCurrentFont(QFont(spec.font_family))
+        self.header_size.setValue(spec.font_size)
+        self.margin.setValue(spec.margin)
+        self._header_color = _int_to_qcolor(spec.color)
+        self._watermark_color = _int_to_qcolor(spec.watermark_color)
+        self.watermark_size.setValue(spec.watermark_font_size)
+        self.watermark_opacity.setValue(round(spec.watermark_opacity * 100))
+        index = self.watermark_rotation.findData(int(spec.watermark_rotation))
+        if index >= 0:
+            self.watermark_rotation.setCurrentIndex(index)
+        self.watermark_overlay.setChecked(spec.watermark_overlay)
+        index = self.page_scope.findData(spec.page_mode)
+        if index >= 0:
+            self.page_scope.setCurrentIndex(index)
+        self.skip_first.setChecked(spec.skip_first_page)
         self._update_color_buttons()
         self._update_preview()
 

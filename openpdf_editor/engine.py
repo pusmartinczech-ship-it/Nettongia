@@ -1,17 +1,18 @@
 from __future__ import annotations
 
 import math
+import json
 import os
 import re
 import secrets
 import tempfile
 import zlib
-from dataclasses import dataclass, field, replace
+from dataclasses import asdict, dataclass, field, replace
 from datetime import date
 from io import BytesIO
 from pathlib import Path
 from typing import Iterable
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 from PIL import Image, ImageDraw, ImageFont, ImageStat
 
@@ -394,6 +395,66 @@ class PdfEngine:
             for link in self._source[page_index].get_links()
         ]
 
+    @staticmethod
+    def _remove_link_label(document: pymupdf.Document, page_index: int, link_xref: int) -> None:
+        kind, label_id = document.xref_get_key(link_xref, "NettongiaLabelId")
+        if kind != "string" or not re.fullmatch(r"[0-9a-f]{16}", label_id):
+            return
+        pattern = re.compile(rb"/NettongiaLinkLabel_" + label_id.encode("ascii") + rb"\s+BMC.*?EMC", re.DOTALL)
+        for stream_xref in document[page_index].get_contents() or ():
+            stream = document.xref_stream(stream_xref)
+            if pattern.search(stream):
+                document.update_stream(stream_xref, pattern.sub(b"", stream))
+        document.xref_set_key(link_xref, "NettongiaLabelId", "null")
+
+    @staticmethod
+    def _add_link_label(
+        document: pymupdf.Document, page_index: int, link_xref: int,
+        view_rect: pymupdf.Rect, label: str,
+    ) -> None:
+        page = document[page_index]
+        # A link over existing text or artwork is already visible. Never paint
+        # a second URL over the document's own content.
+        if page.get_text("words", clip=PdfEngine._page_rect_from_view(page, view_rect)):
+            return
+        if any(
+            pymupdf.Rect(item["bbox"]).intersects(PdfEngine._page_rect_from_view(page, view_rect))
+            for item in page.get_image_info()
+        ):
+            return
+        previous = set(page.get_contents() or ())
+        # Keep the caption on one line; wrapping can extend into nearby text.
+        caption = label
+        if pymupdf.get_text_length(caption, fontname="helv", fontsize=7) > view_rect.width - 3:
+            parsed = urlsplit(label)
+            caption = parsed.netloc or parsed.path
+        while caption and pymupdf.get_text_length(caption, fontname="helv", fontsize=5) > view_rect.width - 3:
+            caption = caption[:-1]
+        if not caption:
+            raise ValueError("Draw a wider area for the hyperlink text.")
+        for size in (11, 9, 7, 5):
+            if pymupdf.get_text_length(caption, fontname="helv", fontsize=size) > view_rect.width - 3:
+                continue
+            result = page.insert_textbox(
+                PdfEngine._page_rect_from_view(page, view_rect), caption,
+                fontsize=size, fontname="helv", color=(0.05, 0.31, 0.76),
+                rotate=int(page.rotation) % 360, overlay=True,
+            )
+            if result >= 0:
+                break
+        else:
+            # Avoid an invisible clickable rectangle when its label cannot fit.
+            raise ValueError("Draw a wider area for the hyperlink text.")
+        streams = set(page.get_contents() or ()) - previous
+        if not streams:
+            raise ValueError("The hyperlink text could not be displayed.")
+        stream_xref = max(streams)
+        stream = document.xref_stream(stream_xref)
+        label_id = secrets.token_hex(8)
+        tag = b"/NettongiaLinkLabel_" + label_id.encode("ascii") + b" BMC"
+        document.update_stream(stream_xref, tag + b"\n" + stream + b"\nEMC\n")
+        document.xref_set_key(link_xref, "NettongiaLabelId", pymupdf.get_pdf_str(label_id))
+
     def bytes_with_link(
         self,
         page_index: int,
@@ -415,6 +476,10 @@ class PdfEngine:
                     raise ValueError("The link area is too small or outside the page.")
                 rect = self._page_rect_from_view(page, visible)
                 page.insert_link({"kind": pymupdf.LINK_URI, "from": rect, "uri": uri})
+                # get_links() refreshes its annotation list after a page reload.
+                document.reload_page(page)
+                new_link = document[page_index].get_links()[-1]
+                self._add_link_label(document, page_index, new_link["xref"], visible, uri)
             else:
                 original = next(
                     (link for link in page.get_links() if int(link.get("xref", 0)) == int(xref)),
@@ -422,11 +487,23 @@ class PdfEngine:
                 )
                 if original is None:
                     raise ValueError("The link is no longer available.")
+                labeled = document.xref_get_key(int(xref), "NettongiaLabelId")[0] == "string"
+                if labeled:
+                    self._remove_link_label(document, page_index, int(xref))
+                    cleaned = self._serialize(document)
+                    document.close()
+                    document = pymupdf.open(stream=cleaned, filetype="pdf")
+                    page = document[page_index]
+                    original = next(link for link in page.get_links() if pymupdf.Rect(link["from"]) == pymupdf.Rect(original["from"]))
+                    xref = int(original["xref"])
                 page.update_link({
                     "xref": int(xref), "kind": pymupdf.LINK_URI,
                     "from": self._page_rect_from_view(page, original["from"]),
                     "uri": uri,
                 })
+                if labeled:
+                    document.reload_page(page)
+                    self._add_link_label(document, page_index, int(xref), original["from"], uri)
             return self._serialize(document)
         finally:
             document.close()
@@ -443,6 +520,7 @@ class PdfEngine:
             )
             if link is None:
                 raise ValueError("The link is no longer available.")
+            self._remove_link_label(document, page_index, int(xref))
             page.delete_link(link)
             return self._serialize(document)
         finally:
@@ -1608,12 +1686,32 @@ class PdfEngine:
         self._require_open()
         return bool(self._document_mark_xrefs(self._source))
 
+    def document_marks_spec(self) -> DocumentMarksSpec | None:
+        """Read the editable settings saved with Nettongia page decorations."""
+
+        self._require_open()
+        if not self.has_document_marks():
+            return None
+        kind, value = self._source.xref_get_key(
+            self._source.pdf_catalog(), "NettongiaDocumentMarksSpec"
+        )
+        if kind != "string":
+            return None  # Older PDFs contain artwork but no editable settings.
+        try:
+            data = json.loads(value)
+            if not isinstance(data, dict) or set(data) != set(DocumentMarksSpec.__dataclass_fields__):
+                return None
+            return DocumentMarksSpec(**data)
+        except (ValueError, TypeError):
+            return None
+
     def bytes_without_document_marks(self) -> bytes:
         """Remove page decorations previously created by Nettongia."""
 
         document = pymupdf.open(stream=self.source_bytes, filetype="pdf")
         try:
             self._remove_document_marks(document)
+            document.xref_set_key(document.pdf_catalog(), "NettongiaDocumentMarksSpec", "null")
             return self._serialize(document)
         finally:
             document.close()
@@ -1862,6 +1960,10 @@ class PdfEngine:
                 self._mark_new_page_streams(
                     document, document[page_index], previous
                 )
+            document.xref_set_key(
+                document.pdf_catalog(), "NettongiaDocumentMarksSpec",
+                pymupdf.get_pdf_str(json.dumps(asdict(spec), ensure_ascii=False)),
+            )
             return self._serialize(document)
         finally:
             document.close()

@@ -27,12 +27,17 @@ def test_link_roundtrip_preserves_area_and_page_content(rotation: int) -> None:
         link = engine.page_links(0)[0]
         assert tuple(link["from"]) == pytest.approx(bbox)
         assert link["uri"] == "https://example.org/a"
+        assert "example.org" in engine._source[0].get_text()
         engine.load_bytes(engine.bytes_with_link(0, None, "mailto:hello@example.org", xref=link["xref"]))
         updated = engine.page_links(0)[0]
         assert tuple(updated["from"]) == pytest.approx(bbox)
         assert updated["uri"] == "mailto:hello@example.org"
+        visible_text = engine._source[0].get_text()
+        assert "hello@example.org" in visible_text
+        assert "https://example.org/a" not in visible_text
         engine.load_bytes(engine.bytes_without_link(0, updated["xref"]))
         assert engine.page_links(0) == []
+        assert "hello@example.org" not in engine._source[0].get_text()
         assert "Keep this text" in engine.text_runs(0)[0].text
     finally:
         engine.close()

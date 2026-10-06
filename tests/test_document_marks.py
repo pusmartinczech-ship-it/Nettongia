@@ -42,6 +42,11 @@ def test_document_marks_expand_tokens_and_respect_page_scope() -> None:
     engine.load_bytes(marked)
 
     assert engine.has_document_marks()
+    assert engine.document_marks_spec() == DocumentMarksSpec(
+        header_left="{title}", footer_center="{page} / {pages}",
+        watermark_text="DŮVĚRNÉ", page_mode="odd", skip_first_page=True,
+        document_title="Český dokument",
+    )
     with pymupdf.open(stream=marked, filetype="pdf") as document:
         assert document[0].get_text().strip() == "Original page 1"
         assert document[1].get_text().strip() == "Original page 2"
@@ -74,6 +79,7 @@ def test_reapplying_and_removing_document_marks_preserves_original_content() -> 
     cleaned = engine.bytes_without_document_marks()
     engine.load_bytes(cleaned)
     assert not engine.has_document_marks()
+    assert engine.document_marks_spec() is None
     with pymupdf.open(stream=cleaned, filetype="pdf") as document:
         assert document[0].get_text().strip() == "Original page 1"
         assert not document[0].get_images(full=True)
@@ -118,6 +124,24 @@ def test_document_marks_dialog_provides_live_preview_and_spec() -> None:
     assert dialog.preview.spec == spec
     dialog.buttons.button(QDialogButtonBox.Apply).click()
     assert dialog.result() == QDialog.Accepted
+
+
+def test_existing_document_marks_are_loaded_for_editing() -> None:
+    app = _application()
+    original = DocumentMarksSpec(
+        header_left="Company", footer_right="{page}", watermark_text="DRAFT",
+        margin=32, font_size=12, color=0x123456, watermark_opacity=0.35,
+        page_mode="even", skip_first_page=True, document_title="Proposal",
+    )
+    engine = PdfEngine()
+    engine.load_bytes(_source_pdf())
+    engine.load_bytes(engine.bytes_with_document_marks(original))
+    dialog = DocumentMarksDialog("Proposal", True, existing_spec=engine.document_marks_spec())
+    assert dialog.marks_spec() == original
+    dialog.footer_right.setText("Updated {page}")
+    engine.load_bytes(engine.bytes_with_document_marks(dialog.marks_spec()))
+    assert engine.document_marks_spec().footer_right == "Updated {page}"
+    app.processEvents()
 
 
 def test_main_window_document_marks_support_undo(tmp_path: Path, monkeypatch) -> None:
