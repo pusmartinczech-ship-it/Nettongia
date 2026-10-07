@@ -117,14 +117,14 @@ def render(language: str, labels: list[str], translated: list[str]) -> None:
     hero.xpath("./br")[0].tail = second
     status = doc.xpath('//div[contains(@class,"window-status")]/span')
     status[0].text, status[1].text = cfg["status"], cfg["ready"]
-    for item in doc.xpath('//a[@href="offline-pdf-editor-windows.html"]'):
+    for item in doc.xpath('//a[@href="offline-pdf-editor-windows"]'):
         item.text = cfg["guide"]
-    for item in doc.xpath('//a[@href="code-signing-policy.html"]'):
+    for item in doc.xpath('//a[@href="code-signing-policy"]'):
         item.text = cfg["signing"] if item.xpath('ancestor::footer') else (item.text or "") + " (EN)"
-    for item in doc.xpath('//a[@href="privacy.html"]'):
+    for item in doc.xpath('//a[@href="privacy"]'):
         item.text = cfg["privacy"] if item.xpath('ancestor::footer') else (item.text or "") + " (EN)"
     # Legal documents are available in English; label the links explicitly.
-    for url, label in (("privacy.html", cfg["privacy"]), ("license.html", cfg["licenses"])):
+    for url, label in (("privacy", cfg["privacy"]), ("license", cfg["licenses"])):
         for item in doc.xpath(f'//footer//a[@href="{url}"]'):
             item.text = label
     for item in doc.xpath('//a[@href="./"]'):

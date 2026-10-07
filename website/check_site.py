@@ -63,6 +63,10 @@ def local_target(page: Path, value: str) -> Path | None:
         target = page.parent / path
     if target.is_dir() or path.endswith("/"):
         target /= "index.html"
+    elif not target.exists() and not target.suffix:
+        # Cloudflare Pages serves file.html at /file, and redirects the
+        # .html URL there. Local links should use the final public URL.
+        target = target.with_suffix(".html")
     return target.resolve()
 
 def main() -> int:
@@ -84,6 +88,9 @@ def main() -> int:
                 element.text or ""
                 for element in sitemap.findall("{http://www.sitemaps.org/schemas/sitemap/0.9}url/{http://www.sitemaps.org/schemas/sitemap/0.9}loc")
             }
+            for url in sitemap_urls:
+                if urlparse(url).path.endswith(".html"):
+                    errors.append(f"sitemap URL redirects on Cloudflare Pages: {url}")
         except ElementTree.ParseError as error:
             errors.append(f"sitemap.xml is not well formed: {error}")
     if not robots_path.exists() or "Sitemap: https://nettongia.com/sitemap.xml" not in robots_path.read_text(encoding="utf-8"):
@@ -117,6 +124,8 @@ def main() -> int:
                 errors.append(f"{label}: indexable page is missing a canonical URL")
             else:
                 canonical = canonical_match.group(1)
+                if urlparse(canonical).path.endswith(".html"):
+                    errors.append(f"{label}: canonical URL redirects on Cloudflare Pages")
                 if canonical in canonicals:
                     errors.append(f"{label}: duplicate canonical also used by {canonicals[canonical].relative_to(ROOT)}")
                 canonicals[canonical] = page
@@ -136,6 +145,8 @@ def main() -> int:
             except json.JSONDecodeError as error:
                 errors.append(f"{label}: invalid JSON-LD: {error}")
         for tag, value in parser.links:
+            if urlparse(value).path.endswith(".html"):
+                errors.append(f"{label}: {tag} points to a redirecting .html URL: {value}")
             target = local_target(page, value)
             if target is not None and not target.exists():
                 errors.append(f"{label}: broken local {tag} target {value}")
@@ -148,6 +159,10 @@ def main() -> int:
         if header not in headers:
             errors.append(f"Missing security header: {header}")
     index = (ROOT / "index.html").read_text(encoding="utf-8")
+    redirects = (ROOT / "_redirects").read_text(encoding="utf-8")
+    current_download = re.search(r'<a[^>]*data-download[^>]*href="([^"]+)"', index)
+    if current_download and f"/download {current_download.group(1)} 302" not in redirects:
+        errors.append("/download redirect must match the current portable release")
     homepages = {
         language: (ROOT / language / "index.html" if language != "en" else ROOT / "index.html").read_text(encoding="utf-8")
         for language in ("en", "cs", "de", "es", "fr")
