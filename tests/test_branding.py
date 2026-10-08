@@ -26,7 +26,7 @@ def test_brand_identity_and_packaging_names_are_consistent() -> None:
 def test_brand_and_toolbar_icons_are_valid_svg() -> None:
     names = (
         "file_new.svg", "file_open.svg", "file_close.svg",
-        "file_save.svg", "file_save_as.svg", "file_copy.svg", "print.svg",
+        "file_save.svg", "file_save_as.svg", "file_copy.svg", "file_lock.svg", "file_unlock.svg", "compare.svg", "crop.svg", "page_resize.svg", "document_marks.svg", "support.svg", "print.svg",
         "compress.svg", "undo.svg", "redo.svg", "zoom_in.svg", "zoom_out.svg",
         "fit_width.svg", "page_add.svg", "page_remove.svg", "pages_import.svg",
         "image_add.svg", "image_remove.svg", "signature.svg", "text_add.svg",

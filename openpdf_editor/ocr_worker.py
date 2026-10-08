@@ -8,6 +8,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
+from PIL import Image
+
 from .runtime import bundled_tessdata_path, configure_packaged_runtime
 
 try:
@@ -162,6 +164,211 @@ def _insert_invisible_word(page, word: tuple, font_path: str | None) -> bool:
     return True
 
 
+def _insert_invisible_block(page, words: list[tuple], font_path: str | None) -> int:
+    """Keep the actual scan coordinates of each recognized line.
+
+    Tesseract blocks can span several table rows. A single PDF textbox would
+    reflow those rows into its own line spacing, making a later edit overwrite
+    neighboring cells rather than the line the user selected.
+    """
+
+    valid = [
+        word
+        for word in words
+        if len(word) >= 8
+        and str(word[4]).strip()
+        and not (pymupdf.Rect(word[:4]) & page.rect).is_empty
+    ]
+    if not valid:
+        return 0
+    by_line: dict[int, list[tuple]] = {}
+    for word in valid:
+        by_line.setdefault(int(word[6]), []).append(word)
+    line_groups = [
+        sorted(line, key=lambda word: (int(word[7]), float(word[0])))
+        for _, line in sorted(by_line.items())
+    ]
+    kwargs = {
+        "fontname": "ocrfont" if font_path else "helv",
+        "fontfile": font_path,
+        "render_mode": 3,
+        "lineheight": 1.0,
+        "overlay": True,
+    }
+    inserted = 0
+    for line in line_groups:
+        text = " ".join(str(word[4]).strip() for word in line)
+        rect = pymupdf.Rect(
+            min(float(word[0]) for word in line),
+            min(float(word[1]) for word in line),
+            max(float(word[2]) for word in line),
+            max(float(word[3]) for word in line),
+        ) & page.rect
+        heights = sorted(max(1.0, float(word[3]) - float(word[1])) for word in line)
+        font_size = min(96.0, max(3.0, heights[len(heights) // 2] * 0.78))
+        attempted_size = font_size
+        while attempted_size >= 3.0:
+            remaining = page.insert_textbox(rect, text, fontsize=attempted_size, **kwargs)
+            if remaining >= 0:
+                inserted += len(line)
+                break
+            if attempted_size <= 3.0:
+                break
+            attempted_size = max(3.0, attempted_size * 0.88)
+        if remaining < 0:
+            # An unusually tight row can still be made searchable word by word.
+            inserted += sum(_insert_invisible_word(page, word, font_path) for word in line)
+    return inserted
+
+
+def _rule_positions(scores: list[float], threshold: float, scale: float, offset: int) -> list[float]:
+    """Collapse neighboring dark pixel rows or columns into scan rulings."""
+
+    positions: list[float] = []
+    start: int | None = None
+    for index, score in enumerate([*scores, 0.0]):
+        if score >= threshold and start is None:
+            start = index
+        elif score < threshold and start is not None:
+            if index - start <= max(6, round(3 * scale)):
+                positions.append((offset + (start + index - 1) / 2) / scale)
+            start = None
+    return positions
+
+
+def _scanned_table_cells(page) -> list[tuple[pymupdf.Rect, list[pymupdf.Rect]]]:
+    """Locate ruled cells in a scanned page without trusting OCR text boxes."""
+
+    scale = min(2.0, 2200 / max(page.rect.width, page.rect.height))
+    pixmap = page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False, annots=False)
+    if pixmap.width < 250 or pixmap.height < 250:
+        return []
+    grayscale = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples).convert("L")
+    pixels = grayscale.load()
+    left, right = round(pixmap.width * 0.1), round(pixmap.width * 0.9)
+    x_samples = range(left, right, 4)
+    horizontal = [
+        sum(pixels[x, y] < 160 for x in x_samples) / len(x_samples)
+        for y in range(pixmap.height)
+    ]
+    rules = _rule_positions(horizontal, 0.35, scale, pixmap.y)
+    sequences: list[list[float]] = []
+    for y in rules:
+        if not sequences or y - sequences[-1][-1] > 55:
+            sequences.append([y])
+        else:
+            sequences[-1].append(y)
+
+    tables: list[tuple[pymupdf.Rect, list[pymupdf.Rect]]] = []
+    for rows in sequences:
+        if len(rows) < 5 or rows[-1] - rows[0] < 50:
+            continue
+        top = max(0, round(rows[0] * scale - pixmap.y))
+        bottom = min(pixmap.height, round(rows[-1] * scale - pixmap.y))
+        y_samples = range(top, bottom, 4)
+        if not y_samples:
+            continue
+        vertical = [
+            sum(pixels[x, y] < 160 for y in y_samples) / len(y_samples)
+            for x in range(pixmap.width)
+        ]
+        columns = _rule_positions(vertical, 0.45, scale, pixmap.x)
+        columns = [x for x in columns if page.rect.x0 + 2 < x < page.rect.x1 - 2]
+        if len(columns) < 3 or columns[-1] - columns[0] < page.rect.width * 0.3:
+            continue
+        cells = [
+            pymupdf.Rect(x0 + 1.2, y0 + 1.0, x1 - 1.2, y1 - 1.0)
+            for y0, y1 in zip(rows, rows[1:])
+            for x0, x1 in zip(columns, columns[1:])
+            if y1 - y0 >= 9 and x1 - x0 >= 28
+        ]
+        if not cells or len(cells) > 300:
+            continue
+        tables.append((pymupdf.Rect(columns[0], rows[0], columns[-1], rows[-1]), cells))
+    return tables
+
+
+def _insert_invisible_table_cells(
+    page, cells: list[pymupdf.Rect], language: str, dpi: int,
+    tessdata: Path, font_path: str | None,
+) -> int:
+    """OCR each scan cell separately so text never spans neighboring rows."""
+
+    existing = [pymupdf.Rect(word[:4]) for word in page.get_text("words")]
+    font = pymupdf.Font(fontfile=font_path) if font_path else pymupdf.Font("helv")
+    inserted = 0
+    for rect in cells:
+        if any(not (rect & native).is_empty for native in existing):
+            continue
+        pixmap = page.get_pixmap(
+            matrix=pymupdf.Matrix(dpi / 72, dpi / 72),
+            clip=rect, alpha=False, annots=False,
+        )
+        if pixmap.width < 10 or pixmap.height < 10:
+            continue
+        with pymupdf.open(
+            stream=pixmap.pdfocr_tobytes(language=language, tessdata=str(tessdata)),
+            filetype="pdf",
+        ) as recognized:
+            text = " ".join(recognized[0].get_text(sort=True).split())
+        if not text:
+            continue
+        font_size = min(11.0, max(3.0, rect.height * 0.9))
+        text_width = font.text_length(text, fontsize=font_size)
+        if text_width > rect.width:
+            font_size = max(3.0, font_size * rect.width / text_width)
+        page.insert_text(
+            (rect.x0, rect.y1 - 0.8), text,
+            fontsize=font_size,
+            fontname="ocrfont" if font_path else "helv",
+            fontfile=font_path,
+            render_mode=3, overlay=True,
+        )
+        inserted += len(text.split())
+    return inserted
+
+
+def _filter_words_over_existing_text(page, words: list[tuple]) -> list[tuple]:
+    """Keep OCR words that do not duplicate an existing PDF text layer."""
+
+    existing_rects = [
+        pymupdf.Rect(word[:4]) & page.rect
+        for word in page.get_text("words", sort=True)
+        if len(word) >= 5 and str(word[4]).strip()
+    ]
+    existing_rects = [rect for rect in existing_rects if not rect.is_empty]
+    if not existing_rects:
+        return words
+
+    filtered: list[tuple] = []
+    for word in words:
+        candidate = pymupdf.Rect(word[:4]) & page.rect
+        if candidate.is_empty:
+            continue
+        duplicated = False
+        center = (candidate.tl + candidate.br) / 2.0
+        for existing in existing_rects:
+            padding = max(1.0, min(4.0, existing.height * 0.2))
+            expanded = pymupdf.Rect(
+                existing.x0 - padding,
+                existing.y0 - padding,
+                existing.x1 + padding,
+                existing.y1 + padding,
+            )
+            overlap = candidate & existing
+            overlap_ratio = (
+                overlap.get_area() / candidate.get_area()
+                if not overlap.is_empty and candidate.get_area() > 0
+                else 0.0
+            )
+            if expanded.contains(center) or overlap_ratio >= 0.35:
+                duplicated = True
+                break
+        if not duplicated:
+            filtered.append(word)
+    return filtered
+
+
 def run_ocr_job(job_path: str | Path) -> int:
     result_path: Path | None = None
     document = None
@@ -186,9 +393,7 @@ def run_ocr_job(job_path: str | Path) -> int:
         font_path = _ocr_font_path()
         for page_index in job["page_indices"]:
             page = document[page_index]
-            if len(page.get_text("text").strip()) >= 3:
-                skipped += 1
-                continue
+            tables = _scanned_table_cells(page)
             textpage = page.get_textpage_ocr(
                 language=job["language"],
                 dpi=job["dpi"],
@@ -196,10 +401,36 @@ def run_ocr_job(job_path: str | Path) -> int:
                 tessdata=str(tessdata),
             )
             words = page.get_text("words", textpage=textpage, sort=True)
-            inserted = sum(_insert_invisible_word(page, word, font_path) for word in words)
+            words = _filter_words_over_existing_text(page, words)
+            words = [
+                word for word in words
+                if not any(
+                    area.contains(pymupdf.Point(
+                        (float(word[0]) + float(word[2])) / 2,
+                        (float(word[1]) + float(word[3])) / 2,
+                    ))
+                    for area, _ in tables
+                )
+            ]
+            by_block: dict[int, list[tuple]] = {}
+            for word in words:
+                block_number = int(word[5]) if len(word) >= 8 else len(by_block)
+                by_block.setdefault(block_number, []).append(word)
+            inserted = sum(
+                _insert_invisible_table_cells(
+                    page, cells, job["language"], job["dpi"], tessdata, font_path,
+                )
+                for _, cells in tables
+            )
+            inserted += sum(
+                _insert_invisible_block(page, block_words, font_path)
+                for block_words in by_block.values()
+            )
             if inserted:
                 processed += 1
                 words_inserted += inserted
+            else:
+                skipped += 1
         if processed:
             temporary = output_path.with_suffix(".tmp.pdf")
             document.save(temporary, garbage=2, deflate=True)

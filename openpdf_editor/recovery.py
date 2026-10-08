@@ -73,6 +73,8 @@ def _run_to_json(run: TextRun) -> dict[str, Any]:
         "color": run.color,
         "flags": run.flags,
         "direction": list(run.direction),
+        "source_bboxes": [list(bbox) for bbox in run.source_bboxes],
+        "alpha": run.alpha,
     }
 
 
@@ -88,6 +90,7 @@ def _edit_to_json(edit: TextEdit) -> dict[str, Any]:
         "underline": edit.underline,
         "color": edit.color,
         "bbox": list(edit.bbox) if edit.bbox is not None else None,
+        "wrap_text": edit.wrap_text,
     }
 
 
@@ -331,6 +334,12 @@ def _text_run_from_json(value: Any) -> TextRun:
     direction_length = math.hypot(direction[0], direction[1])
     if direction_length < 1e-7:
         raise ValueError("Invalid recovery field: run.direction.")
+    source_bboxes = tuple(
+        tuple(_numbers(value, f"run.source_bboxes[{index}]", 4))
+        for index, value in enumerate(
+            _sequence(item.get("source_bboxes", []), "run.source_bboxes")
+        )
+    )
     return TextRun(
         key=str(_string(item.get("key"), "run.key")),
         page_index=_integer(item.get("page_index"), "run.page_index"),
@@ -345,6 +354,8 @@ def _text_run_from_json(value: Any) -> TextRun:
         color=_integer(item.get("color"), "run.color", maximum=0xFFFFFF),
         flags=_integer(item.get("flags"), "run.flags"),
         direction=(direction[0] / direction_length, direction[1] / direction_length),
+        source_bboxes=source_bboxes,
+        alpha=_integer(item.get("alpha", 255), "run.alpha", maximum=255),
     )
 
 
@@ -364,6 +375,9 @@ def _edit_from_json(value: Any) -> TextEdit:
         underline=bool(_boolean(item.get("underline"), "edit.underline")),
         color=color,
         bbox=_optional_bbox(item.get("bbox"), "edit.bbox"),
+        wrap_text=bool(
+            _boolean(item.get("wrap_text", True), "edit.wrap_text")
+        ),
     )
 
 

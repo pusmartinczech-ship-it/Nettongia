@@ -17,8 +17,10 @@ from openpdf_editor.engine import (
     SignaturePlacement,
     TextEdit,
     TextPlacement,
+    TextRun,
     _builtin_pdf_font_name,
 )
+from openpdf_editor import __version__
 
 
 SAMPLES = Path(os.environ.get("OPENPDF_TEST_SAMPLES", Path(__file__).resolve().parents[2] / "upload"))
@@ -92,6 +94,7 @@ def test_blank_document_creation() -> None:
         assert document[0].rect.width == pytest.approx(595.28, abs=0.1)
         assert document[0].rect.height == pytest.approx(841.89, abs=0.1)
         assert document.metadata["creator"] == "Nettongia PDF Editor"
+        assert document.metadata["producer"] == f"Nettongia PDF Editor {__version__}"
 
 
 def test_password_protected_pdf_can_be_opened_and_edited() -> None:
@@ -292,6 +295,177 @@ def test_inserted_text_box_is_real_pdf_text(tmp_path: Path) -> None:
         assert document[0].search_for("NEW DIRECT TEXT")
 
 
+def test_replacement_text_wraps_without_shrinking_the_selected_font() -> None:
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_text((50, 90), "SHORT TEXT", fontsize=16)
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    run = next(item for item in engine.text_runs(0) if item.text == "SHORT TEXT")
+    replacement = "A longer replacement wraps naturally across several lines"
+    result = engine.build_document(
+        [
+            TextEdit(
+                run,
+                replacement,
+                16,
+                bbox=(50, 70, 205, 145),
+            )
+        ]
+    )
+    try:
+        assert replacement in " ".join(result[0].get_text().split())
+        spans = [
+            span
+            for block in result[0].get_text("dict")["blocks"]
+            if block.get("type") == 0
+            for line in block.get("lines", [])
+            for span in line.get("spans", [])
+            if span.get("text", "").strip()
+        ]
+        replacement_spans = [
+            span for span in spans if any(word in span["text"] for word in ("longer", "naturally", "several"))
+        ]
+        assert len(replacement_spans) >= 2
+        assert all(span["size"] == pytest.approx(16, abs=0.2) for span in replacement_spans)
+    finally:
+        result.close()
+    engine.close()
+
+
+def test_document_can_be_saved_as_an_aes_256_password_protected_copy(
+    tmp_path: Path,
+) -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    output = tmp_path / "protected.pdf"
+    password = "correct horse battery staple"
+
+    engine.save(
+        output,
+        (),
+        inserted_texts=(
+            TextPlacement(
+                key="protected-text",
+                page_index=0,
+                bbox=(40, 50, 350, 110),
+                text="Encrypted Nettongia copy",
+                font_size=18,
+            ),
+        ),
+        encryption_password=password,
+    )
+
+    with fitz.open(output) as protected:
+        assert protected.needs_pass
+        assert not protected.authenticate("wrong password")
+        assert protected.authenticate(password)
+        assert "256-bit AES" in protected.metadata["encryption"]
+        assert "Encrypted Nettongia copy" in protected[0].get_text()
+    engine.close()
+
+
+def test_wrapped_text_height_accounts_for_width_and_explicit_lines() -> None:
+    text = "This sentence should wrap into more lines in the narrow box."
+    narrow = PdfEngine.wrapped_text_height(text, 90, "Arial", 14)
+    wide = PdfEngine.wrapped_text_height(text, 320, "Arial", 14)
+    explicit = PdfEngine.wrapped_text_height("one\ntwo\nthree", 320, "Arial", 14)
+
+    assert narrow > wide
+    assert explicit >= 3 * 14 * 1.15
+
+
+def test_uniform_pdf_lines_are_edited_as_one_reflowing_paragraph() -> None:
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_textbox(
+        (45, 45, 290, 160),
+        "First original para-\ngraph line\nThird original line",
+        fontsize=15,
+        fontname="helv",
+    )
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    runs = engine.text_runs(0)
+    assert len(runs) == 1
+    paragraph = runs[0]
+    assert paragraph.text == (
+        "First original paragraph line Third original line"
+    )
+    assert len(paragraph.source_bboxes) == 3
+
+    replacement = "The complete paragraph now reflows as a single editable text block."
+    result = engine.build_document(
+        [TextEdit(paragraph, replacement, paragraph.font_size, bbox=paragraph.bbox)]
+    )
+    try:
+        text = " ".join(result[0].get_text().split())
+        assert replacement in text
+        assert "First original para" not in text
+        assert "graph line" not in text
+        assert "Third original line" not in text
+    finally:
+        result.close()
+        engine.close()
+
+
+def test_list_lines_are_not_merged_into_a_paragraph() -> None:
+    source = fitz.open()
+    page = source.new_page(width=420, height=300)
+    page.insert_textbox(
+        (45, 45, 290, 160),
+        "1. First item\n2. Second item\n3. Third item",
+        fontsize=15,
+        fontname="helv",
+    )
+    payload = source.tobytes()
+    source.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(payload)
+    try:
+        runs = engine.text_runs(0)
+        assert len(runs) == 3
+        assert all(not run.source_bboxes for run in runs)
+    finally:
+        engine.close()
+
+
+def test_widely_separated_table_columns_are_not_merged() -> None:
+    runs = [
+        TextRun(
+            key=f"0:0:{line}:{span}",
+            page_index=0,
+            block_index=0,
+            line_index=line,
+            span_index=span,
+            text=text,
+            bbox=bbox,
+            origin=(bbox[0], bbox[3] - 2),
+            font_name="Helvetica",
+            font_size=12,
+            color=0,
+            flags=0,
+        )
+        for line, span, text, bbox in (
+            (0, 0, "A1", (40, 40, 55, 55)),
+            (0, 1, "B1", (210, 40, 225, 55)),
+            (1, 0, "A2", (40, 58, 55, 73)),
+            (1, 1, "B2", (210, 58, 225, 73)),
+        )
+    ]
+
+    merged = PdfEngine._merge_paragraph_runs(runs)
+
+    assert merged == runs
+
+
 def test_deleting_text_preserves_colored_vector_background() -> None:
     source = fitz.open()
     page = source.new_page(width=420, height=300)
@@ -459,7 +633,9 @@ def test_formatting_and_visual_signature(tmp_path: Path) -> None:
 
     with fitz.open(output) as document:
         page = document[0]
-        assert "FORMATTED HEADING" in page.get_text()
+        # The target box is narrow enough to wrap the replacement onto two
+        # lines while retaining the complete text in the saved PDF.
+        assert "FORMATTED HEADING" in " ".join(page.get_text().split())
         assert page.get_images(full=True)
         assert page.get_drawings()
 
@@ -574,10 +750,18 @@ def test_image_insertion_and_deletion(tmp_path: Path) -> None:
     )
     deleted_output = tmp_path / "image_deleted.pdf"
     engine.save(deleted_output, [], [], [], [ImageDeletion(source_image)])
-    with fitz.open(deleted_output) as document:
+    with fitz.open(SAMPLES / "0015_001.pdf") as original, fitz.open(deleted_output) as document:
+        original_pixmap = original[0].get_pixmap(matrix=fitz.Matrix(0.2, 0.2), alpha=False)
         pixmap = document[0].get_pixmap(matrix=fitz.Matrix(0.2, 0.2), alpha=False)
-        dark_samples = sum(value < 235 for value in pixmap.samples)
-        assert dark_samples < len(pixmap.samples) * 0.03
+        original_dark = sum(value < 235 for value in original_pixmap.samples)
+        remaining_dark = sum(value < 235 for value in pixmap.samples)
+        # This supplied scan has several overlapping images. Deleting the
+        # largest source image exposes the others instead of blanking the page.
+        assert remaining_dark < original_dark * 0.7
+        original_xrefs = {image["xref"] for image in original[0].get_image_info(xrefs=True)}
+        output_xrefs = {image["xref"] for image in document[0].get_image_info(xrefs=True)}
+        assert original_xrefs - {source_image.xref} <= output_xrefs
+        assert source_image.xref not in output_xrefs
 
 
 def test_promoting_original_image_is_pixel_identical_before_transform() -> None:
@@ -621,6 +805,65 @@ def test_promoting_original_image_is_pixel_identical_before_transform() -> None:
             return Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples)
 
     assert ImageChops.difference(rendered(source), rendered(promoted)).getbbox() is None
+
+
+def test_deleting_original_image_preserves_image_and_vector_background() -> None:
+    background = Image.new("RGB", (150, 100), (30, 110, 175))
+    foreground = Image.new("RGB", (30, 30), (230, 65, 35))
+    def png(image: Image.Image) -> bytes:
+        stream = BytesIO()
+        image.save(stream, format="PNG")
+        return stream.getvalue()
+
+    document = fitz.open()
+    page = document.new_page(width=150, height=100)
+    page.insert_image(page.rect, stream=png(background))
+    page.draw_rect(fitz.Rect(20, 20, 100, 80), color=(0, 1, 0), width=3)
+    page.insert_text((20, 40), "BACKGROUND", fontsize=12, color=(1, 1, 1))
+    baseline = document.tobytes()
+    page.insert_image(fitz.Rect(40, 45, 80, 85), stream=png(foreground))
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    target = next(run for run in engine.image_runs(0) if run.width == 30)
+    removed = engine.compose_bytes(deleted_images=[ImageDeletion(target)])
+    with fitz.open(stream=baseline, filetype="pdf") as expected, fitz.open(
+        stream=removed, filetype="pdf"
+    ) as actual:
+        assert bytes(actual[0].get_pixmap().samples) == bytes(expected[0].get_pixmap().samples)
+    engine.load_bytes(removed)
+    assert len(engine.image_runs(0)) == 1
+
+
+def test_deleting_one_shared_original_image_refuses_to_erase_other_copies() -> None:
+    document = fitz.open()
+    page = document.new_page(width=150, height=100)
+    pixmap = fitz.Pixmap(fitz.csRGB, fitz.IRect(0, 0, 8, 8), False)
+    pixmap.clear_with(75)
+    xref = page.insert_image(fitz.Rect(5, 5, 35, 35), pixmap=pixmap)
+    page.insert_image(fitz.Rect(60, 5, 90, 35), xref=xref)
+    document.new_page(width=150, height=100).insert_image(
+        fitz.Rect(5, 5, 35, 35), xref=xref
+    )
+    source = document.tobytes()
+    document.close()
+
+    engine = PdfEngine()
+    engine.load_bytes(source)
+    runs = engine.image_runs(0)
+    assert len(runs) == 2
+    with pytest.raises(ValueError, match="reused elsewhere"):
+        engine.compose_bytes(deleted_images=[ImageDeletion(runs[0])])
+    with pytest.raises(ValueError, match="reused elsewhere"):
+        engine.compose_bytes(deleted_images=[ImageDeletion(run) for run in runs])
+    removed = engine.compose_bytes(
+        deleted_images=[ImageDeletion(run) for page_index in range(2) for run in engine.image_runs(page_index)]
+    )
+    with fitz.open(stream=removed, filetype="pdf") as output:
+        assert output[0].get_pixmap().pixel(10, 10) == (255, 255, 255)
+        assert output[1].get_pixmap().pixel(10, 10) == (255, 255, 255)
 
 
 def test_original_jpeg_stream_and_quarter_turn_are_preserved_without_transcoding() -> None:
@@ -755,6 +998,47 @@ def test_highlight_uses_visible_coordinates_on_rotated_page() -> None:
     assert annotation.bbox[1] == pytest.approx(bbox[1], abs=8)
     assert annotation.bbox[2] == pytest.approx(bbox[2], abs=8)
     assert annotation.bbox[3] == pytest.approx(bbox[3], abs=8)
+
+
+@pytest.mark.parametrize(
+    ("style", "type_name"),
+    [("underline", "Underline"), ("strikeout", "StrikeOut")],
+)
+def test_text_markup_roundtrip_on_rotated_page(style: str, type_name: str) -> None:
+    source = fitz.open()
+    source.new_page(width=420, height=300).insert_text((60, 90), "KEEP THIS TEXT")
+    engine = PdfEngine()
+    engine.load_bytes(source.tobytes())
+    source.close()
+    engine.load_bytes(engine.bytes_with_page_rotated(0, 1))
+    bbox = (65.0, 75.0, 160.0, 95.0)
+    result = engine.bytes_with_text_markup(0, bbox, style, content="Review")
+    with fitz.open(stream=result, filetype="pdf") as document:
+        page = document[0]
+        annotation = next(page.annots())
+        assert annotation.type[1] == type_name
+        assert annotation.info["content"] == "Review"
+        assert "KEEP THIS TEXT" in page.get_text()
+    engine.load_bytes(result)
+    item = engine.annotations()[0]
+    assert item.bbox == pytest.approx(bbox, abs=8)
+    assert item.type_name == type_name
+
+
+def test_multiline_markup_keeps_individual_text_baselines() -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    first = (50.0, 60.0, 145.0, 80.0)
+    second = (50.0, 90.0, 225.0, 110.0)
+    data = engine.bytes_with_text_markup(
+        0, (50.0, 60.0, 225.0, 110.0), "underline",
+        line_bboxes=(first, second),
+    )
+    with fitz.open(stream=data, filetype="pdf") as document:
+        page = document[0]
+        annotation = next(page.annots())
+        assert annotation.type[1] == "Underline"
+        assert len(annotation.vertices) == 8
 
 
 def test_acroform_fields_can_be_listed_changed_and_saved(tmp_path: Path) -> None:
@@ -980,6 +1264,86 @@ def test_native_form_fields_can_be_created_validated_and_deleted() -> None:
         "approved",
         "department",
     }
+
+
+def test_form_labels_tab_order_and_structure_survive_save(tmp_path: Path) -> None:
+    engine = PdfEngine()
+    engine.load_bytes(PdfEngine.blank_document_bytes(420, 300))
+    for index, name in enumerate(("first", "second", "third")):
+        engine.load_bytes(engine.bytes_with_new_form_field(
+            0, (40, 40 + index * 65, 240, 85 + index * 65),
+            FormFieldSpec(fitz.PDF_WIDGET_TYPE_TEXT, name, f"Label {index + 1}"),
+        ))
+    fields = engine.form_fields()
+    assert any(issue.code == "tab_order" for issue in engine.form_accessibility_issues())
+
+    engine.load_bytes(engine.bytes_with_form_label(fields[0].xref, "Your full name"))
+    fields = engine.form_fields()
+    engine.load_bytes(engine.bytes_with_form_tab_order(
+        0, [fields[2].xref, fields[0].xref, fields[1].xref]
+    ))
+    output = tmp_path / "accessible_form.pdf"
+    output.write_bytes(engine.source_bytes)
+    reopened = PdfEngine()
+    reopened.open(output)
+    assert [field.name for field in reopened.form_fields()] == ["third", "first", "second"]
+    assert next(field.label for field in reopened.form_fields() if field.name == "first") == "Your full name"
+    assert reopened.form_accessibility_issues() == []
+    with fitz.open(output) as document:
+        page = document[0]
+        assert document.xref_get_key(page.xref, "Tabs") == ("name", "/A")
+        assert [widget.field_name for widget in page.widgets()] == ["third", "first", "second"]
+        first = next(widget for widget in page.widgets() if widget.field_name == "first")
+        assert document.xref_get_key(first.xref, "TU") == ("string", "Your full name")
+
+
+def test_form_tab_order_preserves_unrelated_annotations_and_rejects_missing_widgets() -> None:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    annotation = page.add_highlight_annot(fitz.Rect(20, 20, 100, 35))
+    annotation.set_info(content="Keep this annotation")
+    for index in range(2):
+        widget = fitz.Widget()
+        widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+        widget.field_name = f"field_{index}"
+        widget.rect = fitz.Rect(40, 70 + index * 50, 200, 95 + index * 50)
+        page.add_widget(widget)
+        if index == 0:
+            button = fitz.Widget()
+            button.field_type = fitz.PDF_WIDGET_TYPE_BUTTON
+            button.field_name = "unsupported_button"
+            button.rect = fitz.Rect(220, 70, 300, 95)
+            page.add_widget(button)
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    xrefs = [field.xref for field in engine.form_fields()]
+    with fitz.open(stream=engine.source_bytes, filetype="pdf") as original:
+        original_pixels = bytes(original[0].get_pixmap().samples)
+    with pytest.raises(ValueError, match="exactly once"):
+        engine.bytes_with_form_tab_order(0, [xrefs[0], xrefs[0]])
+    result = engine.bytes_with_form_tab_order(0, xrefs[::-1])
+    with fitz.open(stream=result, filetype="pdf") as pdf:
+        assert [annot.info["content"] for annot in pdf[0].annots()] == ["Keep this annotation"]
+        assert [widget.field_name for widget in pdf[0].widgets()] == [
+            "field_1", "unsupported_button", "field_0"
+        ]
+        assert bytes(pdf[0].get_pixmap().samples) == original_pixels
+
+
+def test_form_accessibility_finds_missing_label_and_appearance() -> None:
+    document = fitz.open()
+    page = document.new_page(width=420, height=300)
+    widget = fitz.Widget()
+    widget.field_type = fitz.PDF_WIDGET_TYPE_TEXT
+    widget.field_name = "unlabeled"
+    widget.rect = fitz.Rect(20, 20, 160, 55)
+    page.add_widget(widget)
+    document.xref_set_key(next(page.widgets()).xref, "AP", "null")
+    engine = PdfEngine()
+    engine.load_bytes(document.tobytes())
+    document.close()
+    assert {issue.code for issue in engine.form_accessibility_issues()} == {"label", "appearance"}
 
 
 def test_form_creation_validates_choices_names_types_and_rotated_geometry() -> None:

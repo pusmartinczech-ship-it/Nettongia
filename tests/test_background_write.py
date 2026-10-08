@@ -137,6 +137,34 @@ def test_save_copy_preserves_active_identity_and_unsaved_marker(tmp_path: Path) 
     app.processEvents()
 
 
+def test_background_write_creates_password_protected_copy(tmp_path: Path) -> None:
+    app = _application()
+    window = _window_with_text("Protected background copy")
+    output = tmp_path / "protected-copy.pdf"
+    password = "background-password"
+
+    assert window._start_document_write(
+        output,
+        update_document_identity=False,
+        encryption_password=password,
+    )
+    _wait_until(app, lambda: window._write_process is None)
+
+    with pymupdf.open(output) as protected:
+        assert protected.needs_pass
+        assert protected.authenticate(password)
+        assert "Protected background copy" in " ".join(
+            protected[0].get_text().split()
+        )
+    assert window.has_unsaved_changes
+    assert window.document_path == Path("background-source.pdf")
+
+    window._maybe_save_changes = lambda: True
+    window.close()
+    window.deleteLater()
+    app.processEvents()
+
+
 def test_background_lossless_compression_returns_result(
     tmp_path: Path,
     monkeypatch,

@@ -76,12 +76,14 @@ def test_write_context_keeps_snapshot_identity_and_options() -> None:
         compression_profile="lossless",
         show_confirmation=True,
         update_document_identity=False,
+        password_protected=True,
     )
 
     assert context.matches(session) == (True, True)
     assert context.compression_profile == "lossless"
     assert context.show_confirmation
     assert not context.update_document_identity
+    assert context.password_protected
 
     session.revision_changed()
     assert context.matches(session) == (True, False)

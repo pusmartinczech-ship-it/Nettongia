@@ -6,31 +6,31 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, QTimer, Signal
 
-from .document_session import DocumentWriteContext
-from .engine import CompressionResult
+from .comparison_worker import prepare_comparison_job, read_comparison_result
+from .document_compare import DocumentComparison
 from .recovery import RecoverySnapshot
-from .write_worker import (
-    PASSWORD_ENVIRONMENT_VARIABLE,
-    prepare_write_job,
-    read_write_result,
-)
 
 
 @dataclass(frozen=True)
-class DocumentWriteOutcome:
-    """Terminal result of one isolated document-write request."""
+class ComparisonContext:
+    document_generation: int
+    content_revision: int
+    comparison_name: str
 
-    context: DocumentWriteContext
-    result: CompressionResult | None = None
+
+@dataclass(frozen=True)
+class ComparisonOutcome:
+    context: ComparisonContext
+    comparison: DocumentComparison | None = None
+    current_pdf: bytes | None = None
+    comparison_pdf: bytes | None = None
     error: str | None = None
     cancelled: bool = False
 
 
-class DocumentWriteCoordinator(QObject):
-    """Own the child-process lifecycle for one document write at a time."""
-
+class ComparisonCoordinator(QObject):
     completed = Signal(object)
 
     def __init__(self, parent: QObject | None = None) -> None:
@@ -39,7 +39,9 @@ class DocumentWriteCoordinator(QObject):
         self._process: QProcess | None = None
         self._workspace: Path | None = None
         self._result_path: Path | None = None
-        self._context: DocumentWriteContext | None = None
+        self._materialized_path: Path | None = None
+        self._comparison_pdf: bytes | None = None
+        self._context: ComparisonContext | None = None
         self._cancelled = False
 
     @property
@@ -53,20 +55,15 @@ class DocumentWriteCoordinator(QObject):
     def start(
         self,
         snapshot: RecoverySnapshot,
-        context: DocumentWriteContext,
-        password: str | None = None,
+        comparison_pdf: bytes,
+        context: ComparisonContext,
     ) -> None:
         if self.is_running:
-            raise RuntimeError("A document write is already running.")
-
-        workspace = Path(tempfile.mkdtemp(prefix="OpenPDFEditor-write-"))
+            raise RuntimeError("A document comparison is already running.")
+        workspace = Path(tempfile.mkdtemp(prefix="Nettongia-compare-"))
         try:
-            job_path, result_path = prepare_write_job(
-                workspace,
-                snapshot,
-                context.path,
-                context.compression_profile,
-                password_protected=context.password_protected,
+            job_path, result_path, materialized_path = prepare_comparison_job(
+                workspace, snapshot, comparison_pdf
             )
         except Exception:
             shutil.rmtree(workspace, ignore_errors=True)
@@ -76,18 +73,11 @@ class DocumentWriteCoordinator(QObject):
         request_id = self._request_id
         process = QProcess(self)
         process.setProcessChannelMode(QProcess.MergedChannels)
-        if context.password_protected:
-            if not password:
-                shutil.rmtree(workspace, ignore_errors=True)
-                raise ValueError("The password-protected write is missing its password.")
-            environment = QProcessEnvironment.systemEnvironment()
-            environment.insert(PASSWORD_ENVIRONMENT_VARIABLE, password)
-            process.setProcessEnvironment(environment)
         if getattr(sys, "frozen", False):
-            arguments = ["--document-write-worker", str(job_path)]
+            arguments = ["--document-comparison-worker", str(job_path)]
         else:
             launcher = Path(__file__).resolve().parents[1] / "run_editor.py"
-            arguments = [str(launcher), "--document-write-worker", str(job_path)]
+            arguments = [str(launcher), "--document-comparison-worker", str(job_path)]
         process.setProgram(sys.executable)
         process.setArguments(arguments)
         process.finished.connect(
@@ -100,10 +90,11 @@ class DocumentWriteCoordinator(QObject):
                 rid, process_error
             )
         )
-
         self._process = process
         self._workspace = workspace
         self._result_path = result_path
+        self._materialized_path = materialized_path
+        self._comparison_pdf = comparison_pdf
         self._context = context
         self._cancelled = False
         process.start()
@@ -113,12 +104,9 @@ class DocumentWriteCoordinator(QObject):
         if process is None or process.state() == QProcess.NotRunning:
             return False
         self._cancelled = True
-        if process.state() == QProcess.Starting:
-            process.kill()
-        else:
-            process.terminate()
-            request_id = self._request_id
-            QTimer.singleShot(1500, lambda rid=request_id: self._kill(rid))
+        process.terminate()
+        request_id = self._request_id
+        QTimer.singleShot(1500, lambda rid=request_id: self._kill(rid))
         return True
 
     def _kill(self, request_id: int) -> None:
@@ -140,28 +128,33 @@ class DocumentWriteCoordinator(QObject):
         if process is None or request_id != self._request_id:
             return
         if self._cancelled:
-            self._complete(DocumentWriteOutcome(self._require_context(), cancelled=True))
+            self._complete(ComparisonOutcome(self._require_context(), cancelled=True))
             return
-
-        result: CompressionResult | None = None
-        error: str | None = None
+        comparison = None
+        current_pdf = None
+        error = None
         try:
             if self._result_path is None or not self._result_path.is_file():
-                raise RuntimeError("The document write process did not return a result.")
-            result, error = read_write_result(self._result_path)
+                raise RuntimeError("The comparison process did not return a result.")
+            comparison, error = read_comparison_result(self._result_path)
+            if error is None:
+                if self._materialized_path is None:
+                    raise RuntimeError("The materialized current PDF is missing.")
+                current_pdf = self._materialized_path.read_bytes()
             if exit_status == QProcess.CrashExit:
-                error = error or "The document write process stopped unexpectedly."
+                error = error or "The comparison process stopped unexpectedly."
             elif exit_code != 0:
-                error = error or f"The document write process returned code {exit_code}."
+                error = error or f"The comparison process returned code {exit_code}."
         except Exception as exc:
-            process_output = bytes(process.readAllStandardOutput()).decode(
-                "utf-8", errors="replace"
-            ).strip()
             error = str(exc)
-            if process_output:
-                error = f"{error}\n\n{process_output[-4000:]}"
         self._complete(
-            DocumentWriteOutcome(self._require_context(), result=result, error=error)
+            ComparisonOutcome(
+                self._require_context(),
+                comparison=comparison,
+                current_pdf=current_pdf,
+                comparison_pdf=self._comparison_pdf if error is None else None,
+                error=error,
+            )
         )
 
     def _process_error(
@@ -173,20 +166,20 @@ class DocumentWriteCoordinator(QObject):
         if process is None or request_id != self._request_id:
             return
         if self._cancelled:
-            self._complete(DocumentWriteOutcome(self._require_context(), cancelled=True))
+            self._complete(ComparisonOutcome(self._require_context(), cancelled=True))
             return
-        error = process.errorString() or "The document write process failed."
+        error = process.errorString() or "The comparison process failed."
         if process.state() != QProcess.NotRunning:
             process.kill()
             process.waitForFinished(1000)
-        self._complete(DocumentWriteOutcome(self._require_context(), error=error))
+        self._complete(ComparisonOutcome(self._require_context(), error=error))
 
-    def _require_context(self) -> DocumentWriteContext:
+    def _require_context(self) -> ComparisonContext:
         if self._context is None:
-            raise RuntimeError("The document write context is missing.")
+            raise RuntimeError("The comparison context is missing.")
         return self._context
 
-    def _complete(self, outcome: DocumentWriteOutcome) -> None:
+    def _complete(self, outcome: ComparisonOutcome) -> None:
         process = self._process
         if process is None:
             return
@@ -194,6 +187,8 @@ class DocumentWriteCoordinator(QObject):
         self._process = None
         self._workspace = None
         self._result_path = None
+        self._materialized_path = None
+        self._comparison_pdf = None
         self._context = None
         self._cancelled = False
         process.deleteLater()

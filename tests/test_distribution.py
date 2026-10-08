@@ -124,3 +124,5 @@ def test_windows_build_defines_portable_size_budgets_and_clean_ocr_gate() -> Non
     assert "integration_soak.py --cycles 60" in workflow
     assert "dist/integration-memory.json" in workflow
     assert "dist/integration-golden/*.json" in workflow
+    assert "dist/NettongiaPDFEditor/*-source.zip" in workflow
+    assert "gh release create $releaseTag $archive.FullName $sourceArchive.FullName" in workflow

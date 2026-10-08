@@ -91,6 +91,9 @@ class DocumentWriteContext:
     compression_profile: str | None = None
     show_confirmation: bool = False
     update_document_identity: bool = True
+    password_protected: bool = False
+    password_protection_removed: bool = False
+    count_as_successful_save: bool = False
 
     def matches(self, session: DocumentSession) -> tuple[bool, bool]:
         return session.snapshot_matches(

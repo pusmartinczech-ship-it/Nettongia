@@ -10,6 +10,7 @@ from collections import OrderedDict, deque
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pymupdf
@@ -108,16 +109,32 @@ from . import __version__
 from .branding import APP_NAME, LEGACY_APP_NAME
 from .crash_trace import record_signature_trace
 from .dialogs import (
+    CertificateSignatureDialog,
+    ComparisonDialog,
     CompressionDialog,
+    DocumentMarksDialog,
     EditTextDialog,
     FormFieldDialog,
     NewDocumentDialog,
+    PageCropDialog,
+    PageResizeDialog,
+    PasswordProtectionDialog,
     SignatureDialog,
+)
+from .comparison_coordinator import (
+    ComparisonContext,
+    ComparisonCoordinator,
+    ComparisonOutcome,
 )
 from .document_session import DocumentSession, DocumentWriteContext
 from .document_write_coordinator import (
     DocumentWriteCoordinator,
     DocumentWriteOutcome,
+)
+from .digital_signature_coordinator import (
+    DigitalSignatureCoordinator,
+    SignatureContext,
+    SignatureOutcome,
 )
 from .diagnostics import (
     OperationLog,
@@ -129,9 +146,11 @@ from .diagnostics import (
 from .engine import (
     AnnotationInfo,
     CompressionResult,
+    DocumentMarksSpec,
     FormFieldInfo,
     FormFieldSpec,
     ImageDeletion,
+    ImageDeletionError,
     ImagePlacement,
     OutlineEntry,
     PdfEngine,
@@ -143,6 +162,11 @@ from .engine import (
     TextRun,
 )
 from .text_layer import InlineTextEditor, TextObjectGraphicsItem, clean_pdf_font_name
+from .support_prompt import (
+    SUPPORT_URL,
+    disable_support_prompt,
+    record_successful_save,
+)
 from .recovery import (
     RecoverySnapshot,
     quarantine_recovery_file,
@@ -160,6 +184,7 @@ from .i18n import (
     translate,
 )
 from .inspection_worker import (
+    DigitalSignatureReport,
     DocumentInspectionReport,
 )
 from .inspection_coordinator import (
@@ -408,7 +433,8 @@ class PageThumbnailList(QListWidget):
         if row < 0:
             event.ignore()
             return
-        self.setCurrentRow(row)
+        if not item.isSelected():
+            self.setCurrentRow(row)
         self.context_menu_requested.emit(row, self.mapToGlobal(event.pos()))
         event.accept()
 
@@ -980,6 +1006,7 @@ class PageView(QGraphicsView):
     source_image_edit_requested = Signal(str)
     visual_transform_requested = Signal(str, str, object, float)
     object_context_menu_requested = Signal(str, str, str, object)
+    canvas_context_menu_requested = Signal(object, object)
     signature_selection_changed = Signal(object)
     page_scroll_requested = Signal(int)
     visible_area_changed = Signal()
@@ -992,6 +1019,7 @@ class PageView(QGraphicsView):
         self._source_image_edit_mode = False
         self._text_box_mode = False
         self._redaction_mode = False
+        self._link_area_mode = False
         self._form_field_mode = False
         self._form_field_compact = False
         self._form_field_signature = False
@@ -1608,7 +1636,13 @@ class PageView(QGraphicsView):
         item = self.itemAt(event.pos())
         target = self._context_object(item)
         if target is None or self.special_mode or self.inline_editing:
-            super().contextMenuEvent(event)
+            if self.sceneRect().contains(self.mapToScene(event.pos())) and not self.special_mode:
+                self.canvas_context_menu_requested.emit(
+                    self.mapToScene(event.pos()), event.globalPos()
+                )
+                event.accept()
+            else:
+                super().contextMenuEvent(event)
             return
 
         # A right click selects the object under the pointer before opening its
@@ -1734,8 +1768,9 @@ class PageView(QGraphicsView):
             elif isinstance(item, TextObjectGraphicsItem):
                 item.refresh_visuals()
 
-    def set_redaction_mode(self, enabled: bool) -> None:
+    def set_redaction_mode(self, enabled: bool, *, link_area: bool = False) -> None:
         self._redaction_mode = enabled
+        self._link_area_mode = enabled and link_area
         if enabled:
             self._placement_mode = False
             self._comment_placement_mode = False
@@ -1810,7 +1845,7 @@ class PageView(QGraphicsView):
                 self._text_drag_origin = point
                 self._text_drag_item = QGraphicsRectItem(QRectF(point, point))
                 if self._redaction_mode:
-                    accent = QColor("#e53935")
+                    accent = QColor("#1976d2") if self._link_area_mode else QColor("#e53935")
                 elif self._form_field_mode:
                     accent = QColor("#7b61ff")
                 else:
@@ -2409,11 +2444,13 @@ class MainWindow(QMainWindow):
         self._pending_visual: tuple[str, bytes, float, str, float] | None = None
         self._pending_text_box: tuple[str, tuple[float, float, float, float]] | None = None
         self._redaction_target_page: int | None = None
+        self._link_target_page: int | None = None
         self._pending_form_field: FormFieldSpec | None = None
         self._form_field_target_page: int | None = None
         self._form_workspace_mode = "none"
         self._form_preview_values: dict[int, object] = {}
         self._form_preview_signatures: dict[int, SignaturePlacement] = {}
+        self._source_was_encrypted = False
         self._syncing_text_toolbar = False
         self._text_toolbar_reference: tuple[str, str] | None = None
         self._text_toolbar_preserved_family: str | None = None
@@ -2484,9 +2521,15 @@ class MainWindow(QMainWindow):
         self._update_task: VersionCheckTask | None = None
         self._update_manual = False
         self._update_closing = False
+        self._support_prompt_pending = False
         self._document_writer = DocumentWriteCoordinator(self)
         self._document_writer.completed.connect(self._document_write_finished)
         self._write_progress: QProgressDialog | None = None
+        self._digital_signature_coordinator = DigitalSignatureCoordinator(self)
+        self._digital_signature_coordinator.completed.connect(
+            self._digital_signature_finished
+        )
+        self._digital_signature_progress: QProgressDialog | None = None
         self._inspection_coordinator = InspectionCoordinator(self)
         self._inspection_coordinator.completed.connect(self._inspection_finished)
         self._inspection_report: DocumentInspectionReport | None = None
@@ -2495,6 +2538,9 @@ class MainWindow(QMainWindow):
         self._ocr_coordinator = OcrCoordinator(self)
         self._ocr_coordinator.completed.connect(self._ocr_finished)
         self._ocr_progress: QProgressDialog | None = None
+        self._comparison_coordinator = ComparisonCoordinator(self)
+        self._comparison_coordinator.completed.connect(self._comparison_finished)
+        self._comparison_progress: QProgressDialog | None = None
 
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(QIcon(str(ASSET_DIR / "nettongia_mascot_pdf.png")))
@@ -2503,13 +2549,14 @@ class MainWindow(QMainWindow):
 
         self.page_list = PageThumbnailList()
         self.page_list.setIconSize(QPixmap(100, 132).size())
-        self.page_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.page_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.page_list.setDragDropMode(QAbstractItemView.InternalMove)
         self.page_list.setDefaultDropAction(Qt.MoveAction)
         self.page_list.setDragEnabled(True)
         self.page_list.setAcceptDrops(True)
         self.page_list.setDropIndicatorShown(True)
         self.page_list.currentRowChanged.connect(self._page_selected)
+        self.page_list.selectionModel().selectionChanged.connect(self._update_actions)
         self.page_list.delete_requested.connect(self.delete_current_page)
         self.page_list.context_menu_requested.connect(self._show_page_context_menu)
         self.page_list.model().rowsAboutToBeMoved.connect(
@@ -2597,11 +2644,33 @@ class MainWindow(QMainWindow):
         self.create_form_side_button.clicked.connect(self.start_create_form_field)
         self.edit_form_side_button.clicked.connect(self.edit_selected_form_field)
         self.delete_form_side_button.clicked.connect(self.delete_selected_form_field)
+        self.form_label_button = QPushButton("Label")
+        self.form_tab_earlier_button = QPushButton("↑")
+        self.form_tab_later_button = QPushButton("↓")
+        self.form_check_button = QPushButton("Check")
+        self.form_label_button.clicked.connect(self.edit_selected_form_label)
+        self.form_tab_earlier_button.clicked.connect(
+            lambda: self.move_selected_form_tab(-1)
+        )
+        self.form_tab_later_button.clicked.connect(
+            lambda: self.move_selected_form_tab(1)
+        )
+        self.form_check_button.clicked.connect(self.check_form_accessibility)
         forms_actions = QHBoxLayout()
         forms_actions.setContentsMargins(6, 4, 6, 4)
         forms_actions.addWidget(self.create_form_side_button)
         forms_actions.addWidget(self.edit_form_side_button)
         forms_actions.addWidget(self.delete_form_side_button)
+        forms_accessibility_actions = QVBoxLayout()
+        forms_accessibility_actions.setContentsMargins(6, 0, 6, 4)
+        forms_accessibility_actions.setSpacing(4)
+        forms_accessibility_actions.addWidget(self.form_label_button)
+        form_tab_actions = QHBoxLayout()
+        form_tab_actions.setSpacing(4)
+        form_tab_actions.addWidget(self.form_tab_earlier_button)
+        form_tab_actions.addWidget(self.form_tab_later_button)
+        forms_accessibility_actions.addLayout(form_tab_actions)
+        forms_accessibility_actions.addWidget(self.form_check_button)
         self.form_edit_mode_button = QPushButton("Edit")
         self.form_edit_mode_button.setCheckable(True)
         self.form_edit_mode_button.setChecked(True)
@@ -2628,6 +2697,7 @@ class MainWindow(QMainWindow):
         forms_layout.addLayout(forms_modes)
         forms_layout.addWidget(self.reset_form_preview_button)
         forms_layout.addLayout(forms_actions)
+        forms_layout.addLayout(forms_accessibility_actions)
         forms_layout.addWidget(self.forms_list, 1)
 
         self.fill_forms_hint = QLabel("Fill fields directly on the page.")
@@ -2650,6 +2720,31 @@ class MainWindow(QMainWindow):
         fill_layout.addLayout(fill_actions)
         fill_layout.addWidget(self.fill_forms_list, 1)
 
+        self.digital_signatures_summary = QLabel()
+        self.digital_signatures_summary.setWordWrap(True)
+        self.digital_signatures_summary.setContentsMargins(8, 6, 8, 6)
+        self.digital_signatures_list = QListWidget()
+        self.digital_signatures_list.setObjectName("digitalSignaturesList")
+        self.digital_signatures_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.digital_signatures_list.currentItemChanged.connect(
+            self._digital_signature_selected
+        )
+        self.digital_signature_details = QPlainTextEdit()
+        self.digital_signature_details.setObjectName("digitalSignatureDetails")
+        self.digital_signature_details.setReadOnly(True)
+        self.digital_signature_details.setLineWrapMode(QPlainTextEdit.WidgetWidth)
+        self.digital_signature_details.setPlaceholderText("")
+        signatures_panel = QWidget()
+        signatures_layout = QVBoxLayout(signatures_panel)
+        signatures_layout.setContentsMargins(0, 0, 0, 0)
+        signatures_layout.setSpacing(4)
+        self.sign_with_certificate_button = QPushButton()
+        self.sign_with_certificate_button.clicked.connect(self.sign_with_certificate)
+        signatures_layout.addWidget(self.sign_with_certificate_button)
+        signatures_layout.addWidget(self.digital_signatures_summary)
+        signatures_layout.addWidget(self.digital_signatures_list, 1)
+        signatures_layout.addWidget(self.digital_signature_details, 2)
+
         self.right_sidebar = CollapsibleToolSidebar()
         self.comments_tool_index = self.right_sidebar.addTab(
             comments_panel,
@@ -2666,9 +2761,15 @@ class MainWindow(QMainWindow):
             self._asset_icon("signature.svg"),
             "Fill & Sign",
         )
+        self.digital_signatures_tool_index = self.right_sidebar.addTab(
+            signatures_panel,
+            self._asset_icon("certificate.svg"),
+            "Digital signatures",
+        )
         self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
         self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
         self.right_sidebar.setTabEnabled(self.fill_sign_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.digital_signatures_tool_index, False)
         self.right_sidebar.currentChanged.connect(self._right_tool_changed)
         self.right_sidebar.collapsed.connect(self._right_tools_collapsed)
 
@@ -2724,6 +2825,9 @@ class MainWindow(QMainWindow):
         )
         self.page_view.object_context_menu_requested.connect(
             self._show_object_context_menu
+        )
+        self.page_view.canvas_context_menu_requested.connect(
+            self._show_canvas_context_menu
         )
         self.page_view.signature_selection_changed.connect(self._signature_selection_changed)
         self.page_view.page_scroll_requested.connect(self._scroll_main_view)
@@ -2809,6 +2913,10 @@ class MainWindow(QMainWindow):
         return self._document_writer.process
 
     @property
+    def _digital_signature_process(self) -> QProcess | None:
+        return self._digital_signature_coordinator.process
+
+    @property
     def _inspection_process(self) -> QProcess | None:
         """Compatibility view of the isolated inspection process."""
 
@@ -2829,6 +2937,10 @@ class MainWindow(QMainWindow):
         """Compatibility view of the isolated OCR process."""
 
         return self._ocr_coordinator.process
+
+    @property
+    def _comparison_process(self) -> QProcess | None:
+        return self._comparison_coordinator.process
 
     def trx(self, key: str, **values: object) -> str:
         return translate(self.language_code, key, **values)
@@ -3226,6 +3338,24 @@ class MainWindow(QMainWindow):
         )
         self.save_copy_action.setShortcut(QKeySequence("Ctrl+Alt+S"))
         self.save_copy_action.triggered.connect(self.save_copy)
+        self.add_password_protection_action = QAction(
+            self._asset_icon("file_lock.svg"),
+            "Add password protection...",
+            self,
+        )
+        self.add_password_protection_action.triggered.connect(self.save_protected_copy)
+        self.remove_password_protection_action = QAction(
+            self._asset_icon("file_unlock.svg"),
+            "Remove password protection...",
+            self,
+        )
+        self.remove_password_protection_action.triggered.connect(
+            self.save_unprotected_copy
+        )
+        self.compare_pdf_action = QAction(
+            self._asset_icon("compare.svg"), "Compare with PDF...", self
+        )
+        self.compare_pdf_action.triggered.connect(self.compare_with_pdf)
         self.print_action = QAction(self._asset_icon("print.svg"), "Print...", self)
         self.print_action.setShortcut(QKeySequence.Print)
         self.print_action.setToolTip("Print the current document (Ctrl+P)")
@@ -3243,6 +3373,9 @@ class MainWindow(QMainWindow):
         self.find_action = QAction("Find...", self)
         self.find_action.setShortcut(QKeySequence.Find)
         self.find_action.triggered.connect(self.show_find_bar)
+        # The menu bar is hidden by the ribbon UI. Keep its shortcut active
+        # regardless of which ribbon tab is currently visible.
+        self.addAction(self.find_action)
         self.find_next_action = QAction("Find next", self)
         self.find_next_action.setShortcut(QKeySequence("F3"))
         self.find_next_action.triggered.connect(self.find_next)
@@ -3309,6 +3442,10 @@ class MainWindow(QMainWindow):
         self.insert_pdf_action = QAction(self._asset_icon("pages_import.svg"), "Insert pages from PDF...", self)
         self.insert_pdf_action.setToolTip("Insert all pages from another PDF after the current page")
         self.insert_pdf_action.triggered.connect(self.insert_pdf_pages)
+        self.extract_pages_action = QAction(self._asset_icon("pages_import.svg"), "Extract selected pages...", self)
+        self.extract_pages_action.triggered.connect(self.extract_selected_pages)
+        self.split_pages_action = QAction(self._asset_icon("page_add.svg"), "Split PDF into parts...", self)
+        self.split_pages_action.triggered.connect(self.split_document)
         self.delete_page_action = QAction(self._asset_icon("page_remove.svg"), "Delete current page", self)
         self.delete_page_action.setToolTip("Delete the current page")
         self.delete_page_action.triggered.connect(self.delete_current_page)
@@ -3336,6 +3473,24 @@ class MainWindow(QMainWindow):
         self.rotate_page_right_action.triggered.connect(
             lambda _checked=False: self.rotate_current_page(1)
         )
+        self.crop_pages_action = QAction(
+            self._asset_icon("crop.svg"),
+            "Crop pages...",
+            self,
+        )
+        self.crop_pages_action.triggered.connect(self.crop_pages)
+        self.resize_pages_action = QAction(
+            self._asset_icon("page_resize.svg"),
+            "Resize pages...",
+            self,
+        )
+        self.resize_pages_action.triggered.connect(self.resize_pages)
+        self.document_marks_action = QAction(
+            self._asset_icon("document_marks.svg"),
+            "Header, footer & watermark...",
+            self,
+        )
+        self.document_marks_action.triggered.connect(self.manage_document_marks)
 
         self.add_image_action = QAction(self._asset_icon("image_add.svg"), "Insert image...", self)
         self.add_image_action.setToolTip("Insert a PNG, JPEG, BMP, TIFF, or WebP image")
@@ -3349,6 +3504,8 @@ class MainWindow(QMainWindow):
         self.signature_action = QAction(self._asset_icon("signature.svg"), "Add visual signature...", self)
         self.signature_action.setToolTip("Draw or type a rotatable visual signature")
         self.signature_action.triggered.connect(self.add_signature)
+        self.add_link_action = QAction(self._asset_icon("link.svg"), "Add hyperlink...", self)
+        self.add_link_action.triggered.connect(self.start_add_link)
         self.add_comment_action = QAction("Add comment...", self)
         self.add_comment_action.setShortcut(QKeySequence("Ctrl+Alt+M"))
         self.add_comment_action.triggered.connect(self.start_add_comment)
@@ -3372,6 +3529,14 @@ class MainWindow(QMainWindow):
 
         self.compatibility_action = QAction("Document compatibility...", self)
         self.compatibility_action.triggered.connect(self.show_document_compatibility)
+        self.digital_signatures_action = QAction(
+            self._asset_icon("certificate.svg"), "Digital signatures", self
+        )
+        self.digital_signatures_action.triggered.connect(self.show_digital_signatures)
+        self.sign_with_certificate_action = QAction(
+            self._asset_icon("certificate.svg"), "Sign with certificate...", self
+        )
+        self.sign_with_certificate_action.triggered.connect(self.sign_with_certificate)
         self.ocr_page_action = QAction("OCR current page...", self)
         self.ocr_page_action.triggered.connect(self.ocr_current_page)
         self.ocr_document_action = QAction("OCR document...", self)
@@ -3393,6 +3558,10 @@ class MainWindow(QMainWindow):
             str(self.settings.value("updates/enabled", "true")).lower() == "true"
         )
         self.automatic_updates_action.toggled.connect(self._set_automatic_updates)
+        self.support_development_action = QAction(
+            self._asset_icon("support.svg"), "Support development...", self
+        )
+        self.support_development_action.triggered.connect(self.support_development)
 
     def _make_menu(self) -> None:
         self.file_menu = self.menuBar().addMenu("File")
@@ -3406,9 +3575,14 @@ class MainWindow(QMainWindow):
         self.file_menu.addAction(self.save_action)
         self.file_menu.addAction(self.save_as_action)
         self.file_menu.addAction(self.save_copy_action)
+        self.file_menu.addAction(self.add_password_protection_action)
+        self.file_menu.addAction(self.remove_password_protection_action)
+        self.file_menu.addAction(self.compare_pdf_action)
         self.file_menu.addAction(self.print_action)
         self.file_menu.addAction(self.compress_action)
         self.file_menu.addAction(self.compatibility_action)
+        self.file_menu.addAction(self.digital_signatures_action)
+        self.file_menu.addAction(self.sign_with_certificate_action)
         self.file_menu.addSeparator()
         self.file_menu.addAction(self.exit_action)
 
@@ -3430,6 +3604,7 @@ class MainWindow(QMainWindow):
         self.insert_menu.addAction(self.insert_pdf_action)
         self.insert_menu.addSeparator()
         self.insert_menu.addAction(self.add_image_action)
+        self.insert_menu.addAction(self.add_link_action)
         self.insert_menu.addAction(self.signature_action)
         self.insert_menu.addAction(self.add_comment_action)
 
@@ -3439,8 +3614,13 @@ class MainWindow(QMainWindow):
         self.page_menu.addSeparator()
         self.page_menu.addAction(self.rotate_page_left_action)
         self.page_menu.addAction(self.rotate_page_right_action)
+        self.page_menu.addAction(self.crop_pages_action)
+        self.page_menu.addAction(self.resize_pages_action)
+        self.page_menu.addAction(self.document_marks_action)
         self.page_menu.addSeparator()
         self.page_menu.addAction(self.delete_page_action)
+        self.page_menu.addAction(self.extract_pages_action)
+        self.page_menu.addAction(self.split_pages_action)
         self.page_menu.addSeparator()
         self.page_menu.addAction(self.ocr_page_action)
         self.page_menu.addAction(self.ocr_document_action)
@@ -3460,6 +3640,8 @@ class MainWindow(QMainWindow):
         self.forms_menu.addSeparator()
         self.forms_menu.addAction(self.edit_form_action)
         self.forms_menu.addAction(self.delete_form_action)
+        self.forms_menu.addSeparator()
+        self.forms_menu.addAction(self.sign_with_certificate_action)
 
         self.view_menu = self.menuBar().addMenu("View")
         self.view_menu.addAction(self.zoom_in_action)
@@ -3475,6 +3657,8 @@ class MainWindow(QMainWindow):
         self.help_menu.addAction(self.export_diagnostics_action)
         self.help_menu.addAction(self.check_for_updates_action)
         self.help_menu.addAction(self.automatic_updates_action)
+        self.help_menu.addSeparator()
+        self.help_menu.addAction(self.support_development_action)
         self.help_menu.addSeparator()
         self.help_menu.addAction(self.about_action)
 
@@ -3553,7 +3737,7 @@ class MainWindow(QMainWindow):
         self.ribbon_tabs = QTabWidget(ribbon)
         self.ribbon_tabs.setObjectName("ribbonTabs")
         self.ribbon_tabs.setDocumentMode(True)
-        self.ribbon_tabs.tabBarDoubleClicked.connect(lambda _index: self._toggle_ribbon())
+        self.ribbon_tabs.tabBarClicked.connect(self._open_collapsed_ribbon_tab)
         self.ribbon_tab_keys: list[str] = []
         self.ribbon_group_labels: list[tuple[QLabel, str]] = []
 
@@ -3572,16 +3756,20 @@ class MainWindow(QMainWindow):
         self._add_ribbon_tab("ribbon_home", (
             self._ribbon_group("menu_file", (self.new_action, self.open_action, self.save_action, self.save_as_action, self.print_action)),
             self._ribbon_group("menu_edit", (self.undo_action, self.redo_action, self.find_action)),
-            self._ribbon_group("compress", (self.compress_action, self.compatibility_action)),
+            self._ribbon_group("compress", (self.compress_action, self.compare_pdf_action, self.compatibility_action, self.digital_signatures_action)),
+            self._ribbon_group("pdf_password_title", (self.add_password_protection_action, self.remove_password_protection_action)),
         ))
         self._add_ribbon_tab("menu_edit", (
             self._ribbon_group("edit_text", (self.add_text_action, self.delete_text_action), self.text_controls_widget),
             self._ribbon_group("menu_image", (self.add_image_action, self.edit_original_image_action, self.delete_image_action, self.signature_action)),
+            self._ribbon_group("add_link", (self.add_link_action,)),
             self._ribbon_group("redact_area", (self.redact_area_action,)),
         ))
         self._add_ribbon_tab("menu_page", (
             self._ribbon_group("menu_insert", (self.add_blank_page_action, self.insert_pdf_action, self.delete_page_action)),
+            self._ribbon_group("page_export_group", (self.extract_pages_action, self.split_pages_action)),
             self._ribbon_group("menu_page", (self.move_page_up_action, self.move_page_down_action, self.rotate_page_left_action, self.rotate_page_right_action)),
+            self._ribbon_group("page_design", (self.crop_pages_action, self.resize_pages_action, self.document_marks_action)),
             self._ribbon_group("ocr_document", (self.ocr_page_action, self.ocr_document_action)),
         ))
         self._add_ribbon_tab("comments", (
@@ -3590,12 +3778,12 @@ class MainWindow(QMainWindow):
         ))
         self._add_ribbon_tab("forms", (
             self._ribbon_group("forms", (self.create_form_action, self.edit_form_action, self.delete_form_action)),
-            self._ribbon_group("fill_and_sign", (self.signature_action,), self._make_form_mode_controls()),
+            self._ribbon_group("fill_and_sign", (self.signature_action, self.sign_with_certificate_action), self._make_form_mode_controls()),
         ))
         self._add_ribbon_tab("menu_view", (
             self._ribbon_group("current_zoom", (self.zoom_out_action, self.zoom_in_action, self.fit_width_action), self.zoom_combo),
             self._ribbon_group("menu_appearance", (), self._make_appearance_controls()),
-            self._ribbon_group("menu_help", (self.check_for_updates_action, self.about_action)),
+            self._ribbon_group("menu_help", (self.check_for_updates_action, self.support_development_action, self.about_action)),
         ))
         ribbon_layout.addWidget(self.ribbon_tabs)
 
@@ -3706,6 +3894,10 @@ class MainWindow(QMainWindow):
 
     def _toggle_ribbon(self) -> None:
         self._set_ribbon_collapsed(not self.ribbon_collapsed)
+
+    def _open_collapsed_ribbon_tab(self, index: int) -> None:
+        if index >= 0 and self.ribbon_collapsed:
+            self._set_ribbon_collapsed(False)
 
     def _set_ribbon_collapsed(self, collapsed: bool) -> None:
         self.ribbon_collapsed = collapsed
@@ -3963,9 +4155,14 @@ class MainWindow(QMainWindow):
             self.save_action: "save",
             self.save_as_action: "save_as",
             self.save_copy_action: "save_copy",
+            self.add_password_protection_action: "add_password_protection",
+            self.remove_password_protection_action: "remove_password_protection",
+            self.compare_pdf_action: "compare_pdf",
             self.print_action: "print",
             self.compress_action: "compress",
             self.compatibility_action: "document_compatibility",
+            self.digital_signatures_action: "digital_signatures",
+            self.sign_with_certificate_action: "sign_with_certificate",
             self.ocr_page_action: "ocr_page",
             self.ocr_document_action: "ocr_document",
             self.exit_action: "exit",
@@ -3981,15 +4178,21 @@ class MainWindow(QMainWindow):
             self.fit_width_action: "fit_width",
             self.add_blank_page_action: "add_blank_page",
             self.insert_pdf_action: "insert_pages",
+            self.extract_pages_action: "extract_pages",
+            self.split_pages_action: "split_pages",
             self.delete_page_action: "delete_page",
             self.move_page_up_action: "move_page_up",
             self.move_page_down_action: "move_page_down",
             self.rotate_page_left_action: "rotate_page_left",
             self.rotate_page_right_action: "rotate_page_right",
+            self.crop_pages_action: "crop_pages",
+            self.resize_pages_action: "resize_pages",
+            self.document_marks_action: "document_marks",
             self.add_image_action: "insert_image",
             self.edit_original_image_action: "edit_original_image",
             self.delete_image_action: "delete_image",
             self.signature_action: "add_signature",
+            self.add_link_action: "add_link",
             self.add_comment_action: "add_comment",
             self.edit_comment_action: "edit_comment",
             self.delete_comment_action: "delete_annotation",
@@ -4000,6 +4203,7 @@ class MainWindow(QMainWindow):
             self.export_diagnostics_action: "export_diagnostics",
             self.check_for_updates_action: "check_for_updates",
             self.automatic_updates_action: "automatic_updates",
+            self.support_development_action: "support_development",
             self.about_action: "about",
         }
         for action, key in action_keys.items():
@@ -4044,6 +4248,9 @@ class MainWindow(QMainWindow):
         self.right_sidebar.setTabText(
             self.fill_sign_tool_index, self.trx("fill_and_sign")
         )
+        self.right_sidebar.setTabText(
+            self.digital_signatures_tool_index, self.trx("digital_signatures")
+        )
         self.sidebar_tabs.setTabToolTip(
             self.outline_tab_index,
             "" if self._outline_model and self._outline_model.has_entries else self.trx("no_document_tree"),
@@ -4052,9 +4259,18 @@ class MainWindow(QMainWindow):
             self.forms_tool_index,
             "" if self.forms_list.count() else self.trx("no_form_fields"),
         )
+        self._set_wrapped_button_text(
+            self.sign_with_certificate_button,
+            self.trx("sign_with_certificate"),
+            210,
+        )
         self.right_sidebar.setTabToolTip(
             self.fill_sign_tool_index,
             "" if self.fill_forms_list.count() else self.trx("no_form_fields"),
+        )
+        self.right_sidebar.setTabToolTip(
+            self.digital_signatures_tool_index,
+            self.trx("digital_signatures_tooltip"),
         )
         self.add_comment_side_button.setText("+")
         self.add_comment_side_button.setToolTip(self.trx("add_comment"))
@@ -4069,6 +4285,14 @@ class MainWindow(QMainWindow):
         self.delete_form_side_button.setText("×")
         self.delete_form_side_button.setToolTip(self.trx("delete_form_field"))
         self._set_wrapped_button_text(
+            self.form_label_button, self.trx("form_label_action"), 165
+        )
+        self.form_tab_earlier_button.setToolTip(self.trx("form_tab_earlier"))
+        self.form_tab_later_button.setToolTip(self.trx("form_tab_later"))
+        self._set_wrapped_button_text(
+            self.form_check_button, self.trx("form_check_action"), 165
+        )
+        self._set_wrapped_button_text(
             self.form_edit_mode_button, self.trx("form_edit_mode"), 165
         )
         self._set_wrapped_button_text(
@@ -4082,6 +4306,7 @@ class MainWindow(QMainWindow):
         self._set_wrapped_button_text(
             self.add_visual_signature_button, self.trx("add_signature"), 165
         )
+        self._refresh_digital_signatures_sidebar()
         self.welcome_hint.setText(self.trx("open_to_begin"))
         self.welcome_new_button.setText(self.trx("new_pdf"))
         self.welcome_open_button.setText(self.trx("open"))
@@ -4343,10 +4568,13 @@ class MainWindow(QMainWindow):
             self.fit_width_action: "fit_width.svg",
             self.add_blank_page_action: "page_add.svg",
             self.insert_pdf_action: "pages_import.svg",
+            self.extract_pages_action: "pages_import.svg",
+            self.split_pages_action: "page_add.svg",
             self.delete_page_action: "page_remove.svg",
             self.add_image_action: "image_add.svg",
             self.delete_image_action: "image_remove.svg",
             self.signature_action: "signature.svg",
+            self.add_link_action: "link.svg",
             self.add_text_action: "text_add.svg",
             self.delete_text_action: "text_remove.svg",
             self.find_action: "find.svg",
@@ -4355,6 +4583,8 @@ class MainWindow(QMainWindow):
             self.move_page_down_action: "page_down.svg",
             self.rotate_page_left_action: "rotate_left.svg",
             self.rotate_page_right_action: "rotate_right.svg",
+            self.crop_pages_action: "crop.svg",
+            self.resize_pages_action: "page_resize.svg",
             self.add_comment_action: "comment_add.svg",
             self.edit_comment_action: "comment_edit.svg",
             self.delete_comment_action: "comment_delete.svg",
@@ -4363,9 +4593,16 @@ class MainWindow(QMainWindow):
             self.delete_form_action: "form_delete.svg",
             self.redact_area_action: "redact.svg",
             self.compatibility_action: "compatibility.svg",
+            self.digital_signatures_action: "certificate.svg",
+            self.sign_with_certificate_action: "certificate.svg",
+            self.add_password_protection_action: "file_lock.svg",
+            self.remove_password_protection_action: "file_unlock.svg",
+            self.compare_pdf_action: "compare.svg",
+            self.document_marks_action: "document_marks.svg",
             self.ocr_page_action: "ocr_page.svg",
             self.ocr_document_action: "ocr_document.svg",
             self.check_for_updates_action: "update.svg",
+            self.support_development_action: "support.svg",
             self.about_action: "about.svg",
         }
         for action, name in custom_icons.items():
@@ -4436,6 +4673,7 @@ class MainWindow(QMainWindow):
         self.page_view.clear_page()
         self.engine.close()
         self.engine = engine
+        self._source_was_encrypted = bool(engine.was_encrypted)
         self._prepare_tile_render_source()
         self._document_session.activate(
             document_path,
@@ -4481,7 +4719,7 @@ class MainWindow(QMainWindow):
             outcome="succeeded",
             page_count=engine.page_count,
             file_size_bucket=file_size_bucket(len(engine.source_bytes)),
-            encrypted=bool(engine.was_encrypted),
+            encrypted=self._source_was_encrypted,
             restored=initial_state is not None,
             document_generation=self._document_generation,
         )
@@ -4583,6 +4821,7 @@ class MainWindow(QMainWindow):
         self.page_view.clear_page()
         self.engine.close()
         self._document_session.close()
+        self._source_was_encrypted = False
         self.current_page = 0
         self.render_scale = 1.0
         self.edits = {}
@@ -4596,12 +4835,16 @@ class MainWindow(QMainWindow):
         self.comments_list.clear()
         self.forms_list.clear()
         self.fill_forms_list.clear()
+        self.digital_signatures_list.clear()
+        self.digital_signatures_summary.clear()
+        self.digital_signature_details.clear()
         self._form_preview_values.clear()
         self._form_preview_signatures.clear()
         self._form_workspace_mode = "none"
         self.right_sidebar.setTabEnabled(self.comments_tool_index, False)
         self.right_sidebar.setTabEnabled(self.forms_tool_index, False)
         self.right_sidebar.setTabEnabled(self.fill_sign_tool_index, False)
+        self.right_sidebar.setTabEnabled(self.digital_signatures_tool_index, False)
         self.right_sidebar.collapse()
         self._clear_text_toolbar_target()
         self._sync_zoom_display()
@@ -4618,10 +4861,11 @@ class MainWindow(QMainWindow):
         self._inspection_report = None
         self._inspection_error = None
         self._compatibility_risk_acknowledged = False
+        self._refresh_digital_signatures_sidebar()
         try:
             self._inspection_coordinator.start(
                 self.engine.source_bytes,
-                encrypted_source=self.engine.was_encrypted,
+                encrypted_source=self._source_was_encrypted,
                 context=InspectionContext(self._document_generation),
             )
         except Exception as exc:
@@ -4649,6 +4893,7 @@ class MainWindow(QMainWindow):
             return
         self._inspection_report = outcome.report
         self._inspection_error = outcome.error
+        self._refresh_digital_signatures_sidebar()
         self._operation_log.record(
             "inspection_finished",
             worker="inspection",
@@ -4722,6 +4967,369 @@ class MainWindow(QMainWindow):
         else:
             lines.extend(("", self.trx("compatibility_ok")))
             QMessageBox.information(self, title, "\n".join(lines))
+
+    def show_digital_signatures(self) -> None:
+        if not self.engine.is_open:
+            return
+        self.right_sidebar.setCurrentIndex(self.digital_signatures_tool_index)
+        self._set_form_workspace_mode("none")
+
+    def sign_with_certificate(self) -> bool:
+        if not self.engine.is_open or self._document_write_in_progress():
+            return False
+        if self._inspection_process is not None:
+            self.statusBar().showMessage(self.trx("compatibility_checking"), 5000)
+            return False
+        report = self._inspection_report
+        if (
+            report is None
+            or not report.signature_validation_available
+            or report.signature_validation_error
+        ):
+            QMessageBox.warning(
+                self,
+                self.trx("certificate_signing_title"),
+                self.trx("signing_inspection_required"),
+            )
+            return False
+        if report.signed_digital_signatures and self.has_unsaved_changes:
+            QMessageBox.warning(
+                self,
+                self.trx("certificate_signing_title"),
+                self.trx("signing_existing_requires_clean"),
+            )
+            return False
+        existing_signatures_verified = (
+            report.signed_digital_signatures == len(report.digital_signatures)
+            and all(
+                signature.integrity_status == "valid"
+                for signature in report.digital_signatures
+            )
+        )
+        if report.signed_digital_signatures and not existing_signatures_verified:
+            QMessageBox.warning(
+                self,
+                self.trx("certificate_signing_title"),
+                self.trx("signing_existing_invalid"),
+            )
+            return False
+        try:
+            fields = self.engine.form_fields()
+        except Exception as exc:
+            QMessageBox.critical(
+                self, self.trx("certificate_signing_title"), str(exc)
+            )
+            return False
+        unsigned_fields = sorted(
+            {
+                field.name.strip()
+                for field in fields
+                if field.type_code == pymupdf.PDF_WIDGET_TYPE_SIGNATURE
+                and field.name.strip()
+                and not field.value
+            }
+        )
+        all_names = {field.name for field in fields if field.name}
+        suffix = 1
+        while f"NettongiaSignature{suffix}" in all_names:
+            suffix += 1
+        dialog = CertificateSignatureDialog(
+            unsigned_fields,
+            f"NettongiaSignature{suffix}",
+            self,
+            self.trx,
+            page_count=self.engine.page_count,
+            current_page=self.current_page,
+        )
+        if not dialog.exec():
+            return False
+        settings = dialog.signature_settings()
+        source = self.document_path or (Path.home() / self.trx("untitled"))
+        suggested = source.with_name(f"{source.stem}-signed.pdf")
+        output, _selected_filter = QFileDialog.getSaveFileName(
+            self,
+            self.trx("sign_copy"),
+            str(suggested),
+            self.trx("pdf_filter"),
+        )
+        if not output:
+            dialog.password_edit.clear()
+            return False
+        output_path = self._normalized_file_path(output)
+        if output_path.suffix.lower() != ".pdf":
+            output_path = output_path.with_suffix(".pdf")
+        current_path = (
+            self._normalized_file_path(self.document_path)
+            if self.document_path
+            else None
+        )
+        if (
+            current_path is not None
+            and self._recent_path_key(output_path)
+            == self._recent_path_key(current_path)
+        ):
+            dialog.password_edit.clear()
+            QMessageBox.warning(
+                self,
+                self.trx("certificate_signing_title"),
+                self.trx("signing_copy_required"),
+            )
+            return False
+
+        state = self._capture_state()
+        snapshot = RecoverySnapshot(
+            pdf_bytes=state.pdf_bytes,
+            edits=tuple(sorted(state.edits.values(), key=lambda item: item.run.key)),
+            inserted_texts=tuple(state.inserted_texts),
+            signatures=tuple(state.signatures),
+            inserted_images=tuple(state.inserted_images),
+            deleted_images=tuple(state.deleted_images),
+            document_path=str(self.document_path) if self.document_path else None,
+            save_target_path=str(self.save_target_path) if self.save_target_path else None,
+            current_page=self.current_page,
+            render_scale=self.render_scale,
+        )
+        context = SignatureContext(
+            output_path=output_path,
+            document_generation=self._document_generation,
+            content_revision=self._content_revision,
+        )
+        try:
+            self._digital_signature_coordinator.start(
+                snapshot,
+                context,
+                str(settings["certificate_path"]),
+                str(settings["certificate_password"]),
+                field_name=str(settings["field_name"]),
+                create_field=bool(settings["create_field"]),
+                visible=bool(settings.get("visible", False)),
+                page_index=int(settings.get("page_index", 0)),
+                reason=str(settings["reason"]),
+                location=str(settings["location"]),
+                contact_info=str(settings["contact_info"]),
+                timestamp_url=str(settings.get("timestamp_url", "")),
+                embed_revocation_info=bool(settings.get("embed_revocation_info", False)),
+            )
+        except Exception as exc:
+            dialog.password_edit.clear()
+            QMessageBox.critical(
+                self, self.trx("signing_failed"), str(exc)
+            )
+            return False
+        dialog.password_edit.clear()
+        self._operation_log.record(
+            "digital_signature_started",
+            worker="signature",
+            outcome="started",
+            create_field=bool(settings["create_field"]),
+            visible=bool(settings.get("visible", False)),
+            timestamp_requested=bool(settings.get("timestamp_url")),
+            revocation_requested=bool(settings.get("embed_revocation_info")),
+            content_revision=context.content_revision,
+        )
+        progress = QProgressDialog(
+            self.trx("signing_working"), self.trx("cancel"), 0, 0, self
+        )
+        progress.setObjectName("digitalSignatureProgress")
+        progress.setWindowTitle("Nettongia PDF Editor")
+        progress.setWindowModality(Qt.NonModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.canceled.connect(self._cancel_digital_signature)
+        progress.show()
+        self._digital_signature_progress = progress
+        self.statusBar().showMessage(self.trx("signing_working"))
+        self._update_actions()
+        return True
+
+    def _cancel_digital_signature(self) -> None:
+        if not self._digital_signature_coordinator.cancel():
+            return
+        if self._digital_signature_progress is not None:
+            self._digital_signature_progress.setLabelText(f"{self.trx('cancel')}…")
+            self._digital_signature_progress.setCancelButton(None)
+
+    def _digital_signature_finished(self, outcome: SignatureOutcome) -> None:
+        progress = self._digital_signature_progress
+        self._digital_signature_progress = None
+        if progress is not None:
+            progress.close()
+            progress.deleteLater()
+        self.statusBar().clearMessage()
+        self._update_actions()
+        self._operation_log.record(
+            "digital_signature_finished",
+            worker="signature",
+            outcome=(
+                "cancelled"
+                if outcome.cancelled
+                else "failed"
+                if outcome.error
+                else "succeeded"
+            ),
+            reason=error_reason(outcome.error) if outcome.error else "unknown",
+            content_revision=outcome.context.content_revision,
+        )
+        if outcome.cancelled:
+            self.statusBar().showMessage(self.trx("cancel"), 3000)
+            return
+        if outcome.error or outcome.result is None:
+            QMessageBox.critical(
+                self,
+                self.trx("signing_failed"),
+                outcome.error or self.trx("signing_failed"),
+            )
+            return
+        completion = self.trx(
+            "signing_complete",
+            path=outcome.context.output_path,
+            signer=outcome.result.signer_name or self.trx("unknown_signer"),
+        )
+        if outcome.result.timestamp_status != "absent":
+            completion += "\n\n" + self.trx(
+                f"signing_complete_timestamp_{outcome.result.timestamp_status}"
+            )
+        if outcome.result.revocation_status == "embedded":
+            completion += "\n\n" + self.trx("signing_complete_revocation_embedded")
+        QMessageBox.information(
+            self,
+            self.trx("signing_complete_title"),
+            completion,
+        )
+        self.statusBar().showMessage(
+            self.trx("signing_complete_status", path=outcome.context.output_path),
+            8000,
+        )
+
+    def _refresh_digital_signatures_sidebar(self) -> None:
+        if not hasattr(self, "digital_signatures_list"):
+            return
+        self.digital_signatures_list.clear()
+        self.digital_signature_details.clear()
+        opened = self.engine.is_open
+        self.right_sidebar.setTabEnabled(self.digital_signatures_tool_index, opened)
+        if not opened:
+            self.digital_signatures_summary.clear()
+            return
+        report = self._inspection_report
+        if report is None:
+            key = (
+                "signature_validation_failed"
+                if self._inspection_error
+                else "signature_validation_working"
+            )
+            self.digital_signatures_summary.setText(
+                self.trx(key, error=self._inspection_error or "")
+            )
+            return
+        if not report.signature_validation_available:
+            self.digital_signatures_summary.setText(
+                self.trx("signature_validation_unavailable")
+            )
+            return
+        if report.signature_validation_error:
+            self.digital_signatures_summary.setText(
+                self.trx(
+                    "signature_validation_failed",
+                    error=report.signature_validation_error,
+                )
+            )
+            return
+        signatures = report.digital_signatures
+        if not signatures:
+            self.digital_signatures_summary.setText(self.trx("no_digital_signatures"))
+            return
+        self.digital_signatures_summary.setText(
+            self.trx("digital_signature_count", count=len(signatures))
+            + "\n"
+            + self.trx("signature_offline_notice")
+        )
+        for index, signature in enumerate(signatures):
+            marker = {
+                "valid": "✓",
+                "invalid": "×",
+                "error": "!",
+            }.get(signature.integrity_status, "!")
+            signer = signature.signer_name or self.trx("unknown_signer")
+            field = signature.field_name or self.trx("unnamed_signature_field")
+            item = QListWidgetItem(f"{marker} {signer}\n{field}")
+            item.setData(Qt.UserRole, index)
+            item.setToolTip(
+                self.trx(f"signature_integrity_{signature.integrity_status}")
+            )
+            self.digital_signatures_list.addItem(item)
+        self.digital_signatures_list.setCurrentRow(0)
+
+    def _digital_signature_selected(
+        self,
+        item: QListWidgetItem | None,
+        _previous: QListWidgetItem | None,
+    ) -> None:
+        report = self._inspection_report
+        if item is None or report is None:
+            self.digital_signature_details.clear()
+            return
+        try:
+            signature = report.digital_signatures[int(item.data(Qt.UserRole))]
+        except (IndexError, TypeError, ValueError):
+            self.digital_signature_details.clear()
+            return
+        self.digital_signature_details.setPlainText(
+            self._digital_signature_detail_text(signature)
+        )
+
+    def _digital_signature_detail_text(
+        self, signature: DigitalSignatureReport
+    ) -> str:
+        trust_key = f"signature_trust_{signature.trust_status}"
+        coverage_key = f"signature_coverage_{signature.coverage_status}"
+        modification_key = f"signature_modification_{signature.modification_status}"
+        timestamp_key = f"signature_timestamp_{signature.timestamp_status}"
+        rows = [
+            (
+                "signature_integrity",
+                self.trx(f"signature_integrity_{signature.integrity_status}"),
+            ),
+            ("signature_trust", self.trx(trust_key)),
+            ("signature_coverage", self.trx(coverage_key)),
+            ("signature_modifications", self.trx(modification_key)),
+            ("signature_timestamp", self.trx(timestamp_key)),
+            (
+                "signature_revocation_evidence",
+                self.trx(f"signature_revocation_{signature.revocation_evidence}"),
+            ),
+            ("signature_field", signature.field_name),
+            ("signature_signer", signature.signer_name),
+            ("signature_signing_time", signature.signing_time),
+            ("signature_digest", signature.digest_algorithm.upper()),
+            ("signature_algorithm", signature.signature_algorithm),
+            ("certificate_subject", signature.certificate_subject),
+            ("certificate_issuer", signature.certificate_issuer),
+            (
+                "certificate_validity",
+                " – ".join(
+                    filter(
+                        None,
+                        (
+                            signature.certificate_valid_from,
+                            signature.certificate_valid_to,
+                        ),
+                    )
+                ),
+            ),
+            ("certificate_serial", signature.certificate_serial),
+            ("certificate_fingerprint", signature.certificate_sha256),
+        ]
+        lines = [f"{self.trx(label)}: {value}" for label, value in rows if value]
+        if signature.error:
+            lines.extend(
+                (
+                    "",
+                    f"{self.trx('signature_validation_error')}: {signature.error}",
+                )
+            )
+        return "\n".join(lines)
 
     def show_find_bar(self) -> None:
         if not self.engine.is_open:
@@ -5205,6 +5813,101 @@ class MainWindow(QMainWindow):
             self._select_and_render_page(field.page_index)
         self.page_view.center_on_pdf_rect(field.bbox)
 
+    def edit_selected_form_label(self) -> None:
+        field = self._form_field_for_item(self.forms_list.currentItem())
+        if field is None:
+            return
+        label, accepted = QInputDialog.getText(
+            self,
+            self.trx("form_label_action"),
+            self.trx("form_field_label"),
+            QLineEdit.Normal,
+            field.label,
+        )
+        if not accepted or label.strip() == field.label:
+            return
+        if not label.strip():
+            QMessageBox.warning(self, self.trx("forms"), self.trx("form_label_required"))
+            return
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_form_label(
+                self._matching_form_xref(engine, field), label
+            ),
+            field.page_index,
+            self.trx("forms"),
+        ):
+            self._restore_form_selection(field)
+            self.statusBar().showMessage(self.trx("form_label_saved"), 4000)
+
+    def _restore_form_selection(self, original: FormFieldInfo) -> None:
+        try:
+            xref = self._matching_form_xref(self.engine, original)
+        except ValueError:
+            return
+        for row in range(self.forms_list.count()):
+            if self.forms_list.item(row).data(Qt.UserRole) == xref:
+                self.forms_list.setCurrentRow(row)
+                return
+
+    def move_selected_form_tab(self, direction: int) -> None:
+        field = self._form_field_for_item(self.forms_list.currentItem())
+        if field is None:
+            return
+        page_fields = [
+            item for item in self.engine.form_fields() if item.page_index == field.page_index
+        ]
+        current = next(
+            (i for i, item in enumerate(page_fields) if item.xref == field.xref), -1
+        )
+        target = current + direction
+        if current < 0 or not 0 <= target < len(page_fields):
+            return
+        page_fields[current], page_fields[target] = page_fields[target], page_fields[current]
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_form_tab_order(
+                field.page_index,
+                [self._matching_form_xref(engine, item) for item in page_fields],
+            ),
+            field.page_index,
+            self.trx("forms"),
+        ):
+            self._restore_form_selection(field)
+            self.statusBar().showMessage(self.trx("form_tab_saved"), 4000)
+
+    def check_form_accessibility(self) -> None:
+        if not self.engine.is_open:
+            return
+        try:
+            temporary = PdfEngine()
+            temporary.load_bytes(
+                self.engine.compose_bytes(
+                    self.edits.values(),
+                    self.signatures,
+                    self.inserted_images,
+                    self.deleted_images,
+                    self.inserted_texts,
+                )
+            )
+            try:
+                issues = temporary.form_accessibility_issues()
+            finally:
+                temporary.close()
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("form_check_action"), str(exc))
+            return
+        if not issues:
+            result = self.trx("form_check_clear")
+        else:
+            result = "\n".join(
+                f"{self.trx('page_word')} {issue.page_index + 1} · "
+                f"{issue.field_name or self.trx('forms')}: "
+                f"{self.trx('form_issue_' + issue.code)}"
+                for issue in issues[:30]
+            )
+            if len(issues) > 30:
+                result += f"\n{self.trx('form_check_more', count=len(issues) - 30)}"
+        QMessageBox.information(self, self.trx("form_check_action"), result)
+
     def _show_form_context_menu(self, position) -> None:
         item = self.forms_list.itemAt(position)
         if item is None:
@@ -5291,7 +5994,8 @@ class MainWindow(QMainWindow):
             or self._ocr_progress is not None
         ):
             return
-        self._select_and_render_page(row)
+        if not self.page_list.item(row).isSelected():
+            self._select_and_render_page(row)
         menu = QMenu(self)
         move_up = menu.addAction(self.trx("move_page_up"))
         move_up.setEnabled(row > 0)
@@ -5312,6 +6016,10 @@ class MainWindow(QMainWindow):
         rotate_right.triggered.connect(
             lambda _checked=False, page=row: self._rotate_page(page, 1)
         )
+        menu.addAction(self.crop_pages_action)
+        menu.addAction(self.resize_pages_action)
+        menu.addSeparator()
+        menu.addAction(self.extract_pages_action)
         menu.addSeparator()
         delete = menu.addAction(self.trx("delete_page"))
         delete.triggered.connect(
@@ -5993,7 +6701,14 @@ class MainWindow(QMainWindow):
         else:
             effective_family = family
         if (
-            (effective_family == (previous.font_family if previous and previous.font_family else run.font_name if run is not None else spec.font_family))
+            effective_family
+            == (
+                previous.font_family
+                if previous and previous.font_family
+                else run.font_name
+                if run is not None
+                else spec.font_family
+            )
             and abs(size - spec.font_size) < 0.01
             and bold == spec.bold
             and italic == spec.italic
@@ -6006,6 +6721,21 @@ class MainWindow(QMainWindow):
             if run is None:
                 return
             size_changed = abs(size - spec.font_size) >= 0.01
+            wrap_text = (
+                previous.wrap_text
+                if previous is not None
+                else run.direction[0] > 0.999 and abs(run.direction[1]) < 0.001
+            )
+            formatted_bbox = self._expanded_text_bbox(
+                spec.page_index,
+                spec.bbox,
+                size,
+                spec.text,
+                effective_family,
+                bold,
+                italic,
+                wrap_text=wrap_text,
+            )
             state.edits[key] = TextEdit(
                 run=run,
                 new_text=spec.text,
@@ -6019,12 +6749,23 @@ class MainWindow(QMainWindow):
                 italic=italic,
                 underline=underline,
                 color=color,
-                bbox=previous.bbox if previous and previous.bbox is not None else None,
+                bbox=formatted_bbox if formatted_bbox != run.bbox else None,
+                wrap_text=wrap_text,
             )
         else:
+            formatted_bbox = self._expanded_text_bbox(
+                spec.page_index,
+                spec.bbox,
+                size,
+                spec.text,
+                family,
+                bold,
+                italic,
+            )
             state.inserted_texts = [
                 replace(
                     item,
+                    bbox=formatted_bbox,
                     font_family=family,
                     font_size=size,
                     bold=bold,
@@ -6121,7 +6862,15 @@ class MainWindow(QMainWindow):
                 self._update_actions()
                 return
             family, size, bold, italic, underline, color = self._toolbar_text_values()
-            text_bbox = self._expanded_text_bbox(self.current_page, pending[1], size, text)
+            text_bbox = self._expanded_text_bbox(
+                self.current_page,
+                pending[1],
+                size,
+                text,
+                family,
+                bold,
+                italic,
+            )
             state = self._capture_state()
             state.inserted_texts.append(
                 TextPlacement(
@@ -6147,7 +6896,24 @@ class MainWindow(QMainWindow):
             self._update_actions()
             return
         state = self._capture_state()
-        text_bbox = self._expanded_text_bbox(spec.page_index, spec.bbox, spec.font_size, text)
+        wrap_text = True
+        if kind == "source":
+            source_run = self.engine.find_run(key)
+            wrap_text = bool(
+                source_run
+                and source_run.direction[0] > 0.999
+                and abs(source_run.direction[1]) < 0.001
+            )
+        text_bbox = self._expanded_text_bbox(
+            spec.page_index,
+            spec.bbox,
+            spec.font_size,
+            text,
+            spec.font_family,
+            spec.bold,
+            spec.italic,
+            wrap_text=wrap_text,
+        )
         if kind == "source":
             run = self.engine.find_run(key)
             if run is None:
@@ -6171,6 +6937,7 @@ class MainWindow(QMainWindow):
                 underline=spec.underline,
                 color=spec.color,
                 bbox=text_bbox if text_bbox != run.bbox else None,
+                wrap_text=wrap_text,
             )
         elif kind == "inserted":
             if text:
@@ -6210,9 +6977,24 @@ class MainWindow(QMainWindow):
         bbox: tuple[float, float, float, float],
         font_size: float,
         text: str,
+        font_family: str = "Arial",
+        bold: bool = False,
+        italic: bool = False,
+        *,
+        wrap_text: bool = True,
     ) -> tuple[float, float, float, float]:
-        lines = max(1, text.count("\n") + 1)
-        required_height = max(8.0, lines * max(3.0, font_size) * 1.2 + 5.0)
+        if wrap_text:
+            required_height = self.engine.wrapped_text_height(
+                text,
+                bbox[2] - bbox[0],
+                font_family,
+                font_size,
+                bold,
+                italic,
+            )
+        else:
+            lines = max(1, text.count("\n") + 1)
+            required_height = max(8.0, lines * max(3.0, font_size) * 1.2 + 5.0)
         if bbox[3] - bbox[1] >= required_height:
             return self._normalized_text_bbox(page_index, bbox)
         return self._normalized_text_bbox(
@@ -6251,6 +7033,7 @@ class MainWindow(QMainWindow):
                 underline=spec.underline,
                 color=spec.color,
                 bbox=bbox,
+                wrap_text=previous.wrap_text if previous else True,
             )
         else:
             state.inserted_texts = [
@@ -6290,6 +7073,7 @@ class MainWindow(QMainWindow):
                 underline=spec.underline,
                 color=spec.color,
                 bbox=spec.bbox if spec.bbox != run.bbox else None,
+                wrap_text=previous.wrap_text if previous else True,
             )
         else:
             state.inserted_texts = [item for item in state.inserted_texts if item.key != key]
@@ -6316,6 +7100,27 @@ class MainWindow(QMainWindow):
         if not self.engine.is_open or self._document_write_in_progress(False):
             return
         menu = QMenu(self)
+        point = self.page_view.mapToScene(
+            self.page_view.mapFromGlobal(global_position)
+        )
+        link = self._link_at(self.current_page, point.x() / self.render_scale, point.y() / self.render_scale)
+        spec = self._text_spec(kind, key) if category == "text" else None
+        target_bbox = spec.bbox if spec else None
+        if category == "visual":
+            selected = next(
+                (item for item in self.page_view.scene().selectedItems()
+                 if isinstance(item, (SignatureGraphicsItem, VisualImageItem))
+                 and item.kind == kind and item.key == key),
+                None,
+            )
+            if selected is not None:
+                area = selected.sceneBoundingRect()
+                target_bbox = (
+                    area.left() / self.render_scale, area.top() / self.render_scale,
+                    area.right() / self.render_scale, area.bottom() / self.render_scale,
+                )
+        self._add_link_context_actions(menu, link, point, target_bbox=target_bbox)
+        menu.addSeparator()
         if category == "text":
             edit = menu.addAction(self.trx("edit_text"))
             edit.triggered.connect(
@@ -6334,6 +7139,16 @@ class MainWindow(QMainWindow):
                 lambda _checked=False, text_kind=kind, text_key=key:
                 self._highlight_text(text_kind, text_key)
             )
+            underline = menu.addAction(self.trx("underline_text_markup"))
+            underline.triggered.connect(
+                lambda _checked=False, text_kind=kind, text_key=key:
+                self._mark_text(text_kind, text_key, "underline")
+            )
+            strikeout = menu.addAction(self.trx("strikeout_text_markup"))
+            strikeout.triggered.connect(
+                lambda _checked=False, text_kind=kind, text_key=key:
+                self._mark_text(text_kind, text_key, "strikeout")
+            )
         elif category == "visual":
             if kind == "source":
                 edit = menu.addAction(self.trx("edit_original_image"))
@@ -6349,6 +7164,130 @@ class MainWindow(QMainWindow):
         else:
             return
         self._exec_context_menu(menu, global_position)
+
+    def _link_at(self, page_index: int, x: float, y: float) -> dict | None:
+        if not self.engine.is_open or not 0 <= page_index < self.engine.page_count:
+            return None
+        return next(
+            ({**link, "_index": index}
+             for index, link in reversed(list(enumerate(self.engine.page_links(page_index))))
+             if pymupdf.Rect(link["from"]).contains(pymupdf.Point(x, y))),
+            None,
+        )
+
+    def _add_link_context_actions(
+        self, menu: QMenu, link: dict | None, point: QPointF,
+        *, target_bbox: tuple[float, float, float, float] | None = None,
+    ) -> None:
+        if link is not None:
+            edit = menu.addAction(self.trx("edit_link"))
+            edit.triggered.connect(
+                lambda _checked=False, page=self.current_page, xref=int(link["xref"]),
+                index=int(link["_index"]), uri=str(link.get("uri") or ""):
+                self._edit_link(page, xref, uri, index=index)
+            )
+            remove = menu.addAction(self.trx("remove_link"))
+            remove.triggered.connect(
+                lambda _checked=False, page=self.current_page, xref=int(link["xref"]),
+                index=int(link["_index"]): self._remove_link(page, xref, index=index)
+            )
+        else:
+            add = menu.addAction(self.trx("add_link"))
+            add.triggered.connect(
+                lambda _checked=False, page=self.current_page, x=point.x(), y=point.y(), bbox=target_bbox:
+                self._insert_link(page, bbox) if bbox else self._add_link_at_point(page, x, y)
+            )
+
+    def _show_canvas_context_menu(self, scene_point: QPointF, global_position: object) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        page = self.current_page
+        link = self._link_at(page, scene_point.x() / self.render_scale, scene_point.y() / self.render_scale)
+        menu = QMenu(self)
+        self._add_link_context_actions(menu, link, scene_point)
+        self._exec_context_menu(menu, global_position)
+
+    def _add_link_at_point(self, page: int, x: float, y: float) -> None:
+        if page != self.current_page:
+            return
+        bounds = self.engine.page_rect(page)
+        width, height = min(180.0, bounds.width), min(26.0, bounds.height)
+        px = min(max(bounds.x0, x / self.render_scale), bounds.x1 - width)
+        py = min(max(bounds.y0, y / self.render_scale), bounds.y1 - height)
+        self._insert_link(page, (px, py, px + width, py + height))
+
+    @staticmethod
+    def _validated_link_uri(value: str) -> str:
+        uri = value.strip()
+        if uri and ":" not in uri and "." in uri.split("/")[0]:
+            uri = "https://" + uri
+        parsed = urlsplit(uri)
+        if any(ord(char) < 32 for char in uri) or parsed.scheme.lower() not in ("http", "https", "mailto"):
+            raise ValueError("Use a full http(s) URL or a mailto: address.")
+        if parsed.scheme.lower() == "mailto":
+            if not parsed.path or "@" not in parsed.path:
+                raise ValueError("Enter a complete email address after mailto:.")
+        elif not parsed.netloc or any(char.isspace() for char in parsed.netloc):
+            raise ValueError("Enter a complete web address.")
+        return uri
+
+    def _ask_link_uri(self, initial: str = "") -> str | None:
+        uri, accepted = QInputDialog.getText(
+            self, self.trx("link_title"), self.trx("link_url_prompt"),
+            QLineEdit.Normal, initial,
+        )
+        if not accepted:
+            return None
+        try:
+            return self._validated_link_uri(uri)
+        except ValueError as exc:
+            QMessageBox.warning(self, self.trx("link_title"), str(exc))
+            return None
+
+    def _insert_link(self, page: int, bbox: tuple[float, float, float, float]) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        uri = self._ask_link_uri()
+        if uri and self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_link(page, bbox, uri), page, self.trx("link_title")
+        ):
+            self.statusBar().showMessage(self.trx("link_added"), 4000)
+
+    def _composed_link_xref(self, engine: PdfEngine, page: int, xref: int, index: int) -> int:
+        links = engine.page_links(page)
+        original = self.engine.page_links(page)
+        if (not 0 <= index < len(links) or not 0 <= index < len(original)
+                or int(original[index]["xref"]) != xref
+                or not pymupdf.Rect(links[index]["from"]).intersects(
+                    pymupdf.Rect(original[index]["from"])
+                )):
+            raise ValueError("The link is no longer available.")
+        return int(links[index]["xref"])
+
+    def _edit_link(self, page: int, xref: int, initial: str, *, index: int) -> None:
+        uri = self._ask_link_uri(initial)
+        if uri and uri != initial and self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_link(
+                page, None, uri, xref=self._composed_link_xref(engine, page, xref, index)
+            ), page, self.trx("link_title"),
+        ):
+            self.statusBar().showMessage(self.trx("link_updated"), 4000)
+
+    def _remove_link(self, page: int, xref: int, *, index: int) -> None:
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_without_link(
+                page, self._composed_link_xref(engine, page, xref, index)
+            ), page, self.trx("link_title")
+        ):
+            self.statusBar().showMessage(self.trx("link_removed"), 4000)
+
+    def start_add_link(self) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        self.cancel_special_mode()
+        self._link_target_page = self.current_page
+        self.page_view.set_redaction_mode(True, link_area=True)
+        self.statusBar().showMessage(self.trx("link_draw_hint"))
 
     def _push_state(
         self,
@@ -6506,6 +7445,14 @@ class MainWindow(QMainWindow):
         )
         if not path:
             return
+        page_spec, accepted = QInputDialog.getText(
+            self,
+            self.trx("insert_pages"),
+            self.trx("page_range_prompt"),
+            text="1-",
+        )
+        if not accepted:
+            return
         self.cancel_special_mode()
         insertion_index = self.current_page + 1
         temp = PdfEngine()
@@ -6519,6 +7466,7 @@ class MainWindow(QMainWindow):
                         self.current_page,
                         path,
                         password=password,
+                        page_spec=page_spec,
                     )
                     break
                 except PdfPasswordRequiredError:
@@ -6544,6 +7492,80 @@ class MainWindow(QMainWindow):
                 lambda page: page + inserted_count if page >= insertion_index else page,
             )
             self._push_state(state, insertion_index)
+
+    def _selected_page_indices(self) -> list[int]:
+        rows = sorted(index.row() for index in self.page_list.selectionModel().selectedRows())
+        return rows if rows else [self.current_page]
+
+    def _save_pages_to_path(self, path: Path, pages: list[int]) -> bool:
+        try:
+            self.engine.save_page_selection(
+                path, pages, self.edits.values(), self.signatures,
+                self.inserted_images, self.deleted_images, self.inserted_texts,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("extract_pages"), str(exc))
+            return False
+        return True
+
+    def extract_selected_pages(self) -> None:
+        if not self.engine.is_open or self._document_write_in_progress():
+            return
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        pages = self._selected_page_indices()
+        source = self.document_path or Path("document.pdf")
+        suggested = source.with_name(f"{source.stem}_pages.pdf")
+        path, _ = QFileDialog.getSaveFileName(
+            self, self.trx("extract_pages"), str(suggested), self.trx("pdf_filter")
+        )
+        if not path:
+            return
+        target = Path(path if path.lower().endswith(".pdf") else f"{path}.pdf")
+        active_path = self.save_target_path or self.document_path
+        if active_path is not None and target.resolve() == active_path.resolve():
+            QMessageBox.warning(self, self.trx("extract_pages"), self.trx("export_source_error"))
+            return
+        if not self._confirm_document_write_compatibility():
+            return
+        if self._save_pages_to_path(target, pages):
+            self.statusBar().showMessage(self.trx("pages_exported", count=len(pages)), 5000)
+
+    def split_document(self) -> None:
+        if not self.engine.is_open or self._document_write_in_progress():
+            return
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        size, accepted = QInputDialog.getInt(
+            self, self.trx("split_pages"), self.trx("split_size_prompt"),
+            1, 1, self.engine.page_count,
+        )
+        if not accepted:
+            return
+        directory = QFileDialog.getExistingDirectory(self, self.trx("split_pages"))
+        if not directory:
+            return
+        source = self.document_path or Path("document.pdf")
+        groups = [list(range(start, min(start + size, self.engine.page_count)))
+                  for start in range(0, self.engine.page_count, size)]
+        targets = [Path(directory) / f"{source.stem}_pages_{pages[0] + 1}-{pages[-1] + 1}.pdf"
+                   for pages in groups]
+        active_path = self.save_target_path or self.document_path
+        if any(target.exists() or (active_path and target.resolve() == active_path.resolve())
+               for target in targets):
+            QMessageBox.warning(self, self.trx("split_pages"), self.trx("split_exists_error"))
+            return
+        if not self._confirm_document_write_compatibility():
+            return
+        try:
+            self.engine.save_page_groups(
+                list(zip(targets, groups)), self.edits.values(), self.signatures,
+                self.inserted_images, self.deleted_images, self.inserted_texts,
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("split_pages"), str(exc))
+            return
+        self.statusBar().showMessage(self.trx("split_complete", count=len(targets)), 5000)
 
     def delete_current_page(self) -> None:
         if self.engine.is_open:
@@ -6804,6 +7826,7 @@ class MainWindow(QMainWindow):
             not self.engine.is_open
             or self._write_process is not None
             or self._ocr_process is not None
+            or self._digital_signature_process is not None
         ):
             return
         self.cancel_special_mode()
@@ -6816,6 +7839,12 @@ class MainWindow(QMainWindow):
         bbox: tuple[float, float, float, float],
         page_generation: int,
     ) -> None:
+        if self._link_target_page is not None:
+            target_page = self._link_target_page
+            self._link_target_page = None
+            if target_page == self.current_page and page_generation == self.page_view._page_generation:
+                self._insert_link(target_page, bbox)
+            return
         target_page = self._redaction_target_page
         self._redaction_target_page = None
         if (
@@ -6875,6 +7904,157 @@ class MainWindow(QMainWindow):
         self._push_state(EditorState(changed_bytes, {}, [], [], [], []), target_page)
         return True
 
+    def manage_document_marks(self) -> None:
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        try:
+            has_existing = self.engine.has_document_marks()
+            existing_spec = self.engine.document_marks_spec()
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("document_marks_title"), str(exc))
+            return
+        title = self.document_path.stem if self.document_path else ""
+        dialog = DocumentMarksDialog(
+            title, has_existing, self, self.trx, existing_spec=existing_spec
+        )
+        if not dialog.exec():
+            return
+        if dialog.remove_requested:
+            answer = QMessageBox.question(
+                self,
+                self.trx("document_marks_title"),
+                self.trx("remove_document_marks_question"),
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if answer != QMessageBox.Yes:
+                return
+            callback = lambda engine: engine.bytes_without_document_marks()
+            status_key = "document_marks_removed"
+        else:
+            spec: DocumentMarksSpec = dialog.marks_spec()
+            callback = lambda engine: engine.bytes_with_document_marks(spec)
+            status_key = "document_marks_applied"
+        if self._materialize_pdf_change(
+            callback,
+            self.current_page,
+            self.trx("document_marks_title"),
+        ):
+            self._operation_log.record(
+                "document_marks_changed",
+                operation="document_marks",
+                outcome="succeeded",
+                page_index=self.current_page,
+            )
+            self.statusBar().showMessage(self.trx(status_key), 4000)
+
+    def crop_pages(self) -> None:
+        """Apply a reversible PDF CropBox inset to current, selected, or all pages."""
+
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        selected = self._selected_page_indices()
+        try:
+            page_rects = [
+                self.engine.page_rect(index) for index in range(self.engine.page_count)
+            ]
+            page_sizes = [
+                (float(rect.width), float(rect.height)) for rect in page_rects
+            ]
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("crop_pages_title"), str(exc))
+            return
+        dialog = PageCropDialog(
+            page_sizes[self.current_page],
+            [page_sizes[index] for index in selected],
+            page_sizes,
+            self,
+            self.trx,
+        )
+        if not dialog.exec():
+            return
+        if dialog.scope == "all":
+            pages = list(range(self.engine.page_count))
+        elif dialog.scope == "selected":
+            pages = selected
+        else:
+            pages = [self.current_page]
+        margins = dialog.margins_points
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_pages_cropped(pages, margins),
+            self.current_page,
+            self.trx("crop_pages_title"),
+        ):
+            self._operation_log.record(
+                "pages_cropped",
+                operation="page_crop",
+                outcome="succeeded",
+                page_index=self.current_page,
+                page_count=len(pages),
+            )
+            self.statusBar().showMessage(
+                self.trx("pages_cropped", count=len(pages)),
+                4000,
+            )
+
+    def resize_pages(self) -> None:
+        """Change physical page dimensions with optional proportional content fit."""
+
+        if not self.engine.is_open or self._document_write_in_progress(False):
+            return
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        selected = self._selected_page_indices()
+        try:
+            current_rect = self.engine.page_rect(self.current_page)
+            current_size = (
+                float(current_rect.width),
+                float(current_rect.height),
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("resize_pages_title"), str(exc))
+            return
+        dialog = PageResizeDialog(
+            current_size,
+            len(selected),
+            self.engine.page_count,
+            self,
+            self.trx,
+        )
+        if not dialog.exec():
+            return
+        if dialog.scope == "all":
+            pages = list(range(self.engine.page_count))
+        elif dialog.scope == "selected":
+            pages = selected
+        else:
+            pages = [self.current_page]
+        width, height = dialog.target_dimensions_points
+        mode = dialog.resize_mode
+        if self._materialize_pdf_change(
+            lambda engine: engine.bytes_with_pages_resized(
+                pages, width, height, mode
+            ),
+            self.current_page,
+            self.trx("resize_pages_title"),
+        ):
+            self._operation_log.record(
+                "pages_resized",
+                operation="page_resize",
+                outcome="succeeded",
+                page_index=self.current_page,
+                page_count=len(pages),
+                resize_mode=mode,
+            )
+            self.statusBar().showMessage(
+                self.trx("pages_resized", count=len(pages)),
+                4000,
+            )
+
     def _materialize_annotation_change(self, callback, target_page: int) -> bool:
         return self._materialize_pdf_change(
             callback,
@@ -6887,6 +8067,7 @@ class MainWindow(QMainWindow):
             not self.engine.is_open
             or self._write_process is not None
             or self._ocr_process is not None
+            or self._digital_signature_process is not None
         ):
             return
         try:
@@ -7280,21 +8461,37 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(self.trx("comment_added"), 4000)
 
     def _highlight_text(self, kind: str, key: str) -> None:
+        self._mark_text(kind, key, "highlight")
+
+    def _mark_text(self, kind: str, key: str, style: str) -> None:
         spec = self._text_spec(kind, key)
         if spec is None:
             return
+        run = self.engine.find_run(key) if kind == "source" else None
+        line_bboxes = (
+            run.source_bboxes
+            if run is not None and key not in self.edits and run.source_bboxes
+            else None
+        )
         self.cancel_special_mode()
         if self._materialize_annotation_change(
-            lambda engine: engine.bytes_with_highlight(spec.page_index, spec.bbox),
+            lambda engine: engine.bytes_with_text_markup(
+                spec.page_index, spec.bbox, style, line_bboxes=line_bboxes
+            ),
             spec.page_index,
         ):
             self._operation_log.record(
                 "annotation_added",
-                operation="highlight_add",
+                operation=f"{style}_add",
                 outcome="succeeded",
                 page_index=spec.page_index,
             )
-            self.statusBar().showMessage(self.trx("highlight_added"), 4000)
+            message_key = {
+                "highlight": "highlight_added",
+                "underline": "underline_added",
+                "strikeout": "strikeout_added",
+            }[style]
+            self.statusBar().showMessage(self.trx(message_key), 4000)
 
     def edit_selected_comment(self) -> None:
         annotation = self._annotation_for_item(self.comments_list.currentItem())
@@ -7500,6 +8697,12 @@ class MainWindow(QMainWindow):
             state.deleted_images.append(
                 ImageDeletion(source_run, fill_removed_area=False)
             )
+            try:
+                self.engine.validate_image_deletions(state.deleted_images)
+            except ImageDeletionError as exc:
+                QMessageBox.warning(self, self.trx("edit_original_image"), self.trx(f"image_deletion_{exc.reason}"))
+                self._render_current_page()
+                return
             state.inserted_images.append(
                 ImagePlacement(
                     key,
@@ -7555,6 +8758,12 @@ class MainWindow(QMainWindow):
             if run is None:
                 return
             state.deleted_images.append(ImageDeletion(run))
+            try:
+                self.engine.validate_image_deletions(state.deleted_images)
+            except ImageDeletionError as exc:
+                QMessageBox.warning(self, self.trx("delete_image"), self.trx(f"image_deletion_{exc.reason}"))
+                self._render_current_page()
+                return
         elif kind == "inserted":
             state.inserted_images = [item for item in state.inserted_images if item.key != key]
         elif kind == "signature":
@@ -7577,6 +8786,7 @@ class MainWindow(QMainWindow):
         self._pending_visual = None
         self._pending_text_box = None
         self._redaction_target_page = None
+        self._link_target_page = None
         self._pending_form_field = None
         self._form_field_target_page = None
         self.page_view.set_placement_mode(False)
@@ -7804,34 +9014,15 @@ class MainWindow(QMainWindow):
                 raise RuntimeError(self.trx("print_failed"))
             painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
             printer_resolution = max(72, printer.resolution())
-            render_scale = min(300, max(150, printer_resolution)) / 72.0
 
             for ordinal, page_index in enumerate(page_indices):
                 if ordinal and not printer.newPage():
                     raise RuntimeError(self.trx("print_failed"))
                 page = document[page_index]
-                # Printing uses the same raster path as the preview.  Apply
-                # the page-aware memory cap here as well, otherwise an A0
-                # page could still allocate an unsafe buffer even when the
-                # editor view itself was capped.
-                page_scale = min(render_scale, self.engine.max_render_scale(page_index))
-                pixmap = page.get_pixmap(
-                    matrix=pymupdf.Matrix(page_scale, page_scale),
-                    alpha=False,
-                    annots=True,
-                )
-                image = QImage(
-                    pixmap.samples,
-                    pixmap.width,
-                    pixmap.height,
-                    pixmap.stride,
-                    QImage.Format_RGB888,
-                ).copy()
-
                 paint_rect = QRectF(
                     printer.pageLayout().paintRectPixels(printer_resolution)
                 )
-                fitted_size = QSizeF(image.width(), image.height())
+                fitted_size = QSizeF(page.rect.width, page.rect.height)
                 fitted_size.scale(paint_rect.size(), Qt.KeepAspectRatio)
                 target = QRectF(
                     paint_rect.x() + (paint_rect.width() - fitted_size.width()) / 2,
@@ -7839,13 +9030,50 @@ class MainWindow(QMainWindow):
                     fitted_size.width(),
                     fitted_size.height(),
                 )
-                painter.drawImage(target, image)
+                if not self._paint_vector_print_page(page, painter, target):
+                    # Annotated pages and unsupported SVG remain rasterized,
+                    # preserving their appearance with the existing safe cap.
+                    render_scale = min(300, max(150, printer_resolution)) / 72.0
+                    page_scale = min(render_scale, self.engine.max_render_scale(page_index))
+                    pixmap = page.get_pixmap(
+                        matrix=pymupdf.Matrix(page_scale, page_scale),
+                        alpha=False,
+                        annots=True,
+                    )
+                    image = QImage(
+                        pixmap.samples,
+                        pixmap.width,
+                        pixmap.height,
+                        pixmap.stride,
+                        QImage.Format_RGB888,
+                    ).copy()
+                    painter.drawImage(target, image)
                 QApplication.processEvents()
         finally:
             if painter.isActive():
                 painter.end()
             document.close()
         return len(page_indices)
+
+    @staticmethod
+    def _paint_vector_print_page(
+        page: pymupdf.Page, painter: QPainter, target: QRectF
+    ) -> bool:
+        # MuPDF's SVG omits PDF annotation/widget appearances. Keep those
+        # pages on the established raster path so nothing disappears.
+        if page.first_annot is not None or page.first_widget is not None:
+            return False
+        try:
+            svg = page.get_svg_image(text_as_path=True).encode("utf-8")
+            if len(svg) > 12_000_000:
+                return False
+            renderer = QSvgRenderer(QByteArray(svg))
+            if not renderer.isValid():
+                return False
+            renderer.render(painter, target)
+            return True
+        except (RuntimeError, ValueError, MemoryError):
+            return False
 
     def _choose_ocr_language(self) -> str | None:
         languages = available_ocr_languages()
@@ -7983,12 +9211,13 @@ class MainWindow(QMainWindow):
                 state = self._capture_state()
                 state.pdf_bytes = outcome.output_bytes
                 self._push_state(state, self.current_page)
+                complete = self.trx(
+                    "ocr_complete",
+                    pages=outcome.result["processed_pages"],
+                    words=outcome.result["words_inserted"],
+                )
                 self.statusBar().showMessage(
-                    self.trx(
-                        "ocr_complete",
-                        pages=outcome.result["processed_pages"],
-                        words=outcome.result["words_inserted"],
-                    ),
+                    f"{complete} {self.trx('direct_edit_hint')}",
                     8000,
                 )
             else:
@@ -8084,11 +9313,256 @@ class MainWindow(QMainWindow):
             update_document_identity=False,
         )
 
+    def save_protected_copy(
+        self,
+        _checked: bool = False,
+        *,
+        background: bool = True,
+    ) -> bool:
+        """Write an AES-256 copy without retaining the opening password."""
+
+        if not self.engine.is_open or self._document_write_in_progress():
+            return False
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        dialog = PasswordProtectionDialog(self, self.trx)
+        if not dialog.exec():
+            return False
+        password = dialog.password
+        source = self.save_target_path or self.document_path
+        suggested = (
+            source.with_name(f"{source.stem}_protected.pdf")
+            if source is not None
+            else Path("document_protected.pdf")
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.trx("add_password_protection").rstrip("."),
+            str(suggested),
+            self.trx("pdf_filter"),
+        )
+        if not path:
+            return False
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        if background:
+            return self._start_document_write(
+                Path(path),
+                show_confirmation=True,
+                update_document_identity=False,
+                encryption_password=password,
+            )
+        return self._save_to_path(
+            Path(path),
+            show_confirmation=True,
+            update_document_identity=False,
+            encryption_password=password,
+        )
+
+    def save_unprotected_copy(
+        self,
+        _checked: bool = False,
+        *,
+        background: bool = True,
+    ) -> bool:
+        """Write an explicitly unencrypted copy of an opened protected PDF."""
+
+        if (
+            not self.engine.is_open
+            or not self._source_was_encrypted
+            or self._document_write_in_progress()
+        ):
+            return False
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        source = self.save_target_path or self.document_path
+        suggested = (
+            source.with_name(f"{source.stem}_unprotected.pdf")
+            if source is not None
+            else Path("document_unprotected.pdf")
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            self.trx("remove_password_protection").rstrip("."),
+            str(suggested),
+            self.trx("pdf_filter"),
+        )
+        if not path:
+            return False
+        if not path.lower().endswith(".pdf"):
+            path += ".pdf"
+        if background:
+            return self._start_document_write(
+                Path(path),
+                show_confirmation=True,
+                update_document_identity=False,
+                password_protection_removed=True,
+            )
+        return self._save_to_path(
+            Path(path),
+            show_confirmation=True,
+            update_document_identity=False,
+            password_protection_removed=True,
+        )
+
+    def compare_with_pdf(self) -> bool:
+        if not self.engine.is_open or self._document_write_in_progress():
+            return False
+        if self.page_view.inline_editing:
+            self.page_view.finish_inline_editor(True)
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            self.trx("compare_pdf_title"),
+            str(self.document_path.parent if self.document_path else Path.home()),
+            self.trx("pdf_filter"),
+        )
+        if not path:
+            return False
+        comparison_path = Path(path)
+        candidate = PdfEngine()
+        password: str | None = None
+        prompt = self.trx("pdf_password_prompt")
+        while True:
+            try:
+                candidate.open(comparison_path, password=password)
+                break
+            except PdfPasswordRequiredError:
+                pass
+            except PdfInvalidPasswordError:
+                prompt = self.trx("pdf_password_incorrect")
+            except Exception as exc:
+                QMessageBox.critical(
+                    self, self.trx("comparison_failed"), str(exc)
+                )
+                candidate.close()
+                return False
+            password, accepted = QInputDialog.getText(
+                self,
+                self.trx("pdf_password_title"),
+                prompt,
+                QLineEdit.Password,
+            )
+            if not accepted:
+                candidate.close()
+                return False
+        comparison_pdf = candidate.source_bytes
+        candidate.close()
+        state = self._capture_state()
+        snapshot = RecoverySnapshot(
+            pdf_bytes=state.pdf_bytes,
+            edits=tuple(sorted(state.edits.values(), key=lambda item: item.run.key)),
+            inserted_texts=tuple(state.inserted_texts),
+            signatures=tuple(state.signatures),
+            inserted_images=tuple(state.inserted_images),
+            deleted_images=tuple(state.deleted_images),
+            document_path=str(self.document_path) if self.document_path else None,
+            save_target_path=str(self.save_target_path) if self.save_target_path else None,
+            current_page=self.current_page,
+            render_scale=self.render_scale,
+        )
+        context = ComparisonContext(
+            self._document_generation,
+            self._content_revision,
+            comparison_path.name,
+        )
+        try:
+            self._comparison_coordinator.start(snapshot, comparison_pdf, context)
+        except Exception as exc:
+            QMessageBox.critical(self, self.trx("comparison_failed"), str(exc))
+            return False
+        progress = QProgressDialog(
+            self.trx("compare_pdf_working"), self.trx("cancel"), 0, 0, self
+        )
+        progress.setWindowTitle(self.trx("compare_pdf_title"))
+        progress.setWindowModality(Qt.NonModal)
+        progress.setMinimumDuration(0)
+        progress.setAutoClose(False)
+        progress.setAutoReset(False)
+        progress.canceled.connect(self._cancel_comparison)
+        progress.show()
+        self._comparison_progress = progress
+        self._operation_log.record(
+            "comparison_started",
+            operation="compare",
+            outcome="started",
+            content_revision=self._content_revision,
+        )
+        self._update_actions()
+        return True
+
+    def _cancel_comparison(self) -> None:
+        if self._comparison_coordinator.cancel() and self._comparison_progress:
+            self._comparison_progress.setCancelButton(None)
+
+    def _comparison_finished(self, outcome: ComparisonOutcome) -> None:
+        progress = self._comparison_progress
+        self._comparison_progress = None
+        if progress is not None:
+            progress.close()
+            progress.deleteLater()
+        result_outcome = (
+            "cancelled"
+            if outcome.cancelled
+            else "failed"
+            if outcome.error
+            else "succeeded"
+        )
+        self._operation_log.record(
+            "comparison_finished",
+            operation="compare",
+            outcome=result_outcome,
+            content_revision=outcome.context.content_revision,
+        )
+        self._update_actions()
+        if outcome.cancelled:
+            return
+        if outcome.error:
+            QMessageBox.critical(
+                self, self.trx("comparison_failed"), outcome.error
+            )
+            return
+        if (
+            outcome.context.document_generation != self._document_generation
+            or outcome.context.content_revision != self._content_revision
+        ):
+            self.statusBar().showMessage(self.trx("comparison_discarded"), 5000)
+            return
+        if (
+            outcome.comparison is None
+            or outcome.current_pdf is None
+            or outcome.comparison_pdf is None
+        ):
+            QMessageBox.critical(
+                self,
+                self.trx("comparison_failed"),
+                self.trx("comparison_failed"),
+            )
+            return
+        dialog = ComparisonDialog(
+            outcome.current_pdf,
+            outcome.comparison_pdf,
+            outcome.comparison,
+            outcome.context.comparison_name,
+            self,
+            self.trx,
+        )
+        dialog.exec()
+
     def _document_write_in_progress(self, notify: bool = True) -> bool:
-        if self._write_process is None and self._ocr_process is None:
+        if (
+            self._write_process is None
+            and self._ocr_process is None
+            and self._comparison_process is None
+            and self._digital_signature_process is None
+        ):
             return False
         if notify:
-            progress = self._write_progress or self._ocr_progress
+            progress = (
+                self._write_progress
+                or self._ocr_progress
+                or self._comparison_progress
+                or self._digital_signature_progress
+            )
             if progress is not None:
                 progress.show()
                 progress.raise_()
@@ -8138,6 +9612,8 @@ class MainWindow(QMainWindow):
         show_confirmation: bool = False,
         compression_profile: str | None = None,
         update_document_identity: bool = True,
+        encryption_password: str | None = None,
+        password_protection_removed: bool = False,
     ) -> bool:
         if not self.engine.is_open or self._document_write_in_progress():
             return False
@@ -8164,9 +9640,18 @@ class MainWindow(QMainWindow):
             compression_profile=compression_profile,
             show_confirmation=show_confirmation,
             update_document_identity=update_document_identity,
+            password_protected=encryption_password is not None,
+            password_protection_removed=password_protection_removed,
+            count_as_successful_save=(
+                self.has_unsaved_changes
+                and update_document_identity
+                and encryption_password is None
+                and not password_protection_removed
+                and compression_profile is None
+            ),
         )
         try:
-            self._document_writer.start(snapshot, context)
+            self._document_writer.start(snapshot, context, password=encryption_password)
         except Exception as exc:
             QMessageBox.critical(
                 self,
@@ -8182,6 +9667,10 @@ class MainWindow(QMainWindow):
         operation = (
             "compress"
             if compression_profile is not None
+            else "protect"
+            if context.password_protected
+            else "unprotect"
+            if context.password_protection_removed
             else "save_copy"
             if not update_document_identity
             else "save"
@@ -8243,6 +9732,10 @@ class MainWindow(QMainWindow):
         operation = (
             "compress"
             if compression_profile is not None
+            else "protect"
+            if context.password_protected
+            else "unprotect"
+            if context.password_protection_removed
             else "save_copy"
             if not context.update_document_identity
             else "save"
@@ -8319,6 +9812,8 @@ class MainWindow(QMainWindow):
             )
         else:
             self.statusBar().showMessage(self.trx("saved_status", path=path), 3000)
+        if context.count_as_successful_save:
+            self._record_successful_save_for_support()
 
     def _save_to_path(
         self,
@@ -8326,10 +9821,26 @@ class MainWindow(QMainWindow):
         show_confirmation: bool,
         *,
         update_document_identity: bool = True,
+        encryption_password: str | None = None,
+        password_protection_removed: bool = False,
     ) -> bool:
         if not self._confirm_document_write_compatibility():
             return False
-        operation = "save_copy" if not update_document_identity else "save"
+        count_as_successful_save = (
+            self.has_unsaved_changes
+            and update_document_identity
+            and encryption_password is None
+            and not password_protection_removed
+        )
+        operation = (
+            "protect"
+            if encryption_password is not None
+            else "unprotect"
+            if password_protection_removed
+            else "save_copy"
+            if not update_document_identity
+            else "save"
+        )
         self._operation_log.record(
             "document_write_started",
             worker="write",
@@ -8347,6 +9858,7 @@ class MainWindow(QMainWindow):
                 self.inserted_images,
                 self.deleted_images,
                 self.inserted_texts,
+                encryption_password=encryption_password,
             )
         except Exception as exc:
             self._operation_log.record(
@@ -8384,6 +9896,8 @@ class MainWindow(QMainWindow):
             profile="none",
             content_revision=self._content_revision,
         )
+        if count_as_successful_save:
+            self._record_successful_save_for_support()
         return True
 
     def compress_pdf(self) -> None:
@@ -8481,7 +9995,9 @@ class MainWindow(QMainWindow):
         opened = self.engine.is_open
         writing = self._write_process is not None
         ocr_running = self._ocr_process is not None
-        busy = writing or ocr_running
+        comparing = self._comparison_process is not None
+        signing = self._digital_signature_process is not None
+        busy = writing or ocr_running or comparing or signing
         inspecting = self._inspection_process is not None
         self.new_action.setEnabled(not busy)
         self.open_action.setEnabled(not busy)
@@ -8490,6 +10006,29 @@ class MainWindow(QMainWindow):
         self.recent_menu.setEnabled(not busy)
         self.find_action.setEnabled(opened)
         self.compatibility_action.setEnabled(opened)
+        self.digital_signatures_action.setEnabled(opened)
+        can_certificate_sign = (
+            opened
+            and not busy
+            and not inspecting
+            and self._inspection_report is not None
+            and self._inspection_report.signature_validation_available
+            and not self._inspection_report.signature_validation_error
+            and (
+                not self._inspection_report.signed_digital_signatures
+                or (
+                    not self.has_unsaved_changes
+                    and self._inspection_report.signed_digital_signatures
+                    == len(self._inspection_report.digital_signatures)
+                    and all(
+                        signature.integrity_status == "valid"
+                        for signature in self._inspection_report.digital_signatures
+                    )
+                )
+            )
+        )
+        self.sign_with_certificate_action.setEnabled(can_certificate_sign)
+        self.sign_with_certificate_button.setEnabled(can_certificate_sign)
         for action in (
             self.print_action,
             self.add_text_action,
@@ -8498,13 +10037,19 @@ class MainWindow(QMainWindow):
             self.fit_width_action,
             self.add_blank_page_action,
             self.insert_pdf_action,
+            self.extract_pages_action,
+            self.split_pages_action,
             self.delete_page_action,
             self.rotate_page_left_action,
             self.rotate_page_right_action,
+            self.crop_pages_action,
+            self.resize_pages_action,
+            self.document_marks_action,
             self.edit_original_image_action,
             self.add_image_action,
             self.delete_image_action,
             self.signature_action,
+            self.add_link_action,
             self.add_comment_action,
             self.redact_area_action,
             self.create_form_action,
@@ -8525,6 +10070,7 @@ class MainWindow(QMainWindow):
             and not busy
             and not self._thumbnail_reorder_pending
             and self.engine.page_count > 1
+            and len(self.page_list.selectionModel().selectedRows()) <= 1
         )
         self.page_list.setDragEnabled(can_reorder_thumbnails)
         self.page_list.setAcceptDrops(can_reorder_thumbnails)
@@ -8532,9 +10078,14 @@ class MainWindow(QMainWindow):
             self.save_action,
             self.save_as_action,
             self.save_copy_action,
+            self.add_password_protection_action,
+            self.compare_pdf_action,
             self.compress_action,
         ):
             action.setEnabled(opened and not busy and not inspecting)
+        self.remove_password_protection_action.setEnabled(
+            opened and self._source_was_encrypted and not busy and not inspecting
+        )
         selected_text = (
             self.page_view.selected_text_ref is not None
             or self._text_toolbar_reference is not None
@@ -8694,6 +10245,58 @@ class MainWindow(QMainWindow):
             self.trx("about_title"),
             "\n".join(body_lines),
         )
+
+    def support_development(self) -> bool:
+        """Open the approved support page only after an explicit user action."""
+
+        opened = QDesktopServices.openUrl(QUrl(SUPPORT_URL))
+        if not opened:
+            self.statusBar().showMessage(self.trx("support_open_failed"), 5000)
+        return bool(opened)
+
+    def _record_successful_save_for_support(self) -> None:
+        _state, due = record_successful_save(self.settings)
+        if not due or self._support_prompt_pending:
+            return
+        self._support_prompt_pending = True
+        QTimer.singleShot(0, self._show_support_prompt_if_available)
+
+    def _show_support_prompt_if_available(self) -> None:
+        self._support_prompt_pending = False
+        if self._update_closing or not self.isVisible():
+            return
+        prompt = QMessageBox(self)
+        prompt.setObjectName("supportDevelopmentPrompt")
+        prompt.setWindowTitle(self.trx("support_prompt_title"))
+        prompt.setIconPixmap(
+            QIcon(str(ASSET_DIR / "nettongia_mascot_pdf.png")).pixmap(72, 72)
+        )
+        prompt.setText(self.trx("support_prompt_text"))
+        prompt.setInformativeText(self.trx("support_prompt_detail"))
+        support_button = prompt.addButton(
+            self.trx("support_development"), QMessageBox.AcceptRole
+        )
+        later_button = prompt.addButton(
+            self.trx("support_maybe_later"), QMessageBox.RejectRole
+        )
+        never_button = prompt.addButton(
+            self.trx("support_never_ask"), QMessageBox.DestructiveRole
+        )
+        prompt.setDefaultButton(later_button)
+        prompt.setEscapeButton(later_button)
+        prompt.exec()
+        clicked = prompt.clickedButton()
+        if clicked is support_button:
+            self._handle_support_prompt_choice("support")
+        elif clicked is never_button:
+            self._handle_support_prompt_choice("never")
+
+    def _handle_support_prompt_choice(self, choice: str) -> None:
+        if choice == "support":
+            disable_support_prompt(self.settings)
+            self.support_development()
+        elif choice == "never":
+            disable_support_prompt(self.settings)
 
     def start_automatic_update_check(self) -> None:
         """Check at most once per day without delaying application startup."""

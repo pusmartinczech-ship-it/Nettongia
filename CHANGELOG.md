@@ -1,5 +1,48 @@
 # Changelog
 
+## 1.0.0
+
+- Prepared the offline editor's first stable release candidate with PDF, OCR
+  and GUI regression coverage.
+- Kept Ctrl+F active when a different ribbon tab is selected or the ribbon is
+  collapsed.
+- Aligned the new-document PDF producer metadata with the application version.
+- Added the corresponding source archive as a separate release asset beside
+  the verified Windows portable archive.
+
+- Added native PDF underline and strikeout annotations through the text context menu. Multi-line paragraphs keep separate markup lines, including on rotated pages; actions support Undo/Redo and appear in Comments.
+- Printing retains vector drawings and text outlines where supported; pages with annotations or form widgets use the existing raster path.
+- Clarified the application's AGPL license independently of PyMuPDF's optional Artifex commercial license and bundled its full text.
+- Added opt-in revocation evidence for certificate signatures: fetch OCSP/CRL with bounded requests, embed PAdES DSS/VRI evidence, and publish only when the signature, timestamp and signature-specific evidence pass checks.
+- Form fields now require descriptive labels when created, allow existing labels and per-page Tab order to be edited, and include a basic accessibility and PDF structure check in the Forms sidebar.
+- Deleting or moving an original PDF image now reveals the original background, including colored shapes, text and other images. Reused image objects are protected from accidental removal of their other copies.
+- Added an optional visible certificate signature on a selected PDF page, with an authenticated stamp and an independently verified saved copy.
+- Added optional RFC 3161 signature timestamps for certificate-based signing through a user-supplied HTTPS TSA endpoint.
+- Timestamp requests run only in the isolated signing process, have a bounded timeout, send the document digest rather than the PDF, and are not remembered in settings.
+- A timestamped output is accepted only after the embedded token passes cryptographic verification; the completion message distinguishes an offline-trusted TSA chain from an otherwise valid but untrusted one.
+- Added sequential certificate signatures for unchanged signed PDFs. Every new signature is appended as an incremental revision, and all earlier signatures are revalidated before the copy is accepted.
+- Documents with pending editor changes or an existing signature that fails integrity verification are blocked from the sequential-signing workflow.
+- Added multi-page selection in the thumbnail sidebar and export of selected pages with pending edits into a separate PDF.
+- Added splitting a PDF into numbered files by a chosen number of pages, with collision checks.
+- Added insertion of selected page ranges from another PDF, including password-protected files.
+- Added automatic line wrapping and frame-height expansion for edited horizontal text while preserving the selected font size.
+- Added conservative paragraph recognition for consecutive uniformly styled PDF lines, including line-end dehyphenation and safe exclusion of list-like content.
+- Added editable OCR blocks. Recognized lines are grouped into text objects, and editing locally removes the scanned lettering before writing the visible replacement.
+- Added OCR support for mixed-content pages without duplicating existing PDF text.
+- OCR text edits now estimate the local scan background instead of always painting a white rectangle.
+- Added AES-256 password protection through an isolated protected-copy workflow; passwords are never stored in settings, recovery snapshots or diagnostics.
+- Added an explicit remove-password-protection action for documents opened with a password, producing a separate unencrypted copy.
+- Added isolated PDF comparison that includes unsaved edits and classifies identical, changed, added, missing and geometrically different pages.
+- Added side-by-side comparison previews with a red visual difference overlay and per-page changed-area percentages.
+- Added headers, footers, and text watermarks with a live preview, page/date/title tokens, page-scope controls, and Undo/Redo integration.
+- Nettongia page decorations can be replaced or removed later without deleting the document's original page content.
+- Added non-destructive page cropping with independent left, top, right, and bottom margins for the current page, selected thumbnails, or the whole document.
+- Crop margins follow the visible orientation of rotated pages, retain hidden PDF content, and participate in Undo/Redo and crash recovery.
+- Added physical page resizing with A-series, Letter, Legal, current-size and custom presets for current, selected, or all pages.
+- Page content can be fitted proportionally without distortion or kept at its original visual size on a centred canvas; links, comments, form fields and rotated-page appearance follow the transformation.
+- Added an optional support reminder after five successful saves of genuinely changed documents; it never appears at startup, never limits features, and can be postponed or disabled permanently.
+- The reminder counter stays in local application settings, waits at least ten further saves after postponement, and opens the approved support page only after an explicit click.
+
 ## 0.22.0
 
 - Introduced a compact task-oriented ribbon with complete action icons,

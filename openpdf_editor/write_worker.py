@@ -20,6 +20,7 @@ WRITE_JOB_FORMAT = "openpdf-editor-document-write"
 WRITE_JOB_SCHEMA_VERSION = 1
 MAX_JOB_BYTES = 1024 * 1024
 COMPRESSION_PROFILES = {"lossless", "balanced", "strong"}
+PASSWORD_ENVIRONMENT_VARIABLE = "NETTONGIA_DOCUMENT_WRITE_PASSWORD"
 
 
 def prepare_write_job(
@@ -27,6 +28,7 @@ def prepare_write_job(
     snapshot: RecoverySnapshot,
     output_path: str | Path,
     compression_profile: str | None,
+    password_protected: bool = False,
 ) -> tuple[Path, Path]:
     """Create a validated, non-executable job package for a child process."""
 
@@ -35,6 +37,8 @@ def prepare_write_job(
         and compression_profile not in COMPRESSION_PROFILES
     ):
         raise ValueError("The compression profile is invalid.")
+    if password_protected and compression_profile is not None:
+        raise ValueError("Compression and password protection must use separate writes.")
     output = Path(output_path)
     if output.suffix.lower() != ".pdf":
         raise ValueError("The document write target must be a PDF.")
@@ -51,6 +55,7 @@ def prepare_write_job(
         "output_path": str(output),
         "result_path": str(result_path),
         "compression_profile": compression_profile,
+        "password_protected": bool(password_protected),
     }
     encoded = json.dumps(
         descriptor,
@@ -86,6 +91,8 @@ def _read_job(path: str | Path) -> dict[str, Any]:
     profile = job.get("compression_profile")
     if profile is not None and profile not in COMPRESSION_PROFILES:
         raise ValueError("The compression profile is invalid.")
+    if not isinstance(job.get("password_protected", False), bool):
+        raise ValueError("The password-protection option is invalid.")
     output = Path(job["output_path"])
     if output.suffix.lower() != ".pdf":
         raise ValueError("The document write target must be a PDF.")
@@ -166,6 +173,11 @@ def run_write_job(job_path: str | Path) -> int:
         engine.load_bytes(snapshot.pdf_bytes)
         validate_recovery_pages(snapshot, engine.page_count)
         profile = job.get("compression_profile")
+        password = None
+        if job.get("password_protected", False):
+            password = os.environ.pop(PASSWORD_ENVIRONMENT_VARIABLE, "")
+            if not password:
+                raise ValueError("The password-protected write is missing its password.")
         if profile is None:
             engine.save(
                 job["output_path"],
@@ -174,6 +186,7 @@ def run_write_job(job_path: str | Path) -> int:
                 snapshot.inserted_images,
                 snapshot.deleted_images,
                 snapshot.inserted_texts,
+                encryption_password=password,
             )
             compression_payload = None
         else:
